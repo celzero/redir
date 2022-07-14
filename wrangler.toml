@@ -1,0 +1,12 @@
+name = "redir"
+#routes = [
+#  "svc.rethinkdns.com/r/*",
+#  "svc.bravedns.com/r/*",
+#]
+usage_model = "unbound"
+main = "src/index.js"
+workers_dev = true
+compatibility_date = "2022-07-14"
+
+[vars]
+REDIR_CATCHALL = "https://rethinkdns.com/404#r"
