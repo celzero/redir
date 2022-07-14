@@ -1,8 +1,8 @@
 name = "redir"
-#routes = [
-#  "svc.rethinkdns.com/r/*",
-#  "svc.bravedns.com/r/*",
-#]
+routes = [
+  "svc.rethinkdns.com/r/*",
+  "svc.bravedns.com/r/*",
+]
 usage_model = "unbound"
 main = "src/index.js"
 workers_dev = true
