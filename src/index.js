@@ -12,21 +12,29 @@
  tx.set("sponsor", "https://donate.stripe.com/aEU00s632gus8hyfYZ?prefilled_email=anonymous.donor%40rethinkdns.com");
 
 function redirect(r, home) {
-  const url = new URL(r.url);
-  const path = url.pathname;
-  // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
-  const p = path.split("/");
-  if (p.length >= 3 && p[2].length > 0 && p[2].length <= 10) {
-      const w = p[2];
-      if (tx.has(w)) {
-          // redirect to where tx wants us to
-          return r302(tx.get(w));
-      } else {
-          // todo: redirect up the parent direct to the same location
-          // that is, x.tld/r/w => x.tld/w (handle the redir in this worker!)
-          // return r302(`../${w}`);
-          // fall-through, for now
+  try {
+      const url = new URL(r.url);
+      const path = url.pathname;
+      // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
+      const p = path.split("/");
+      if (p.length >= 3 && p[2].length > 0 && p[2].length <= 10) {
+          const w = p[2];
+          if (tx.has(w)) {
+              // redirect to where tx wants us to
+              const redirurl = new URL(tx.get(w));
+              for (const paramsin of url.searchParams) {
+                  redirurl.searchParams.set(...paramsin);
+              }
+              return r302(redirurl.toString());
+          } else {
+              // todo: redirect up the parent direct to the same location
+              // that is, x.tld/r/w => x.tld/w (handle the redir in this worker!)
+              // return r302(`../${w}`);
+              // fall-through, for now
+          }
       }
+  } catch(ex) {
+      console.error(ex);
   }
   return r302(home);
 }
