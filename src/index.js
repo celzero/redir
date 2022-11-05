@@ -1,3 +1,11 @@
+/*
+ * Copyright (c) 2022 RethinkDNS and its authors.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
 const tx = new Map();
 tx.set("sponsor", "https://donate.stripe.com/aEU00s632gus8hyfYZ?prefilled_email=anonymous.donor%40rethinkdns.com");
 tx.set("translate", "https://hosted.weblate.org/engage/rethink-dns-firewall/")
