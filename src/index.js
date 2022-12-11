@@ -107,13 +107,12 @@ function grabSupportedCountries() {
 }
 
 function redirect(r, home) {
-    console.log(r.url, r.cf);
   try {
       const url = new URL(r.url);
       const path = url.pathname;
       // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
       const p = path.split("/");
-      if (p.length >= 3 && p[2].length > 0 && p[2].length <= 10) {
+      if (p.length >= 3 && p[2].length > 0) {
           const w = p[2];
           const c = country(r);
           const k = key(w, c);
@@ -141,10 +140,21 @@ function redirect(r, home) {
 }
 
 function key(w, c) {
+  if (w.startsWith(ksponsor)) {
+    // w is like "sponsor-fr" or "sponsor-us"
+    const cc = w.slice(ksponsor.length);
+    // use 'cc' if valid, else use 'c'
+    c = (supportedCountries.has(cc)) ? cc : c;
+    // fallback to "sponsor" with a new 'c'
+    w = "sponsor";
+  }
+
   if (w === "sponsor") {
-    if (!supportedCountries.has(c)) c = "us";
+    // use 'c' if valid, else use "us"
+    c = (supportedCountries.has(c)) ? c : "us";
     return `${w}-${c}`;
   }
+
   return w;
 }
 
