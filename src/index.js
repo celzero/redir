@@ -70,7 +70,7 @@ tx.set(ksponsor + "mn", "https://donate.stripe.com/4gw8wYezygus2XefZt"); // MNT,
 tx.set(ksponsor + "au", "https://donate.stripe.com/aEU5kM9fe7XWapGcMR"); // AUD, AU
 tx.set(ksponsor + "nz", "https://donate.stripe.com/dR6cNe776920cxOdRb"); // NZD, NZ
 // mena and south asia
-tx.set(ksponsor + "ae", "https://donate.stripe.com/eVadRidvu6TS55m003"); // AED, AE
+tx.set(ksponsor + "ae", "https://donate.stripe.com/bIYfZq6326TSfK04gk"); // AED, AE
 tx.set(ksponsor + "sa", "https://donate.stripe.com/28ofZq6323HG69q14h"); // SAR, SA
 tx.set(ksponsor + "qa", "https://donate.stripe.com/7sIeVmdvu9200P6eVb"); // QAR, QA
 tx.set(ksponsor + "il", "https://donate.stripe.com/9AQeVmbnmgus0P64gF"); // ILS, IL
