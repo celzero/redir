@@ -164,10 +164,10 @@ function key(w, c) {
  * @returns {Array<[string, string]>}
  */
 function defaultparams(k) {
-  if (k.startsWith("sponsor")) {
+  if (k.startsWith(ksponsor)) {
     return [
       // email: stripe.com/docs/payments/payment-links#url-parameters
-      ["prefilled_email", "anonymous.donor%40rethinkdns.com"],
+      ["prefilled_email", "anonymous.donor@rethinkdns.com"],
       // locale: stripe.com/docs/api/checkout/sessions/create#create_checkout_session-locale
       ["locale", "auto"]
     ];
