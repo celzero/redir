@@ -5,15 +5,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
+import { connect } from "cloudflare:sockets";
+import * as auth from "./auth.js";
+import Stripe from "stripe/lib/stripe.js";
 
 /** @type Map<string, string> */
 const tx = new Map();
 const ksponsor = "sponsor-";
+const ktranslate = "translate";
+const kredirect = "r"; // redirect to dest url
+const kpip = "p"; // pipe data to dest domain/
+const kstripe = "s"; // stripe checkout webhook
+
+const ctxpip = "per-client-pip-key";
+const bypassPipAuth = true; // bypass pip auth for testing
+
 // local currency isn't auto-selected for 'customers choose' payments even if
 // prices (of a product) is multi-currency
 // stripe.com/docs/products-prices/pricing-models#migrate-from-single-currency-prices-to-multi-currency
 // stripe.com/docs/payments/checkout/present-local-currencies#test-currency-presentment
-// country codes: https://www.nationsonline.org/oneworld/country_code_list.htm
+// country codes: www.nationsonline.org/oneworld/country_code_list.htm
 // north america
 tx.set(ksponsor + "us", "https://donate.stripe.com/aEU00s632gus8hyfYZ"); // USD, US
 tx.set(ksponsor + "ca", "https://donate.stripe.com/4gwdRi4YY3HG69q5kL"); // CAD, CA
@@ -88,7 +99,7 @@ tx.set(ksponsor + "ke", "https://donate.stripe.com/8wM9B23UUdig0P6eVa"); // KES,
 tx.set(ksponsor + "ng", "https://donate.stripe.com/00g3cE3UU6TSbtK6oK"); // NGN, NG
 tx.set(ksponsor + "za", "https://donate.stripe.com/4gwdRifDCgus8hyeVt"); // ZAR, ZA
 
-tx.set("translate", "https://hosted.weblate.org/engage/rethink-dns-firewall/");
+tx.set(ktranslate, "https://hosted.weblate.org/engage/rethink-dns-firewall/");
 
 /** @type Set<string> */
 const supportedCountries = grabSupportedCountries();
@@ -102,41 +113,203 @@ function grabSupportedCountries() {
     // c is like "fr" or "us"
     const c = k.slice(i + ksponsor.length);
     if (c) ans.add(c);
-   }
-   return ans;
+  }
+  return ans;
 }
 
-function redirect(r, home) {
+/**
+ * @param {Request} r
+ * @param {string} home
+ * @returns
+ */
+async function handle(r, env) {
+  const home = env.REDIR_CATCHALL;
   try {
-      const url = new URL(r.url);
-      const path = url.pathname;
-      // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
-      const p = path.split("/");
-      if (p.length >= 3 && p[2].length > 0) {
-          const w = p[2];
-          const c = country(r);
-          const k = key(w, c);
-          if (tx.has(k)) {
-              // redirect to where tx wants us to
-              const redirurl = new URL(tx.get(k));
-              for (const p of defaultparams(k)) {
-                redirurl.searchParams.set(...p);
-              }
-              for (const paramsin of url.searchParams) {
-                  redirurl.searchParams.set(...paramsin);
-              }
-              return r302(redirurl.toString());
-          } else {
-              // todo: redirect up the parent direct to the same location
-              // that is, x.tld/r/w => x.tld/w (handle the redir in this worker!)
-              // return r302(`../${w}`);
-              // fall-through, for now
-          }
+    const url = new URL(r.url);
+    const path = url.pathname;
+    // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
+    const p = path.split("/");
+
+    if (p.length < 2) return r302(home);
+
+    if (p[1] === kredirect) {
+      return redirect(p, home);
+    } else if (p[1] === kstripe) {
+      const whsec = env.STRIPE_WEBHOOK_SECRET;
+      const stripeclient = makeStripeClient(env);
+      // opt: p[2] === "checkout"
+      return stripeCheckout(r, url, stripeclient, whsec);
+    } else if (p[1] === kpip) {
+      let authok = false;
+
+      if (bypassPipAuth) {
+        console.warn("bypassing pip auth");
+        authok = true;
+      } else {
+        const sk = auth.keygen(env.SECRET_KEY_MAC_A, ctxpip);
+        if (!sk) {
+          console.error("no sk");
+          return r503();
+        }
+
+        const h = r.headers.get("x-nile-pip-claim");
+        const msg = r.headers.get("x-nile-pip-msg");
+        if (!h || !msg) {
+          return r400("no token or msg");
+        }
+
+        const [tok, sig, mac] = h.split(":");
+        authok = await auth.verifyPipToken(sk, tok, sig, msg, mac);
       }
-  } catch(ex) {
-      console.error(ex);
+
+      if (authok) {
+        return pip(r.body, p);
+      } else {
+        return r400("auth failed");
+      }
+    } else {
+      console.warn("unknown path", path);
+    }
+  } catch (ex) {
+    console.error("handle err", ex);
   }
   return r302(home);
+}
+
+/**
+ * pipe the data in ingress to dest in p
+ * @param {ReadableStream} ingress
+ * @param {string[]} p
+ * @returns {Response}
+ */
+function pip(ingress, p) {
+  // blog.cloudflare.com/workers-tcp-socket-api-connect-databases
+  // github.com/zizifn/edgetunnel/blob/main/src/worker-vless.js
+  if (p.length < 3) return r400("args missing");
+
+  const dst = p[2];
+  if (!dst) return r400("dst missing");
+
+  const dstport = p[3] || "443";
+  const proto = p[4] || "tcp";
+  const addr = { hostname: dst, port: dstport };
+  const opts = { secureTransport: "off", allowHalfOpen: true };
+  try {
+    const egress = connect(addr, opts);
+    ingress.pipeTo(egress.writable);
+    // .catch(err => console.error("egress err", err))
+    // .finally(() => egress.close());
+
+    return new Response(egress.readable);
+  } catch (ex) {
+    console.error("pip err", ex);
+    return r500(error.message);
+  }
+}
+
+function redirect(p, home) {
+  if (p.length >= 3 && p[2].length > 0) {
+    const w = p[2];
+    const c = country(r);
+    const k = key(w, c);
+    if (tx.has(k)) {
+      // redirect to where tx wants us to
+      const redirurl = new URL(tx.get(k));
+      for (const p of defaultparams(k)) {
+        redirurl.searchParams.set(...p);
+      }
+      for (const paramsin of url.searchParams) {
+        redirurl.searchParams.set(...paramsin);
+      }
+      return r302(redirurl.toString());
+    } else {
+      // todo: redirect up the parent direct to the same location
+      // that is, x.tld/r/w => x.tld/w (handle the redir in this worker!)
+      // return r302(`../${w}`);
+      // fall-through, for now
+    }
+  }
+  return r302(home);
+}
+
+/**
+ * @param {Request} req
+ * @param {URL} url
+ * @param {Stripe} sc
+ * @param {string} whsec
+ */
+async function stripeCheckout(req, url, sc, whsec) {
+  // ref: github.com/stripe-samples/stripe-node-cloudflare-worker-template/blob/1cea05be7/src/index.js
+  // ref: blog.cloudflare.com/announcing-stripe-support-in-workers/
+  const body = await request.text();
+  const sig = request.headers.get("stripe-signature");
+
+  try {
+    // throws error if the signature is invalid
+    const event = await sc.webhooks.constructEventAsync(
+      body,
+      sig,
+      whsec,
+      undefined,
+      webCrypto
+    );
+
+    // stripe.com/docs/api/events/types
+    switch (event.type) {
+      case "checkout.session.completed": {
+        // stripe.com/docs/api/checkout/sessions/object
+        const session = event.data.object;
+        createOrder(session);
+
+        // Check if the order is paid (for example, from a card payment)
+        //
+        // A delayed notification payment will have an `unpaid` status, as
+        // you're still waiting for funds to be transferred from the customer's
+        // account.
+        if (session.payment_status === "paid") {
+          fulfillOrder(session);
+        }
+
+        break;
+      }
+      case "checkout.session.async_payment_succeeded": {
+        const session = event.data.object;
+        fulfillOrder(session);
+        break;
+      }
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object;
+        abandonOrder(session);
+        break;
+      }
+      case "checkout.session.expired": {
+        const session = event.data.object;
+        abandonOrder(session);
+        break;
+      }
+      default:
+        console.warn(`stripe: unhandled event ${event.type}`);
+    }
+  } catch (ignore) {
+    console.error("stripe: err", ignore);
+  }
+  return new Response(JSON.stringify({ received: true }), {
+    headers: { "Content-type": "application/json" },
+  });
+}
+
+// Save an order in your database, marked as 'awaiting payment'
+function createOrder(session) {
+  // todo
+}
+
+// stripe.com/docs/payments/checkout/fulfill-orders
+function fulfillOrder(session) {
+  // todo
+}
+
+function abandonOrder(session) {
+  // todo
 }
 
 function key(w, c) {
@@ -144,15 +317,15 @@ function key(w, c) {
     // w is like "sponsor-fr" or "sponsor-us"
     const cc = w.slice(ksponsor.length);
     // use 'cc' if valid, else use 'c'
-    c = (supportedCountries.has(cc)) ? cc : c;
-    // fallback to "sponsor" with a new 'c'
+    c = supportedCountries.has(cc) ? cc : c;
+    // turn w into plain 'sponsor' with a new 'c'
     w = "sponsor";
   }
 
   if (w === "sponsor") {
     // use 'c' if valid, else use "us"
-    c = (supportedCountries.has(c)) ? c : "us";
-    return `${w}-${c}`;
+    c = supportedCountries.has(c) ? c : "us";
+    return ksponsor + c;
   }
 
   return w;
@@ -169,7 +342,7 @@ function defaultparams(k) {
       // email: stripe.com/docs/payments/payment-links#url-parameters
       ["prefilled_email", "anonymous.donor@rethinkdns.com"],
       // locale: stripe.com/docs/api/checkout/sessions/create#create_checkout_session-locale
-      ["locale", "auto"]
+      ["locale", "auto"],
     ];
   }
   return [];
@@ -177,22 +350,46 @@ function defaultparams(k) {
 
 // developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
 function country(req) {
-    if (req.cf && req.cf.country) {
-        return req.cf.country.toLowerCase();
-    }
-    return "us";
+  if (req.cf && req.cf.country) {
+    return req.cf.country.toLowerCase();
+  }
+  return "us";
+}
+
+// use web crypto
+export const webCrypto = Stripe.createSubtleCryptoProvider();
+
+export function makeStripeClient(env) {
+  if (!env.STRIPE_API_KEY) {
+    throw new Error("STRIPE_API_KEY missing");
+  }
+  // github.com/stripe-samples/stripe-node-cloudflare-worker-template/commit/1cea05be7fee
+  return Stripe(
+    env.STRIPE_API_KEY /*{ httpClient: Stripe.createFetchHttpClient() }*/
+  );
+}
+
+function r503(w) {
+  return new Response(w, { status: 503 }); // service unavailable
+}
+
+function r500(w) {
+  return new Response(w, { status: 500 }); // internal server error
+}
+
+function r400(w) {
+  return new Response(w, { status: 400 }); // bad request
 }
 
 function r302(where) {
-    return new Response("Redirecting...", {
-        status: 302, // redirect
-        headers: {location: where},
-    });
+  return new Response("Redirecting...", {
+    status: 302, // redirect
+    headers: { location: where },
+  });
 }
 
 export default {
-    async fetch(request, env, ctx) {
-        return redirect(request, env.REDIR_CATCHALL);
-    },
+  async fetch(request, env, ctx) {
+    return handle(request, env);
+  },
 };
-

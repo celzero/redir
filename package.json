@@ -1,12 +1,12 @@
 {
   "name": "redir",
   "version": "0.0.0",
-  "devDependencies": {
-    "wrangler": "2.0.19"
-  },
   "private": true,
   "scripts": {
     "start": "wrangler dev",
     "deploy": "wrangler publish"
+  },
+  "dependencies": {
+    "stripe": "^11.10.0"
   }
 }

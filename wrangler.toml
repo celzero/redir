@@ -6,7 +6,8 @@ routes = [
 usage_model = "unbound"
 main = "src/index.js"
 workers_dev = true
-compatibility_date = "2022-07-14"
+compatibility_date = "2023-05-26"
 
 [vars]
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
+
