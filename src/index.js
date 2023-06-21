@@ -186,6 +186,8 @@ function pip(ingress, p) {
   // blog.cloudflare.com/workers-tcp-socket-api-connect-databases
   // github.com/zizifn/edgetunnel/blob/main/src/worker-vless.js
   if (p.length < 3) return r400("args missing");
+  // ingress may be null for GET or HEAD
+  if (ingress == null) return r400("no ingress");
 
   const dst = p[2];
   if (!dst) return r400("dst missing");
@@ -199,11 +201,11 @@ function pip(ingress, p) {
     ingress.pipeTo(egress.writable);
     // .catch(err => console.error("egress err", err))
     // .finally(() => egress.close());
-
+    console.log("pip to", addr, proto, "who", ingress, egress);
     return new Response(egress.readable);
   } catch (ex) {
     console.error("pip err", ex);
-    return r500(error.message);
+    return r500(ex.message);
   }
 }
 
