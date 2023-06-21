@@ -7,7 +7,7 @@
  */
 import { connect } from "cloudflare:sockets";
 import * as auth from "./auth.js";
-import Stripe from "stripe/lib/stripe.js";
+import Stripe from "stripe";
 
 /** @type Map<string, string> */
 const tx = new Map();
@@ -133,7 +133,7 @@ async function handle(r, env) {
     if (p.length < 2) return r302(home);
 
     if (p[1] === kredirect) {
-      return redirect(p, home);
+      return redirect(r, url, p, home);
     } else if (p[1] === kstripe) {
       const whsec = env.STRIPE_WEBHOOK_SECRET;
       const stripeclient = makeStripeClient(env);
@@ -207,10 +207,10 @@ function pip(ingress, p) {
   }
 }
 
-function redirect(p, home) {
+function redirect(req, url, p, home) {
   if (p.length >= 3 && p[2].length > 0) {
     const w = p[2];
-    const c = country(r);
+    const c = country(req);
     const k = key(w, c);
     if (tx.has(k)) {
       // redirect to where tx wants us to
@@ -241,8 +241,8 @@ function redirect(p, home) {
 async function stripeCheckout(req, url, sc, whsec) {
   // ref: github.com/stripe-samples/stripe-node-cloudflare-worker-template/blob/1cea05be7/src/index.js
   // ref: blog.cloudflare.com/announcing-stripe-support-in-workers/
-  const body = await request.text();
-  const sig = request.headers.get("stripe-signature");
+  const body = await req.text();
+  const sig = req.headers.get("stripe-signature");
 
   try {
     // throws error if the signature is invalid
