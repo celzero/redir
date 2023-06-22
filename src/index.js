@@ -207,7 +207,7 @@ function pip(ingress, p) {
     ingress.pipeTo(egress.writable);
     // .catch(err => console.error("egress err", err))
     // .finally(() => egress.close());
-    console.debug("pip to", addr, proto, "who", ingress, egress);
+    console.debug("pip to", addr, proto, "ok?", egress.readable != null);
     return new Response(egress.readable, { headers: hdr });
   } catch (ex) {
     console.error("pip err", ex);
