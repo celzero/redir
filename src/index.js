@@ -143,7 +143,9 @@ async function handle(r, env) {
       let authok = false;
 
       if (bypassPipAuth) {
-        console.warn("bypassing pip auth");
+        const h = r.headers.get("x-nile-pip-claim");
+        const msg = r.headers.get("x-nile-pip-msg");
+        console.warn("bypassing pip auth", "claim?", h, "msg?", msg);
         authok = true;
       } else {
         const sk = auth.keygen(env.SECRET_KEY_MAC_A, ctxpip);
@@ -183,8 +185,6 @@ async function handle(r, env) {
  * @returns {Response}
  */
 function pip(ingress, p) {
-  // blog.cloudflare.com/workers-tcp-socket-api-connect-databases
-  // github.com/zizifn/edgetunnel/blob/main/src/worker-vless.js
   if (p.length < 3) return r400("args missing");
   // ingress may be null for GET or HEAD
   if (ingress == null) return r400("no ingress");
@@ -200,14 +200,16 @@ function pip(ingress, p) {
   const hdr = {
     "Content-Type": "application/octet-stream",
     "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
+    "Content-Length": "0",
+    Connection: "keep-alive",
   };
   try {
+    // blog.cloudflare.com/workers-tcp-socket-api-connect-databases
+    // github.com/zizifn/edgetunnel/blob/main/src/worker-vless.js
     const egress = connect(addr, opts);
     ingress.pipeTo(egress.writable);
     // .catch(err => console.error("egress err", err))
     // .finally(() => egress.close());
-    console.debug("pip to", addr, proto, "ok?", egress.readable != null);
     return new Response(egress.readable, { headers: hdr });
   } catch (ex) {
     console.error("pip err", ex);
