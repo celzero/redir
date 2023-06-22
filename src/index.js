@@ -196,13 +196,19 @@ function pip(ingress, p) {
   const proto = p[4] || "tcp";
   const addr = { hostname: dst, port: dstport };
   const opts = { secureTransport: "off", allowHalfOpen: true };
+  // sse? community.cloudflare.com/t/184219
+  const hdr = {
+    "Content-Type": "application/octet-stream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  };
   try {
     const egress = connect(addr, opts);
     ingress.pipeTo(egress.writable);
     // .catch(err => console.error("egress err", err))
     // .finally(() => egress.close());
-    console.log("pip to", addr, proto, "who", ingress, egress);
-    return new Response(egress.readable);
+    console.debug("pip to", addr, proto, "who", ingress, egress);
+    return new Response(egress.readable, { headers: hdr });
   } catch (ex) {
     console.error("pip err", ex);
     return r500(ex.message);
