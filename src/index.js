@@ -195,7 +195,7 @@ function pip(ingress, p) {
   const dstport = p[3] || "443";
   const proto = p[4] || "tcp";
   const addr = { hostname: dst, port: dstport };
-  const opts = { secureTransport: "off", allowHalfOpen: true };
+  const opts = { secureTransport: "off", allowHalfOpen: false };
   // sse? community.cloudflare.com/t/184219
   const hdr = {
     "Content-Type": "application/octet-stream",
