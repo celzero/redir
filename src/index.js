@@ -200,7 +200,7 @@ function pip(ingress, p) {
   const hdr = {
     "Content-Type": "application/octet-stream",
     "Cache-Control": "no-cache",
-    "Content-Length": "0",
+    "Content-Length": "-1",
     Connection: "keep-alive",
   };
   try {
