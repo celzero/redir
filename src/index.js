@@ -210,6 +210,14 @@ function pip(ingress, p) {
     ingress.pipeTo(egress.writable);
     // .catch(err => console.error("egress err", err))
     // .finally(() => egress.close());
+    const canread = egress.readable instanceof ReadableStream;
+    console.debug("pip to", addr, proto, "ok?", canread);
+    const t = new TextDecoder();
+    const c = "";
+    for await (const chunk of egress.readable) {
+      c += t.decode(chunk);
+      console.debug("pip chunk", c, chunk.length);
+    }
     return new Response(egress.readable, { headers: hdr });
   } catch (ex) {
     console.error("pip err", ex);
