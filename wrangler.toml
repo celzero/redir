@@ -17,13 +17,14 @@ STATUS = "Ok"
 [env.prod]
 name = "svc"
 minify = true
+# todo: add routes
+#  "svc.rethinkdns.com/r/*",
+#  "svc.bravedns.com/r/*",
+#  "svc.rethinkdns.com/s/*",
+#  "svc.bravedns.com/s/*",
 routes = [
-  "svc.rethinkdns.com/r/*",
-  "svc.bravedns.com/r/*",
   "svc.rethinkdns.com/p/*",
   "svc.bravedns.com/p/*",
-  "svc.rethinkdns.com/s/*",
-  "svc.bravedns.com/s/*",
 ]
 # vars are not inherited
 # workers/platform/environment-variables#environment-variables-via-wrangler
