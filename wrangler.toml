@@ -28,6 +28,7 @@ routes = [
 # vars are not inherited
 # workers/platform/environment-variables#environment-variables-via-wrangler
 [env.prod.vars]
+REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "prod"
 MIN_VCODE = "30"
 STATUS = "ok"
