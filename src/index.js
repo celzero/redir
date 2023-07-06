@@ -142,7 +142,7 @@ async function handle(r, env, ctx) {
     } else if (p[1] === urlsproxy) {
       const json = {
         "minvcode": minvcode(env),
-        "pubkey": rsapubkey(env),
+        "pubkey": rsapubkey(env), // may be undefined
         "status": svcstatus(env),
       }
       return r200j(json);
@@ -366,9 +366,9 @@ function r302(where) {
   });
 }
 
-function r200j(body) {
+function r200j(j) {
   const h = { "content-type": "application/json" };
-  return new Response(body, { status: 200, headers: h }); // ok
+  return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
 }
 
 export default {

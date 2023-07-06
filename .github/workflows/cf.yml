@@ -79,6 +79,6 @@ jobs:
           GIT_COMMIT_ID: ${{ env.GIT_REF }}
 
       - name: ⛳️ Notice
-        if: success()
+        if: ${{ success() }}
         run: |
           echo "::notice::Deployed to ${WORKERS_ENV} / ${GIT_REF} @ ${COMMIT_SHA}"
