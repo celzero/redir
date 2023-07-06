@@ -259,6 +259,29 @@ function abandonOrder(session) {
   // todo
 }
 
+/**
+ * @param {any} env
+ * @returns {string}
+ */
+ async function rsapubkey(env) {
+  const pubprefix = blindRsaPublicKeyPrefix;
+  // default key name
+  let kpub = pubprefix + "A";
+  let max = Number.MIN_SAFE_INTEGER;
+  for (const k of Object.keys(env)) {
+    if (k.startsWith(pubprefix)) {
+      const timestamp = k.slice(pubprefix.length);
+      // convert timestamp to number
+      const t = parseInt(timestamp);
+      if (t > max) {
+        kpub = pubprefix + timestamp;
+        max = t;
+      }
+    }
+  }
+  return env[kpub];
+}
+
 function key(w, c) {
   if (w.startsWith(ksponsor)) {
     // w is like "sponsor-fr" or "sponsor-us"
