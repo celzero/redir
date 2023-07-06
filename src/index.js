@@ -12,12 +12,13 @@ import Stripe from "stripe";
 const tx = new Map();
 const ksponsor = "sponsor-";
 const ktranslate = "translate";
-const kredirect = "r"; // redirect to dest url
-const kpip = "p"; // pipe data to dest domain/
-const kstripe = "s"; // stripe checkout webhook
+const urlredirect = "r"; // redirect to dest url
+const urlpip = "p"; // pipe data to dest domain/
+const urlstripe = "s"; // stripe checkout webhook
 
-const ctxpip = "per-client-pip-key";
-const bypassPipAuth = true; // bypass pip auth for testing
+const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
+
+const spurl = "https://ken.rethinkdns.com/";
 
 // local currency isn't auto-selected for 'customers choose' payments even if
 // prices (of a product) is multi-currency
@@ -132,9 +133,9 @@ async function handle(r, env, ctx) {
 
     if (p.length < 2) return r302(home);
 
-    if (p[1] === kredirect) {
+    if (p[1] === urlredirect) {
       return redirect(r, url, p, home);
-    } else if (p[1] === kstripe) {
+    } else if (p[1] === urlstripe) {
       const whsec = env.STRIPE_WEBHOOK_SECRET;
       const stripeclient = makeStripeClient(env);
       // opt: p[2] === "checkout"
