@@ -5,7 +5,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-import { connect } from "cloudflare:sockets";
 import Stripe from "stripe";
 
 /** @type Map<string, string> */
@@ -13,8 +12,8 @@ const tx = new Map();
 const ksponsor = "sponsor-";
 const ktranslate = "translate";
 const urlredirect = "r"; // redirect to dest url
-const urlpip = "p"; // pipe data to dest domain/
 const urlstripe = "s"; // stripe checkout webhook
+const urlsproxy = "p"; // sproxy metadata
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
 
@@ -140,11 +139,13 @@ async function handle(r, env, ctx) {
       const stripeclient = makeStripeClient(env);
       // opt: p[2] === "checkout"
       return stripeCheckout(r, url, stripeclient, whsec);
-    } else if (p[1] === urlpubkey) {
-      return r200(rsapubkey(env));
-    } else if (p[1] === urlpip) {
-      // see: github.com/serverless-proxy/serverless-proxy
-      return r302(spurl+path);
+    } else if (p[1] === urlsproxy) {
+      const json = {
+        "minvcode": minvcode(env),
+        "pubkey": rsapubkey(env),
+        "status": svcstatus(env),
+      }
+      return r200j(json);
     } else {
       console.warn("unknown path", path);
     }
@@ -259,11 +260,18 @@ function abandonOrder(session) {
   // todo
 }
 
+function svcstatus(env) {
+  return env.SVC_STATUS || "ok";
+}
+
+function minvcode(env) {
+  return env.MIN_VCODE || "30";
+}
 /**
  * @param {any} env
  * @returns {string}
  */
- async function rsapubkey(env) {
+function rsapubkey(env) {
   const pubprefix = blindRsaPublicKeyPrefix;
   // default key name
   let kpub = pubprefix + "A";
@@ -356,6 +364,11 @@ function r302(where) {
     status: 302, // redirect
     headers: { location: where },
   });
+}
+
+function r200j(body) {
+  const h = { "content-type": "application/json" };
+  return new Response(body, { status: 200, headers: h }); // ok
 }
 
 export default {

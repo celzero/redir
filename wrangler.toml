@@ -8,6 +8,8 @@ send_metrics = false
 [vars]
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "dev"
+MIN_VCODE = "30"
+STATUS = "Ok"
 
 ##################
 #------PROD------#
@@ -27,6 +29,8 @@ routes = [
 # workers/platform/environment-variables#environment-variables-via-wrangler
 [env.prod.vars]
 WENV = "prod"
+MIN_VCODE = "30"
+STATUS = "ok"
 
 ##################
 #-----SECRETS----#
