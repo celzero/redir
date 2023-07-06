@@ -1,4 +1,20 @@
 name = "redir"
+usage_model = "unbound"
+main = "src/index.js"
+compatibility_date = "2023-06-19"
+workers_dev = true
+send_metrics = false
+
+[vars]
+REDIR_CATCHALL = "https://rethinkdns.com/404#r"
+WENV = "dev"
+
+##################
+#------PROD------#
+##################
+[env.prod]
+name = "svc"
+minify = true
 routes = [
   "svc.rethinkdns.com/r/*",
   "svc.bravedns.com/r/*",
@@ -7,11 +23,16 @@ routes = [
   "svc.rethinkdns.com/s/*",
   "svc.bravedns.com/s/*",
 ]
-usage_model = "unbound"
-main = "src/index.js"
-workers_dev = true
-compatibility_date = "2023-05-26"
+# vars are not inherited
+# workers/platform/environment-variables#environment-variables-via-wrangler
+[env.prod.vars]
+WENV = "prod"
 
-[vars]
-REDIR_CATCHALL = "https://rethinkdns.com/404#r"
-
+##################
+#-----SECRETS----#
+##################
+# only for documentation purposes
+# developers.cloudflare.com/workers/platform/environment-variables/#adding-secrets-via-wrangler
+# [secrets]
+# PRE_SHARED_KEY_SVC = "128-chars-hex"
+# PUBLIC_KEY_BLINDRSA_(timestamp) = "pub-rsa-pss-hex"
