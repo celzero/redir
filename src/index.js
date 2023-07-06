@@ -6,7 +6,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 import { connect } from "cloudflare:sockets";
-import * as auth from "./auth.js";
 import Stripe from "stripe";
 
 /** @type Map<string, string> */
@@ -120,9 +119,10 @@ function grabSupportedCountries() {
 /**
  * @param {Request} r
  * @param {string} home
- * @returns
+ * @param {any} ctx
+ * @returns {Response}
  */
-async function handle(r, env) {
+async function handle(r, env, ctx) {
   const home = env.REDIR_CATCHALL;
   try {
     const url = new URL(r.url);
@@ -139,36 +139,11 @@ async function handle(r, env) {
       const stripeclient = makeStripeClient(env);
       // opt: p[2] === "checkout"
       return stripeCheckout(r, url, stripeclient, whsec);
-    } else if (p[1] === kpip) {
-      let authok = false;
-
-      if (bypassPipAuth) {
-        const h = r.headers.get("x-nile-pip-claim");
-        const msg = r.headers.get("x-nile-pip-msg");
-        console.warn("bypassing pip auth", "claim?", h, "msg?", msg);
-        authok = true;
-      } else {
-        const sk = auth.keygen(env.SECRET_KEY_MAC_A, ctxpip);
-        if (!sk) {
-          console.error("no sk");
-          return r503();
-        }
-
-        const h = r.headers.get("x-nile-pip-claim");
-        const msg = r.headers.get("x-nile-pip-msg");
-        if (!h || !msg) {
-          return r400("no token or msg");
-        }
-
-        const [tok, sig, mac] = h.split(":");
-        authok = await auth.verifyPipToken(sk, tok, sig, msg, mac);
-      }
-
-      if (authok) {
-        return pip(r.body, p);
-      } else {
-        return r400("auth failed");
-      }
+    } else if (p[1] === urlpubkey) {
+      return r200(rsapubkey(env));
+    } else if (p[1] === urlpip) {
+      // see: github.com/serverless-proxy/serverless-proxy
+      return r302(spurl+path);
     } else {
       console.warn("unknown path", path);
     }
@@ -176,53 +151,6 @@ async function handle(r, env) {
     console.error("handle err", ex);
   }
   return r302(home);
-}
-
-/**
- * pipe the data in ingress to dest in p
- * @param {ReadableStream} ingress
- * @param {string[]} p
- * @returns {Response}
- */
-function pip(ingress, p) {
-  if (p.length < 3) return r400("args missing");
-  // ingress may be null for GET or HEAD
-  if (ingress == null) return r400("no ingress");
-
-  const dst = p[2];
-  if (!dst) return r400("dst missing");
-
-  const dstport = p[3] || "443";
-  const proto = p[4] || "tcp";
-  const addr = { hostname: dst, port: dstport };
-  const opts = { secureTransport: "off", allowHalfOpen: false };
-  // sse? community.cloudflare.com/t/184219
-  const hdr = {
-    "Content-Type": "application/octet-stream",
-    "Cache-Control": "no-cache",
-    "Content-Length": "-1",
-    Connection: "keep-alive",
-  };
-  try {
-    // blog.cloudflare.com/workers-tcp-socket-api-connect-databases
-    // github.com/zizifn/edgetunnel/blob/main/src/worker-vless.js
-    const egress = connect(addr, opts);
-    ingress.pipeTo(egress.writable);
-    // .catch(err => console.error("egress err", err))
-    // .finally(() => egress.close());
-    const canread = egress.readable instanceof ReadableStream;
-    console.debug("pip to", addr, proto, "ok?", canread);
-    const t = new TextDecoder();
-    const c = "";
-    for await (const chunk of egress.readable) {
-      c += t.decode(chunk);
-      console.debug("pip chunk", c, chunk.length);
-    }
-    return new Response(egress.readable, { headers: hdr });
-  } catch (ex) {
-    console.error("pip err", ex);
-    return r500(ex.message);
-  }
 }
 
 function redirect(req, url, p, home) {
@@ -408,6 +336,6 @@ function r302(where) {
 
 export default {
   async fetch(request, env, ctx) {
-    return handle(request, env);
+    return handle(request, env, ctx);
   },
 };
