@@ -140,9 +140,13 @@ async function handle(r, env, ctx) {
       // opt: p[2] === "checkout"
       return stripeCheckout(r, url, stripeclient, whsec);
     } else if (p[1] === urlsproxy) {
+      const pkjwk = rsapubkey(env);
+      // unparse pkjwk to avoid stringifying it twice
+      // undefined keys are left out, null keys are included
+      const pk = (pkjwk) ? JSON.parse(pkjwk) : undefined;
       const json = {
         "minvcode": minvcode(env),
-        "pubkey": rsapubkey(env), // may be undefined
+        "pubkey": pk,
         "status": svcstatus(env),
       }
       return r200j(json);
