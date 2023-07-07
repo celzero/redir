@@ -17,12 +17,14 @@ STATUS = "Ok"
 [env.prod]
 name = "svc"
 minify = true
-# todo: add routes
-#  "svc.rethinkdns.com/r/*",
-#  "svc.bravedns.com/r/*",
-#  "svc.rethinkdns.com/s/*",
-#  "svc.bravedns.com/s/*",
 routes = [
+  # redirects
+  "svc.rethinkdns.com/r/*",
+  "svc.bravedns.com/r/*",
+  # stripe webhooks
+  "svc.rethinkdns.com/s/*",
+  "svc.bravedns.com/s/*",
+  # proxy
   "svc.rethinkdns.com/p/*",
   "svc.bravedns.com/p/*",
 ]
