@@ -81,7 +81,7 @@ async function handle(r, env, ctx) {
         city: clientCity,
         colo: clientColo,
         region: clientRegion,
-        status: scvs,
+        status: svcs,
       });
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
