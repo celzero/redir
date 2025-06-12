@@ -22,7 +22,6 @@ const urlmoney1 = "mb"; // unused? sign the blind message
 const urlmoney2 = "mt"; // unused? generate token
 const urlsproxy = "p"; // sproxy metadata
 const urlgplay = "g"; // redirect to play store
-const urlfeat = "f"; // paid features
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
 
@@ -56,33 +55,6 @@ async function handle(r, env, ctx) {
     if (p[1] === urlredirect) {
       // r; redirects
       return redirect(r, url, p, home);
-    } else if (p[1] === urlfeat) {
-      // f; paid features
-      const clientVCode = p[2];
-      if (!clientVCode || clientVCode.length === 0) {
-        return r400("missing vcode");
-      }
-      const minVCodeNeeded = minvcode(env, "paid-features");
-      const cansell = greaterThanCmp(clientVCode, minVCodeNeeded);
-      const clientip = clientIp(r);
-      const clientCountry = country(r);
-      const clientAsOrg = asorg(r);
-      const clientCity = city(r);
-      const clientColo = colo(r);
-      const clientRegion = region(r);
-      const svcs = svcstatus(env);
-      return r200j({
-        vcode: clientVCode,
-        minvcode: minVCodeNeeded,
-        cansell: cansell,
-        ip: clientip,
-        country: clientCountry,
-        asorg: clientAsOrg,
-        city: clientCity,
-        colo: clientColo,
-        region: clientRegion,
-        status: svcs,
-      });
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
@@ -114,15 +86,37 @@ async function handle(r, env, ctx) {
       return generateToken(r, psk, db);
     } else if (p[1] === urlsproxy) {
       // p; proxy metadata
+      const clientVCode = p[2];
+      if (!clientVCode || clientVCode.length === 0) {
+        return r400("missing vcode");
+      }
       const pkjwk = rsapubkey(env);
       // unparse pkjwk to avoid stringifying it twice
       // undefined keys are left out, null keys are included
       const pk = pkjwk ? JSON.parse(pkjwk) : undefined;
-      const json = {
-        minvcode: minvcode(env),
+
+      const minVCodeNeeded = minvcode(env, "paid-features");
+      const cansell = greaterThanEqCmp(clientVCode, minVCodeNeeded);
+      const clientip = clientIp(r);
+      const clientCountry = country(r);
+      const clientAsOrg = asorg(r);
+      const clientCity = city(r);
+      const clientColo = colo(r);
+      const clientRegion = region(r);
+      const svcs = svcstatus(env);
+      return r200j({
+        vcode: clientVCode,
+        minvcode: minVCodeNeeded,
+        cansell: cansell,
+        ip: clientip,
+        country: clientCountry,
+        asorg: clientAsOrg,
+        city: clientCity,
+        colo: clientColo,
+        region: clientRegion,
+        status: svcs,
         pubkey: pk,
-        status: svcstatus(env),
-      };
+      });
       return r200j(json);
     } else {
       console.warn("unknown path", path);
@@ -278,13 +272,13 @@ function region(req) {
   return "unknown";
 }
 
-function greaterThanCmp(str1, str2) {
+function greaterThanEqCmp(str1, str2) {
   const n1 = parseInt(str1, 10);
   const n2 = parseInt(str2, 10);
   if (isNaN(n1) || isNaN(n2)) {
     return false; // invalid version code
   }
-  return n1 > n2;
+  return n1 >= n2;
 }
 
 function r401(w) {

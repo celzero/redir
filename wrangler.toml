@@ -45,9 +45,6 @@ routes = [
   # google rtdn webhook
   "svc.rethinkdns.com/g/*",
   "svc.bravedns.com/g/*",
-  # paid features
-  "svc.rethinkdns.com/f/*",
-  "svc.bravedns.com/f/*",
 ]
 # vars are not inherited
 # workers/platform/environment-variables#environment-variables-via-wrangler
