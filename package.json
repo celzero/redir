@@ -8,6 +8,9 @@
     "start": "wrangler dev",
     "deploy": "wrangler publish"
   },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
   "dependencies": {
     "stripe": "^11.10.0",
     "webpack": "^5.91.0",
