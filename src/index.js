@@ -5,116 +5,33 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
-import Stripe from "stripe";
 
-/** @type Map<string, string> */
-const tx = new Map();
-const ksponsor = "sponsor-";
-const ktranslate = "translate";
+import { b64AsBytes, emptyBuf } from "./buf.js";
+import * as d from "./d.js";
+import {
+  grabLinks,
+  grabSupportedCountries,
+  krpn,
+  ksponsor,
+} from "./paylinks.js";
+import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
+
 const urlredirect = "r"; // redirect to dest url
-const urlstripe = "s"; // stripe checkout webhook
+const urlstripe = "s"; // unused? stripe checkout webhook
+const urlmoney1 = "mb"; // unused? sign the blind message
+const urlmoney2 = "mt"; // unused? generate token
 const urlsproxy = "p"; // sproxy metadata
+const urlgplay = "g"; // redirect to play store
+const urlfeat = "f"; // paid features
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
 
-const spurl = "https://ken.rethinkdns.com/";
-
-// local currency isn't auto-selected for 'customers choose' payments even if
-// prices (of a product) is multi-currency
-// stripe.com/docs/products-prices/pricing-models#migrate-from-single-currency-prices-to-multi-currency
-// stripe.com/docs/payments/checkout/present-local-currencies#test-currency-presentment
-// country codes: www.nationsonline.org/oneworld/country_code_list.htm
-// north america
-tx.set(ksponsor + "us", "https://donate.stripe.com/aEU00s632gus8hyfYZ"); // USD, US
-tx.set(ksponsor + "ca", "https://donate.stripe.com/4gwdRi4YY3HG69q5kL"); // CAD, CA
-tx.set(ksponsor + "tt", "https://donate.stripe.com/eVa4gIbnmcecbtK5kR"); // TTD, TT
-tx.set(ksponsor + "jm", "https://donate.stripe.com/5kAbJa3UUemkeFWdRo"); // JMD, JM
-// ref: european-union.europa.eu/institutions-law-budget/euro/countries-using-euro_en
-// euro is the default currency for these 19 eu countries
-tx.set(ksponsor + "de", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, DE
-tx.set(ksponsor + "fr", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, FR
-tx.set(ksponsor + "es", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, ES
-tx.set(ksponsor + "it", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, IT
-tx.set(ksponsor + "nl", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, NL
-tx.set(ksponsor + "pt", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, PT
-tx.set(ksponsor + "be", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, BE
-tx.set(ksponsor + "at", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, AT
-tx.set(ksponsor + "ch", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, CH
-tx.set(ksponsor + "fi", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, FI
-tx.set(ksponsor + "gr", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, GR
-tx.set(ksponsor + "ie", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, IE
-tx.set(ksponsor + "lv", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, LV
-tx.set(ksponsor + "lt", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, LT
-tx.set(ksponsor + "lu", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, LU
-tx.set(ksponsor + "sk", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, SK
-tx.set(ksponsor + "si", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, SI
-tx.set(ksponsor + "ee", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, EE
-tx.set(ksponsor + "cy", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, CY
-tx.set(ksponsor + "mt", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, MT
-// euro yet to be adopted by these eu countries
-tx.set(ksponsor + "se", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, SE*
-tx.set(ksponsor + "bg", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, BG*
-tx.set(ksponsor + "ro", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, RO*
-tx.set(ksponsor + "hr", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, HR*
-tx.set(ksponsor + "pl", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, PL*
-tx.set(ksponsor + "cz", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, CZ*
-tx.set(ksponsor + "hu", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, HU*
-// part of the european union, but does not use euro
-tx.set(ksponsor + "dk", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, DK*
-// european country but not part of the european union
-tx.set(ksponsor + "is", "https://donate.stripe.com/5kAaF61MM9207dubIQ"); // EUR, IS*
-tx.set(ksponsor + "no", "https://donate.stripe.com/8wM7sUajiemkfK05kV"); // NOK, NO
-tx.set(ksponsor + "gb", "https://donate.stripe.com/4gw8wY632a641Ta00a"); // GBP, GB
-tx.set(ksponsor + "ru", "https://donate.stripe.com/aEU3cE7764LKfK07sG"); // RUB, RU
-tx.set(ksponsor + "tr", "https://donate.stripe.com/28odRidvu920apGeVm"); // TRY, TR
-// asean, asia pacific, and oceania
-tx.set(ksponsor + "tw", "https://donate.stripe.com/aEU28A2QQ0vu9lC8wI"); // TWD, TW
-tx.set(ksponsor + "cn", "https://donate.stripe.com/7sI28A0II9208hy4gp"); // CNY, CN
-tx.set(ksponsor + "sg", "https://donate.stripe.com/4gwcNe9fe1zycxOdQX"); // SGD, SG
-tx.set(ksponsor + "my", "https://donate.stripe.com/28odRi7766TSfK028n"); // MYR, MY
-tx.set(ksponsor + "id", "https://donate.stripe.com/7sI4gIcrq4LK7dueVe"); // IDR, ID
-tx.set(ksponsor + "ph", "https://donate.stripe.com/00g00s4YY920fK06oU"); // PHP, PH
-tx.set(ksponsor + "jp", "https://donate.stripe.com/dR6eVmcrq5PO55maEX"); // JPY, JP
-tx.set(ksponsor + "kr", "https://donate.stripe.com/6oEeVm632dig9lC14s"); // KRW, KR
-tx.set(ksponsor + "mn", "https://donate.stripe.com/4gw8wYezygus2XefZt"); // MNT, MN
-tx.set(ksponsor + "au", "https://donate.stripe.com/aEU5kM9fe7XWapGcMR"); // AUD, AU
-tx.set(ksponsor + "nz", "https://donate.stripe.com/dR6cNe776920cxOdRb"); // NZD, NZ
-// mena and south asia
-tx.set(ksponsor + "ae", "https://donate.stripe.com/bIYfZq6326TSfK04gk"); // AED, AE
-tx.set(ksponsor + "sa", "https://donate.stripe.com/28ofZq6323HG69q14h"); // SAR, SA
-tx.set(ksponsor + "qa", "https://donate.stripe.com/7sIeVmdvu9200P6eVb"); // QAR, QA
-tx.set(ksponsor + "il", "https://donate.stripe.com/9AQeVmbnmgus0P64gF"); // ILS, IL
-tx.set(ksponsor + "eg", "https://donate.stripe.com/14k14waji5PO69qfZy"); // EGP, EG
-tx.set(ksponsor + "in", "https://donate.stripe.com/bIYaF6gHGemk55mdQS"); // INR, IN
-tx.set(ksponsor + "pk", "https://donate.stripe.com/fZe28A9fe2DCfK04gD"); // PKR, PK
-tx.set(ksponsor + "bd", "https://donate.stripe.com/5kA9B2crq1zyapG6oR"); // BDT, BD
-tx.set(ksponsor + "np", "https://donate.stripe.com/3cs7sU8baba8cxOeVo"); // NPR, NP
-// latin america
-tx.set(ksponsor + "br", "https://donate.stripe.com/cN200sezygus0P6eV0"); // BRL, BR
-tx.set(ksponsor + "ar", "https://donate.stripe.com/7sIaF66320vu69qcNc"); // ARS, AR
-tx.set(ksponsor + "mx", "https://donate.stripe.com/28o3cE4YYgus0P628q"); // MXN, MX
-// africa
-tx.set(ksponsor + "ke", "https://donate.stripe.com/8wM9B23UUdig0P6eVa"); // KES, KE
-tx.set(ksponsor + "ng", "https://donate.stripe.com/00g3cE3UU6TSbtK6oK"); // NGN, NG
-tx.set(ksponsor + "za", "https://donate.stripe.com/4gwdRifDCgus8hyeVt"); // ZAR, ZA
-
-tx.set(ktranslate, "https://hosted.weblate.org/engage/rethink-dns-firewall/");
-
-/** @type Set<string> */
-const supportedCountries = grabSupportedCountries();
-
-function grabSupportedCountries() {
-  const ans = new Set();
-  for (const k of tx.keys()) {
-    // k is like "sponsor-fr" or "sponsor-us"
-    const i = k.indexOf(ksponsor);
-    if (i < 0) continue;
-    // c is like "fr" or "us"
-    const c = k.slice(i + ksponsor.length);
-    if (c) ans.add(c);
-  }
-  return ans;
-}
+/** @type {Set<string>} */
+const supportedCountriesSponsor = grabSupportedCountries(ksponsor);
+/** @type {Set<string>} */
+const supportedCountriesRpn = grabSupportedCountries(krpn);
+/** @type {Map<string, string>} */
+const allLinks = grabLinks();
 
 /**
  * @param {Request} r
@@ -123,38 +40,96 @@ function grabSupportedCountries() {
  * @returns {Response}
  */
 async function handle(r, env, ctx) {
+  env = d.wrap(env);
   const home = env.REDIR_CATCHALL;
   try {
     const url = new URL(r.url);
     const path = url.pathname;
+
+    if (path == null || path.length === 0) return r302(home);
+
     // x.tld/a/b/c/ => ["", "a", "b", "c", ""]
     const p = path.split("/");
 
     if (p.length < 2) return r302(home);
 
     if (p[1] === urlredirect) {
+      // r; redirects
       return redirect(r, url, p, home);
+    } else if (p[1] === urlfeat) {
+      // f; paid features
+      const clientVCode = p[2];
+      if (!clientVCode || clientVCode.length === 0) {
+        return r400("missing vcode");
+      }
+      const minVCodeNeeded = minvcode(env, "paid-features");
+      const cansell = greaterThanCmp(clientVCode, minVCodeNeeded);
+      const clientip = clientIp(r);
+      const clientCountry = country(r);
+      const clientAsOrg = asorg(r);
+      const clientCity = city(r);
+      const clientColo = colo(r);
+      const clientRegion = region(r);
+      const svcs = svcstatus(env);
+      return r200j({
+        vcode: clientVCode,
+        minvcode: minVCodeNeeded,
+        cansell: cansell,
+        ip: clientip,
+        country: clientCountry,
+        asorg: clientAsOrg,
+        city: clientCity,
+        colo: clientColo,
+        region: clientRegion,
+        status: scvs,
+      });
     } else if (p[1] === urlstripe) {
+      // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
-      const stripeclient = makeStripeClient(env);
+      const apikey = env.STRIPE_API_KEY;
+      const db = env.DB;
       // opt: p[2] === "checkout"
-      return stripeCheckout(r, url, stripeclient, whsec);
+      return stripeCheckout(r, db, apikey, whsec);
+    } else if (p[1] === urlgplay) {
+      // g; play store subs rtdn
+      // developer.android.com/google/play/billing/rtdn-reference#encoding
+      // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions
+      const outerjson = await r.json();
+      const data = outerjson.data;
+      const innerjson = data && atob(data);
+      console.log(url, outerjson, innerjson);
+      return r200t("OK");
+    } else if (p[1] === urlmoney1) {
+      // mb; rsasig
+      const psk = env.PRE_SHARED_KEY_SVC;
+      const db = env.DB;
+      const pubkeys = rsapubmodulus(env);
+      // blindMsg
+      return finalizeOrder(r, psk, pubkeys, db);
+    } else if (p[1] === urlmoney2) {
+      // mt; token
+      const psk = env.PRE_SHARED_KEY_SVC;
+      const db = env.DB;
+      // msg:rsaSig:sha256(rsaSig):hashedtoken(rand)
+      return generateToken(r, psk, db);
     } else if (p[1] === urlsproxy) {
+      // p; proxy metadata
       const pkjwk = rsapubkey(env);
       // unparse pkjwk to avoid stringifying it twice
       // undefined keys are left out, null keys are included
-      const pk = (pkjwk) ? JSON.parse(pkjwk) : undefined;
+      const pk = pkjwk ? JSON.parse(pkjwk) : undefined;
       const json = {
-        "minvcode": minvcode(env),
-        "pubkey": pk,
-        "status": svcstatus(env),
-      }
+        minvcode: minvcode(env),
+        pubkey: pk,
+        status: svcstatus(env),
+      };
       return r200j(json);
     } else {
       console.warn("unknown path", path);
     }
   } catch (ex) {
-    console.error("handle err", ex);
+    console.error("handle: err", r.url, ex);
+    return r500(ex.message);
   }
   return r302(home);
 }
@@ -164,9 +139,9 @@ function redirect(req, url, p, home) {
     const w = p[2];
     const c = country(req);
     const k = key(w, c);
-    if (tx.has(k)) {
+    if (allLinks.has(k)) {
       // redirect to where tx wants us to
-      const redirurl = new URL(tx.get(k));
+      const redirurl = new URL(allLinks.get(k));
       for (const p of defaultparams(k)) {
         redirurl.searchParams.set(...p);
       }
@@ -184,114 +159,16 @@ function redirect(req, url, p, home) {
   return r302(home);
 }
 
-/**
- * @param {Request} req
- * @param {URL} url
- * @param {Stripe} sc
- * @param {string} whsec
- */
-async function stripeCheckout(req, url, sc, whsec) {
-  // ref: github.com/stripe-samples/stripe-node-cloudflare-worker-template/blob/1cea05be7/src/index.js
-  // ref: blog.cloudflare.com/announcing-stripe-support-in-workers/
-  const body = await req.text();
-  const sig = req.headers.get("stripe-signature");
-
-  try {
-    // throws error if the signature is invalid
-    const event = await sc.webhooks.constructEventAsync(
-      body,
-      sig,
-      whsec,
-      undefined,
-      webCrypto
-    );
-
-    // stripe.com/docs/api/events/types
-    switch (event.type) {
-      case "checkout.session.completed": {
-        // stripe.com/docs/api/checkout/sessions/object
-        const session = event.data.object;
-        createOrder(session);
-
-        // Check if the order is paid (for example, from a card payment)
-        //
-        // A delayed notification payment will have an `unpaid` status, as
-        // you're still waiting for funds to be transferred from the customer's
-        // account.
-        if (session.payment_status === "paid") {
-          fulfillOrder(session);
-        }
-
-        break;
-      }
-      case "checkout.session.async_payment_succeeded": {
-        const session = event.data.object;
-        fulfillOrder(session);
-        break;
-      }
-      case "checkout.session.async_payment_failed": {
-        const session = event.data.object;
-        abandonOrder(session);
-        break;
-      }
-      case "checkout.session.expired": {
-        const session = event.data.object;
-        abandonOrder(session);
-        break;
-      }
-      default:
-        console.warn(`stripe: unhandled event ${event.type}`);
-    }
-  } catch (ignore) {
-    console.error("stripe: err", ignore);
-  }
-  return new Response(JSON.stringify({ received: true }), {
-    headers: { "Content-type": "application/json" },
-  });
-}
-
-// Save an order in your database, marked as 'awaiting payment'
-function createOrder(session) {
-  // todo
-}
-
-// stripe.com/docs/payments/checkout/fulfill-orders
-function fulfillOrder(session) {
-  // todo
-}
-
-function abandonOrder(session) {
-  // todo
-}
-
 function svcstatus(env) {
   return env.SVC_STATUS || "ok";
 }
 
-function minvcode(env) {
-  return env.MIN_VCODE || "30";
-}
-/**
- * @param {any} env
- * @returns {string}
- */
-function rsapubkey(env) {
-  const pubprefix = blindRsaPublicKeyPrefix;
-  // default key name
-  let kpub = pubprefix + "A";
-  let max = Number.MIN_SAFE_INTEGER;
-  for (const k of Object.keys(env)) {
-    if (k.startsWith(pubprefix)) {
-      const timestamp = k.slice(pubprefix.length);
-      // convert timestamp to number
-      const t = parseInt(timestamp);
-      if (t > max) {
-        kpub = pubprefix + timestamp;
-        max = t;
-      }
-    }
+function minvcode(env, why = "unknown") {
+  if (why === "paid-features") {
+    // paid features have a minimum vcode of 46
+    return env.MIN_VCODE_PAID_FEATURES || "46";
   }
-  return env[kpub];
+  return env.MIN_VCODE || "30";
 }
 
 function key(w, c) {
@@ -299,22 +176,36 @@ function key(w, c) {
     // w is like "sponsor-fr" or "sponsor-us"
     const cc = w.slice(ksponsor.length);
     // use 'cc' if valid, else use 'c'
-    c = supportedCountries.has(cc) ? cc : c;
+    c = supportedCountriesSponsor.has(cc) ? cc : c;
     // turn w into plain 'sponsor' with a new 'c'
     w = "sponsor";
   }
-
   if (w === "sponsor") {
     // use 'c' if valid, else use "us"
-    c = supportedCountries.has(c) ? c : "us";
+    c = supportedCountriesSponsor.has(c) ? c : "us";
     return ksponsor + c;
+  }
+
+  if (w.startsWith(krpn)) {
+    // w is like "rpn-fr" or "rpn-us"
+    const cc = w.slice(krpn.length);
+    // use 'cc' if valid, else use 'c'
+    c = supportedCountriesRpn.has(cc) ? cc : c;
+    // turn w into plain 'rpn' with a new 'c'
+    w = "rpn";
+  }
+  if (w === "rpn") {
+    // use 'c' if valid, else use "us"
+    c = supportedCountriesRpn.has(c) ? c : "us";
+    return krpn + c;
   }
 
   return w;
 }
 
 /**
- *
+ * prefilled_email, locale, client_reference_id
+ * stripe.com/docs/payment-links/url-parameters
  * @param {string} k
  * @returns {Array<[string, string]>}
  */
@@ -324,6 +215,13 @@ function defaultparams(k) {
       // email: stripe.com/docs/payments/payment-links#url-parameters
       ["prefilled_email", "anonymous.donor@rethinkdns.com"],
       // locale: stripe.com/docs/api/checkout/sessions/create#create_checkout_session-locale
+      ["locale", "auto"],
+    ];
+  }
+  // TODO: cid as prefilled-email
+  if (k.startsWith(krpn)) {
+    return [
+      ["prefilled_email", "anonymous.payee@rethinkdns.com"],
       ["locale", "auto"],
     ];
   }
@@ -338,17 +236,59 @@ function country(req) {
   return "us";
 }
 
-// use web crypto
-export const webCrypto = Stripe.createSubtleCryptoProvider();
-
-export function makeStripeClient(env) {
-  if (!env.STRIPE_API_KEY) {
-    throw new Error("STRIPE_API_KEY missing");
+function clientIp(req) {
+  const cfclient6 = req.headers.get("CF-Connecting-IPv6");
+  const cfclient4 = req.headers.get("CF-Connecting-IP");
+  // prefer IPv6 if available as IPv4 may be Cloudflare's pseudo-IPv4
+  // developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ipv6
+  if (cfclient6) {
+    return cfclient6;
   }
-  // github.com/stripe-samples/stripe-node-cloudflare-worker-template/commit/1cea05be7fee
-  return Stripe(
-    env.STRIPE_API_KEY /*{ httpClient: Stripe.createFetchHttpClient() }*/
-  );
+  if (cfclient4) {
+    return cfclient4; // fallback to IPv4
+  }
+  return "unknown";
+}
+
+function asorg(req) {
+  if (req.cf && req.cf.asOrganization) {
+    return req.cf.asOrganization;
+  }
+  return "unknown";
+}
+
+function city(req) {
+  if (req.cf && req.cf.city) {
+    return req.cf.city;
+  }
+  return "unknown";
+}
+
+function colo(req) {
+  if (req.cf && req.cf.colo) {
+    return req.cf.colo;
+  }
+  return "unknown";
+}
+
+function region(req) {
+  if (req.cf && req.cf.region) {
+    return req.cf.region;
+  }
+  return "unknown";
+}
+
+function greaterThanCmp(str1, str2) {
+  const n1 = parseInt(str1, 10);
+  const n2 = parseInt(str2, 10);
+  if (isNaN(n1) || isNaN(n2)) {
+    return false; // invalid version code
+  }
+  return n1 > n2;
+}
+
+function r401(w) {
+  return new Response(w, { status: 401 }); // unauthorized
 }
 
 function r503(w) {
@@ -370,9 +310,90 @@ function r302(where) {
   });
 }
 
+function r200t(txt) {
+  const h = { "content-type": "application/text" };
+  return new Response(txt, { status: 200, headers: h }); // ok
+}
+
 function r200j(j) {
   const h = { "content-type": "application/json" };
   return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
+}
+
+/**
+ * @param {any} env
+ * @returns {Uint8Array[]}
+ * @throws when rsa-pss pub/priv keys are missing
+ */
+function rsapubmodulus(env) {
+  // see: redir's rsapubkey fn
+  const pubprefix = blindRsaPublicKeyPrefix;
+  // default key name
+  let kpub0 = pubprefix + "A";
+  let kpub1 = pubprefix + "B";
+  const descend = Object.keys(env)
+    .filter((k) => k.startsWith(pubprefix))
+    .sort((a, b) => {
+      // parse out the unix timestamp from the key name
+      const l = parseInt(a.slice(pubprefix.length));
+      const r = parseInt(b.slice(pubprefix.length));
+      return r - l;
+    });
+  // two recent keys
+  if (descend.length > 0) {
+    kpub0 = pubprefix + descend[0];
+  }
+  if (descend.length > 1) {
+    kpub1 = pubprefix + descend[1];
+  }
+  /*
+    {
+      alg: "PS384", // RSASSA-PSS using SHA-384 hash algorithm
+      e: "AQAB", // exponent​
+      ext: true, // extractable
+      key_ops: Array [ "verify" ], // ops
+  ​    kty: "RSA", // key type
+      n: "zON5Gyeeg_...dFJ4IQ" // modulus in base64url
+    }
+    */
+  const pubjwkstr0 = env[kpub0];
+  const pubjwkstr1 = env[kpub1];
+  if (!pubjwkstr0 || !pubjwkstr1) {
+    throw new Error("missing rsa-pss pub keys");
+  }
+
+  const pubjwk0 = JSON.parse(pubjwkstr0);
+  const pubjwk1 = JSON.parse(pubjwkstr1);
+  const pubmod0 = b64AsBytes(pubjwk0.n);
+  const pubmod1 = b64AsBytes(pubjwk1.n);
+
+  if (emptyBuf(pubmod0) || emptyBuf(pubmod1)) {
+    throw new Error("empty rsa-pss pub keys");
+  }
+  return [pubmod0, pubmod1];
+}
+
+/**
+ * @param {any} env
+ * @returns {string}
+ */
+function rsapubkey(env) {
+  const pubprefix = blindRsaPublicKeyPrefix;
+  // default key name
+  let kpub = pubprefix + "A";
+  let max = Number.MIN_SAFE_INTEGER;
+  for (const k of Object.keys(env)) {
+    if (k.startsWith(pubprefix)) {
+      const timestamp = k.slice(pubprefix.length);
+      // convert timestamp to number
+      const t = parseInt(timestamp);
+      if (t > max) {
+        kpub = pubprefix + timestamp;
+        max = t;
+      }
+    }
+  }
+  return env[kpub];
 }
 
 export default {

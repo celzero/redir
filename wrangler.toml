@@ -1,15 +1,21 @@
 name = "redir"
-usage_model = "unbound"
-main = "src/index.js"
+main = "dist/worker.js"
 compatibility_date = "2023-06-19"
 workers_dev = true
 send_metrics = false
+upload_source_maps = true
 
 [vars]
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "dev"
 MIN_VCODE = "30"
-STATUS = "Ok"
+MIN_VCODE_PAID_FEATURES = "46"
+STATUS = "ok"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rpn"
+database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
 ##################
 #------PROD------#
@@ -17,6 +23,7 @@ STATUS = "Ok"
 [env.prod]
 name = "svc"
 minify = true
+main = "./dist/worker.js"
 routes = [
   # redirects
   "svc.rethinkdns.com/r/*",
@@ -24,9 +31,18 @@ routes = [
   # stripe webhooks
   "svc.rethinkdns.com/s/*",
   "svc.bravedns.com/s/*",
+  # order
+  "svc.rethinkdns.com/mb/*",
+  "svc.bravedns.com/mt/*",
   # proxy
   "svc.rethinkdns.com/p/*",
   "svc.bravedns.com/p/*",
+  # google rtdn webhook
+  "svc.rethinkdns.com/g/*",
+  "svc.bravedns.com/g/*",
+  # paid features
+  "svc.rethinkdns.com/f/*",
+  "svc.bravedns.com/f/*",
 ]
 # vars are not inherited
 # workers/platform/environment-variables#environment-variables-via-wrangler
@@ -34,7 +50,13 @@ routes = [
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "prod"
 MIN_VCODE = "30"
+MIN_VCODE_PAID_FEATURES = "46"
 STATUS = "ok"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rpn"
+database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
 ##################
 #-----SECRETS----#
@@ -42,5 +64,7 @@ STATUS = "ok"
 # only for documentation purposes
 # developers.cloudflare.com/workers/platform/environment-variables/#adding-secrets-via-wrangler
 # [secrets]
+# STRIPE_API_KEY = "sk_live_..."
+# STRIPE_WEBHOOK_SECRET = "whsec_..."
 # PRE_SHARED_KEY_SVC = "128-chars-hex"
 # PUBLIC_KEY_BLINDRSA_(timestamp) = "pub-rsa-pss-hex"
