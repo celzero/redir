@@ -12,6 +12,10 @@ MIN_VCODE = "30"
 MIN_VCODE_PAID_FEATURES = "46"
 STATUS = "ok"
 
+[build]
+command = "npx webpack"
+cwd = "."
+
 [[d1_databases]]
 binding = "DB"
 database_name = "rpn"
