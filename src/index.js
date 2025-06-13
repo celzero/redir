@@ -305,7 +305,7 @@ async function clientaddrs(env, req) {
   }
   const lat = req.cf.latitude;
   const long = req.cf.longitude;
-  if (lat != null || long != null) {
+  if (lat == null || long == null) {
     return ["unknown: no lat/long"];
   }
   // do a reverse geocoding request to get the address
