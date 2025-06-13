@@ -34,9 +34,9 @@ const allLinks = grabLinks();
 
 /**
  * @param {Request} r
- * @param {string} home
+ * @param {any} env
  * @param {any} ctx
- * @returns {Response}
+ * @returns {Promise<Response>}
  */
 async function handle(r, env, ctx) {
   env = d.wrap(env);
@@ -103,6 +103,13 @@ async function handle(r, env, ctx) {
       const clientCity = city(r);
       const clientColo = colo(r);
       const clientRegion = region(r);
+      const clientPostalCode = postalcode(r);
+      let clientAddrs = ["unknown"];
+      try {
+        clientAddrs = await clientaddrs(env, r);
+      } catch (ex) {
+        clientAddrs = [ex.message];
+      }
       const svcs = svcstatus(env);
       return r200j({
         vcode: clientVCode,
@@ -114,6 +121,8 @@ async function handle(r, env, ctx) {
         city: clientCity,
         colo: clientColo,
         region: clientRegion,
+        postalcode: clientPostalCode,
+        addrs: clientAddrs,
         status: svcs,
         pubkey: pk,
       });
@@ -270,6 +279,58 @@ function region(req) {
     return req.cf.region;
   }
   return "unknown";
+}
+
+function postalcode(req) {
+  if (req.cf && req.cf.postalCode) {
+    return req.cf.postalCode;
+  }
+  return "unknown";
+}
+
+/**
+ * Get the client address based on latitude and longitude
+ * @param {any} env
+ * @param {Request} req
+ * @returns {Promise<string[]>} - Array of addresses or error message.
+ */
+async function clientaddrs(env, req) {
+  // get latitude and longitude from request
+  if (!req.cf) {
+    return ["unknown: not cf"];
+  }
+  const apikey = env.GMAPS_API_KEY;
+  if (!apikey || apikey.length === 0) {
+    return ["unknown: no gmaps key"];
+  }
+  const lat = req.cf.latitude;
+  const long = req.cf.longitude;
+  if (lat != null || long != null) {
+    return ["unknown: no lat/long"];
+  }
+  // do a reverse geocoding request to get the address
+  // developers.google.com/maps/documentation/geocoding/requests-reverse-geocoding
+  const streetaddrs = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=${apikey}&result_type=street_address&language=en`;
+  return fetch(streetaddrs)
+    .then((response) => response.json())
+    .then((json) => {
+      if (json.status === "OK" && json.results && json.results.length > 0) {
+        const out = new Array();
+        for (const res of json.results) {
+          if (res.formatted_address) {
+            out.push(res.formatted_address);
+          }
+        }
+        if (out.length > 0) {
+          return out;
+        }
+        return ["unknown: no addresses"];
+      }
+      return ["unknown: " + json.status];
+    })
+    .catch((ex) => {
+      return ["unknown: " + ex.message];
+    });
 }
 
 function greaterThanEqCmp(str1, str2) {

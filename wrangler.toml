@@ -65,3 +65,5 @@ STATUS = "ok"
 # STRIPE_WEBHOOK_SECRET = "whsec_..."
 # PRE_SHARED_KEY_SVC = "128-chars-hex"
 # PUBLIC_KEY_BLINDRSA_(timestamp) = "pub-rsa-pss-hex"
+# developers.google.com/maps/documentation/geocoding/get-api-key#restrict_key
+# GMAPS_API_KEY = "base64..."
