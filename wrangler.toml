@@ -18,9 +18,9 @@ cwd = "."
 
 # developers.cloudflare.com/d1/configuration/environments
 [[d1_databases]]
-binding = "DB"
-database_name = "rpn"
-database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
+binding = "DBTEST"
+database_name = "rpntest"
+database_id = "e6db9d1f-cf58-427e-aa15-bd3fbf54d69e"
 
 ##################
 #------PROD------#
@@ -54,6 +54,11 @@ WENV = "prod"
 MIN_VCODE = "30"
 MIN_VCODE_PAID_FEATURES = "46"
 STATUS = "ok"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rpn"
+database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
 ##################
 #-----SECRETS----#
