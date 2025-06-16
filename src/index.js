@@ -104,11 +104,14 @@ async function handle(r, env, ctx) {
       const clientColo = colo(r);
       const clientRegion = region(r);
       const clientPostalCode = postalcode(r);
-      let clientAddrs = ["unknown"];
-      try {
-        clientAddrs = await clientaddrs(env, r);
-      } catch (ex) {
-        clientAddrs = [ex.message];
+      const withaddrs = p[3] === "wa" || p[3] === "withaddrs";
+      let clientAddrs = [];
+      if (cansell && withaddrs) {
+        try {
+          clientAddrs = await clientaddrs(env.GMAPS_API_KEY, r);
+        } catch (ex) {
+          clientAddrs = ["unknown:" + ex.message];
+        }
       }
       const svcs = svcstatus(env);
       return r200j({
@@ -290,16 +293,15 @@ function postalcode(req) {
 
 /**
  * Get the client address based on latitude and longitude
- * @param {any} env
+ * @param {string} apikey
  * @param {Request} req
  * @returns {Promise<string[]>} - Array of addresses or error message.
  */
-async function clientaddrs(env, req) {
+async function clientaddrs(apikey, req) {
   // get latitude and longitude from request
   if (!req.cf) {
     return ["unknown: not cf"];
   }
-  const apikey = env.GMAPS_API_KEY;
   if (!apikey || apikey.length === 0) {
     return ["unknown: no gmaps key"];
   }
@@ -329,7 +331,7 @@ async function clientaddrs(env, req) {
       return ["unknown: " + json.status];
     })
     .catch((ex) => {
-      return ["unknown: " + ex.message];
+      return ex.message;
     });
 }
 
