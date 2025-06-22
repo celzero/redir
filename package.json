@@ -12,6 +12,7 @@
     "wrangler": "^4.0.0"
   },
   "dependencies": {
+    "cloudflare-workers-and-google-oauth": "^2.0.0",
     "stripe": "^11.10.0",
     "webpack": "^5.91.0",
     "webpack-cli": "^5.1.4"

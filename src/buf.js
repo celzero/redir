@@ -8,6 +8,25 @@
 
 export const ZEROBUF = new Uint8Array(0);
 
+const tencoder = new TextEncoder();
+const tdecoder = new TextDecoder();
+
+export function str2byte(s) {
+  return tencoder.encode(s);
+}
+
+export function byte2str(b) {
+  return tdecoder.decode(b);
+}
+
+export function str2byt2hex(s) {
+  return byt2hex(str2byte(s));
+}
+
+export function hex2byt2str(h) {
+  return byte2str(hex2buf(h));
+}
+
 // stackoverflow.com/a/70653061
 export function b64AsBytes(b64url) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");
@@ -77,6 +96,36 @@ export function buf2hex(b) {
  * @returns {Uint8Array}
  */
 export function hex2buf(h) {
-  if (!h) return ZEROBUF;
+  if (emptyString(h)) return ZEROBUF;
+  return new Uint8Array(h.match(/.{1,2}/g).map((w) => parseInt(w, 16)));
+}
+
+/**
+ * Check if Buffer is empty
+ * @param {ArrayBuffer|Buffer} b
+ * @returns {boolean}
+ */
+export function emptyBuf(b) {
+  return !b || b.byteLength === 0;
+}
+
+export function emptyString(s) {
+  if (typeof s === "string") {
+    // todo: trim
+    return !s || s.length === 0;
+  } else {
+    return false;
+  }
+}
+
+export function buf2hex(b) {
+  const u8 = byt(b);
+  return Array.from(u8)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export function hex2buf(h) {
+  if (emptyString(h)) return ZEROBUF;
   return new Uint8Array(h.match(/.{1,2}/g).map((w) => parseInt(w, 16)));
 }

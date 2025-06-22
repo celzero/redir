@@ -9,6 +9,64 @@
 import { byt } from "./buf.js";
 
 /**
+ *
+ * @param {CryptoKey} key
+ * @param {BufferSource} iv
+ * @param {BufferSource} taggedciphertext
+ * @returns
+ */
+export async function decryptAesGcm(aeskey, iv, taggedciphertext) {
+  const plaintext = crypto.subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: iv,
+      tagLength: 128, // default (in bits)
+    },
+    aeskey,
+    taggedciphertext
+  );
+  return byt(plaintext);
+}
+
+/**
+ *
+ * @param {BufferSource} aeskey
+ * @param {BufferSource} iv
+ * @param {BufferSource} plaintext
+ * @returns {Promise<Uint8Array>}
+ */
+export async function encryptAesGcm(aeskey, iv, plaintext) {
+  const taggedciphertext = await crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: iv,
+      tagLength: 128, // default (in bits)
+    },
+    aeskey,
+    plaintext
+  );
+  return byt(taggedciphertext);
+}
+
+/**
+ *
+ * @param {Uint8Array} raw
+ * @returns {Promise<CryptoKey>}
+ */
+export function importAes256Key(raw) {
+  return crypto.subtle.importKey(
+    "raw",
+    raw,
+    {
+      name: "AES-GCM",
+      length: 256,
+    },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+/**
  * @param {Uint8Array} raw
  * @returns {Promise<CryptoKey>}
  */
@@ -50,4 +108,23 @@ export async function importRsaPssPubKey(pubjwkstr) {
 export async function sha256(m) {
   const x = await crypto.subtle.digest("SHA-256", m);
   return byt(x);
+}
+
+/**
+ * @param {Uint8Array} m
+ * @returns {Promise<Uint8Array>}
+ */
+export function crand(n = 32) {
+  return crypto.getRandomValues(new Uint8Array(n));
+}
+
+/**
+ * @param {number} n
+ * @returns {string} Hex string of length n
+ */
+export function crandHex(n = 64) {
+  // b as hex string
+  return Array.from(crand(n / 2), (byt) =>
+    byt.toString(16).padStart(2, "0")
+  ).join("");
 }

@@ -14,6 +14,11 @@ import {
   krpn,
   ksponsor,
 } from "./paylinks.js";
+import {
+  googlePlayAcknowledgePurchase,
+  googlePlayGetEntitlements,
+  googlePlayNotification,
+} from "./playorder.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 
 const urlredirect = "r"; // redirect to dest url
@@ -63,14 +68,24 @@ async function handle(r, env, ctx) {
       // opt: p[2] === "checkout"
       return stripeCheckout(r, db, apikey, whsec);
     } else if (p[1] === urlgplay) {
-      // g; play store subs rtdn
-      // developer.android.com/google/play/billing/rtdn-reference#encoding
-      // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions
-      const outerjson = await r.json();
-      const data = outerjson.data;
-      const innerjson = data && atob(data);
-      console.log(url, outerjson, innerjson);
-      return r200t("OK");
+      // g; play store subs rtdn at g/rtdn
+      const p2 = p[2] ? p[2].toLowerCase() : "";
+      if (!p2 || p2.length === 0) {
+        return r400("g: missing resource");
+      }
+      if (p2 === "rtdn") {
+        return googlePlayNotification(env, r);
+      } else if (p2 === "ack") {
+        // TODO: must be a PUT request
+        // g/ack?cid&purchaseToken
+        return googlePlayAcknowledgePurchase(env, r);
+      } else if (p2 === "entitlements") {
+        // TODO: must be a GET request
+        // TODO: mere possession of cid is auth, right now
+        // g/entitlements?cid
+        return googlePlayGetEntitlements(env, r);
+      }
+      return r400("g: unknown resource " + p2);
     } else if (p[1] === urlmoney1) {
       // mb; rsasig
       const psk = env.PRE_SHARED_KEY_SVC;
@@ -129,7 +144,6 @@ async function handle(r, env, ctx) {
         status: svcs,
         pubkey: pk,
       });
-      return r200j(json);
     } else {
       console.warn("unknown path", path);
     }
@@ -365,11 +379,6 @@ function r302(where) {
     status: 302, // redirect
     headers: { location: where },
   });
-}
-
-function r200t(txt) {
-  const h = { "content-type": "application/text" };
-  return new Response(txt, { status: 200, headers: h }); // ok
 }
 
 function r200j(j) {

@@ -5,11 +5,14 @@ workers_dev = true
 send_metrics = false
 upload_source_maps = true
 
+# update vars in d.js for snippets compat
 [vars]
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "dev"
 MIN_VCODE = "30"
 MIN_VCODE_PAID_FEATURES = "46"
+WS_URL_TEST = "https://api-staging.windscribe.com/"
+WS_URL = "https://api.windscribe.com/"
 STATUS = "ok"
 
 [build]
@@ -46,6 +49,8 @@ routes = [
   "svc.rethinkdns.com/g/*",
   "svc.bravedns.com/g/*",
 ]
+
+# update vars in d.js for snippets compat
 # vars are not inherited
 # workers/platform/environment-variables#environment-variables-via-wrangler
 [env.prod.vars]
@@ -53,6 +58,8 @@ REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "prod"
 MIN_VCODE = "30"
 MIN_VCODE_PAID_FEATURES = "46"
+WS_URL_TEST = "https://api-staging.windscribe.com/"
+WS_URL = "https://api.windscribe.com/"
 STATUS = "ok"
 
 [[d1_databases]]
@@ -72,3 +79,16 @@ database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 # PUBLIC_KEY_BLINDRSA_(timestamp) = "pub-rsa-pss-hex"
 # developers.google.com/maps/documentation/geocoding/get-api-key#restrict_key
 # GMAPS_API_KEY = "base64..."
+# console.cloud.google.com/iam-admin/serviceaccounts/details
+# key id: f0123c59fbad
+# GCP_REDIR_SVC_CREDS = "json with private key"
+# KDF key for D1 enc-at-rest
+# KDF_SECRET_D1 = "64-chars-hex..."
+# WS api keys
+# WS_WL_ID = "string"
+# WS_WL_TOKEN = "string"
+# WS_WL_ID_TEST = "string"
+# WS_WL_TOKEN_TEST = "string"
+
+
+# update secrets in d.js for snippets compat
