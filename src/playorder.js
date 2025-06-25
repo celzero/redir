@@ -1000,12 +1000,20 @@ async function handleSubscriptionNotification(env, notif) {
     throw new Error("Invalid subscription notification:" + notif);
   }
 
-  const testnotif = sub.testPurchase != null;
   const purchasetoken = notif.purchaseToken;
   const typ = notificationTypeStr(notif);
-  logi(`Subscription: ${typ} for ${purchasetoken}`);
-  const sub = await getSubscription(env, purchasetoken);
+  const test = sub.testPurchase != null;
+
+  logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
   const cid = await getOrGenAndPersistCid(env, sub);
+
+  return await processSubscription(env, cid, purchasetoken);
+}
+
+async function processSubscription(env, cid, purchasetoken) {
+  const test = sub.testPurchase != null;
+
+  const sub = await getSubscription(env, purchasetoken);
   const state = sub.subscriptionState;
   // RECOVERED, RENEWED, PURCHASED, RESTARTED must have "active" states
   const active = state === "SUBSCRIPTION_STATE_ACTIVE";
@@ -1027,16 +1035,16 @@ async function handleSubscriptionNotification(env, notif) {
     // TODO: handle entitlement for multiple product ids
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
     if (ackd) {
-      logi(`Subscription already acknowledged: ${cid} test? ${testnotif}`);
+      logi(`Subscription already acknowledged: ${cid} test? ${test}`);
       return;
     }
     if (ent.status === "banned") {
-      loge(`Subscription ${ent.status} ${cid} test? ${testnotif}`);
+      loge(`Subscription ${ent.status} ${cid} test? ${test}`);
       return; // never ack but report success
     }
     if (ent.status === "expired") {
       // TODO: retry?
-      throw new Error(`ent expired ${cid} but sub active; test? ${testnotif}`);
+      throw new Error(`ent expired ${cid} but sub active; test? ${test}`);
     }
     // developer.android.com/google/play/billing/integrate#process
     // developer.android.com/google/play/billing/subscriptions#handle-subscription
@@ -1053,7 +1061,7 @@ async function handleSubscriptionNotification(env, notif) {
         productId != monthlyProxyProductId &&
         productId != annualProxyProductId
       ) {
-        loge(`skip revoke sub ${cid} test? ${testnotif}; unknown ${productId}`);
+        loge(`skip revoke sub ${cid} test? ${test}; unknown ${productId}`);
         continue;
       }
 
@@ -1204,8 +1212,8 @@ async function ackSubscription(env, productId, purchaseToken, ent) {
  * @returns {Promise<string|null>}
  * @throws {Error} - If the CID cannot be retrieved or generated.
  */
-async function getCid(env, sub) {
-  return getOrGenAndPersistCid(env, sub, false, false);
+async function getCidThenPersist(env, sub) {
+  return getOrGenAndPersistCid(env, sub, false, true);
 }
 
 // if gen is true, refuse to acknowledge subs with missing obfuscated external account ID
@@ -1435,7 +1443,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     try {
       // TODO: validate cid only for credential-less accounts
       // credentialed accounts can have different cids
-      const existingCid = await getCid(env, sub);
+      const existingCid = await getCidThenPersist(env, sub);
       if (existingCid !== cid) {
         return r400j({
           error: `cid ${cid} not registered with purchase token`,
