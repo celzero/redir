@@ -41,12 +41,13 @@ export async function getGoogleAuthToken(user, key, scopes) {
       iat: assertiontime,
     });
 
-    logd(`gauth: ${claimset} ${key.length}`);
-
     const jwtUnsigned = `${jwtHeader}.${claimset}`;
     const jwtSigned = await sign(jwtUnsigned, key);
-    const signedJwt = `${jwtUnsigned}.${jwtSigned}`;
-    const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${signedJwt}`;
+    const jwt = `${jwtUnsigned}.${jwtSigned}`;
+    const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
+
+    logd(`gauth: ${user} ${jwt} ${key.length}`);
+
     const response = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
@@ -59,7 +60,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
     const { access_token } = await response.json();
     return access_token;
   } catch (err) {
-    loge("gauth", err);
+    loge(err.message, err);
   }
   return null;
 }
