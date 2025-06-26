@@ -100,15 +100,6 @@ export function hex2buf(h) {
   return new Uint8Array(h.match(/.{1,2}/g).map((w) => parseInt(w, 16)));
 }
 
-/**
- * Check if Buffer is empty
- * @param {ArrayBuffer|Buffer} b
- * @returns {boolean}
- */
-export function emptyBuf(b) {
-  return !b || b.byteLength === 0;
-}
-
 export function emptyString(s) {
   if (typeof s === "string") {
     // todo: trim
@@ -116,16 +107,4 @@ export function emptyString(s) {
   } else {
     return false;
   }
-}
-
-export function buf2hex(b) {
-  const u8 = byt(b);
-  return Array.from(u8)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-export function hex2buf(h) {
-  if (emptyString(h)) return ZEROBUF;
-  return new Uint8Array(h.match(/.{1,2}/g).map((w) => parseInt(w, 16)));
 }
