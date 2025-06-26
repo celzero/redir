@@ -45,7 +45,7 @@ export function str2ab(str) {
  * @returns {string} - base64url encoded string
  */
 export function buf2b64url(buffer) {
-  btoa(String.fromCharCode(byt(buffer)))
+  return btoa(String.fromCharCode(byt(buffer)))
     .replace(/=/g, "")
     .replace(/\+/g, "-")
     .replace(/\//g, "_");
