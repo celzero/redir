@@ -958,7 +958,6 @@ async function processGooglePlayNotification(env, notif) {
   if (notif == null) {
     throw new Error("Invalid notification");
   }
-  env.TEST = env.TEST || sub.testPurchase != null;
   // Handle the notification based on its type
   // ref: codelabs.developers.google.com/maximise-your-play-billing-integration
   if (notif.onetime) {
@@ -1002,18 +1001,28 @@ async function handleSubscriptionNotification(env, notif) {
 
   const purchasetoken = notif.purchaseToken;
   const typ = notificationTypeStr(notif);
+  const sub = await getSubscription(env, purchasetoken);
   const test = sub.testPurchase != null;
+
+  env.TEST = env.TEST || test;
 
   logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
+
   const cid = await getOrGenAndPersistCid(env, sub);
 
-  return await processSubscription(env, cid, purchasetoken);
+  return await processSubscription(env, cid, sub, purchasetoken);
 }
 
-async function processSubscription(env, cid, purchasetoken) {
+/**
+ *
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {SubscriptionPurchaseV2} sub - Subscription purchase.
+ * @returns
+ */
+async function processSubscription(env, cid, sub, purchasetoken) {
   const test = sub.testPurchase != null;
 
-  const sub = await getSubscription(env, purchasetoken);
   const state = sub.subscriptionState;
   // RECOVERED, RENEWED, PURCHASED, RESTARTED must have "active" states
   const active = state === "SUBSCRIPTION_STATE_ACTIVE";
@@ -1251,10 +1260,10 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
  * @param {string} cid - Client ID, usually the obfuscatedExternalAccountId.
  * @param {string} pt - Purchase token.
  * @param {SubscriptionPurchaseV2} sub
+ * @param {Promise<dbx.D1Out>} out - The result of db op.
  */
 async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
-  const db = dbx.db(env);
-  dbx.upsertPlaySub(db, cid, pt, sub.linkedPurchaseToken, sub);
+  return dbx.upsertPlaySub(dbx.db(env), cid, pt, sub.linkedPurchaseToken, sub);
 }
 
 /**
@@ -1295,6 +1304,7 @@ function productInfo(sub) {
     throw new Error("No sub line items");
   }
   // TODO: support multiple line items
+  // TODO: match incoming purchaetoken with orderid?
   const item = sub.lineItems[0];
   // expiryTime is in RFC3339 format
   // "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z", or "2014-10-02T15:01:23+05:30".
@@ -1319,23 +1329,6 @@ async function gtoken(creds) {
   const key = JSON.parse(creds);
   const gauth = new GoogleAuth(key, androidscope);
   return await gauth.getGoogleAuthToken();
-}
-
-function r200t(txt) {
-  const h = { "content-type": "application/text" };
-  return new Response(txt, { status: 200, headers: h }); // ok
-}
-
-function logi(...args) {
-  console.info("gplay", args);
-}
-
-function loge(...args) {
-  console.error("gplay", args);
-}
-
-function logd(...args) {
-  console.debug("gplay", args);
 }
 
 /**
@@ -1530,22 +1523,6 @@ export async function googlePlayGetEntitlements(env, req) {
   }
 }
 
-function r200m(msg) {
-  return new Response(msg, { status: 200 }); // ok
-}
-
-function r400m(msg) {
-  return new Response(msg, { status: 400 }); // bad request
-}
-
-function r503m(msg) {
-  return new Response(msg, { status: 503 }); // service unavailable
-}
-
-function r500m(msg) {
-  return new Response(msg, { status: 500 }); // internal server error
-}
-
 function r200j(j) {
   const h = { "content-type": "application/json" };
   return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
@@ -1559,4 +1536,54 @@ function r400j(j) {
 function r500j(j) {
   const h = { "content-type": "application/json" };
   return new Response(JSON.stringify(j), { status: 500, headers: h }); // internal server error
+}
+
+function r200t(txt) {
+  const h = { "content-type": "application/text" };
+  return new Response(txt, { status: 200, headers: h }); // ok
+}
+
+function logi(...args) {
+  console.info("gplay", ministack(), ...args);
+}
+
+function loge(...args) {
+  console.error("gplay", ministack(), ...args);
+}
+
+function logd(...args) {
+  console.debug("gplay", ministack(), ...args);
+}
+
+function ministack() {
+  const stack = new Error().stack;
+  if (!stack) return "nostack";
+
+  const lines = stack.split("\n");
+  if (!lines || lines.length === 0) return "nocallers";
+
+  const callers = [];
+
+  // Start from index 3 to skip getCallerInfo, log function, and Error constructor
+  for (let i = 1; i < Math.min(6, lines.length); i++) {
+    const line = lines[i];
+    if (!line) continue;
+
+    // Extract function name and line number from stack trace
+    // Format varies by environment, but typically: "at functionName (file:line:column)"
+    const match =
+      line.match(/\s+([^(]+)\s*\(([^:]+):(\d+):\d+\)/) ||
+      line.match(/\s+([^@]+)@([^:]+):(\d+):\d+/) ||
+      line.match(/\s+(.+):(\d+):\d+/);
+
+    if (match) {
+      const funcName = match[1] ? match[1].trim() : "anonymous";
+      const lineNum = match[3] || match[2];
+      callers.push(`${funcName}:${lineNum}`);
+    }
+  }
+
+  return callers.length > 0
+    ? `[${callers.join(" >> ")}]`
+    : "nomatch" + lines.length;
 }
