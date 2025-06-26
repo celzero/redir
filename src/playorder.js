@@ -108,24 +108,29 @@ class DeveloperNotification {
      * @type {number} - The time at which this notification was sent, in milliseconds since the epoch.
      */
     this.eventTimeMillis = json.eventTimeMillis || -1;
+
+    const onetime = json.oneTimeProductNotification || null;
+    const sub = json.subscriptionNotification || null;
+    const voided = json.voidedPurchaseNotification || null;
+    const test = json.testNotification || null;
+
     /**
      * @type {OneTimeProductNotification} - The notification for one-time product purchases.
      */
-    this.onetime = new OneTimeProductNotification(
-      this.oneTimeProductNotification
-    );
+    this.onetime =
+      onetime != null ? new OneTimeProductNotification(onetime) : null;
     /**
      * @type {SubscriptionNotification} - The notification for subscription purchases.
      */
-    this.sub = new SubscriptionNotification(json.subscriptionNotification);
+    this.sub = sub != null ? new SubscriptionNotification(sub) : null;
     /**
      * @type {VoidedPurchaseNotification} - The notification for voided purchases.
      */
-    this.void = new VoidedPurchaseNotification(json.voidedPurchaseNotification);
+    this.void = voided != null ? new VoidedPurchaseNotification(voided) : null;
     /**
      * @type {TestNotification} - The notification for test purchases.
      */
-    this.test = new TestNotification(json.testNotification);
+    this.test = test != null ? new TestNotification(test) : null;
   }
 }
 
@@ -1589,6 +1594,6 @@ function ministack() {
   }
 
   return callers.length > 0
-    ? `[${callers.join(" >> ")}]`
+    ? `${callers.join(">>")}`
     : "nomatch" + lines.length;
 }

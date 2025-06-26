@@ -1,5 +1,6 @@
 name = "redir"
 main = "dist/worker.js"
+# 2024-09-23 is min for nodejs_compat_v2 which supports AsyncLocalStorage
 compatibility_date = "2024-09-23"
 workers_dev = true
 send_metrics = false
@@ -21,12 +22,12 @@ cwd = "."
 
 # developers.cloudflare.com/d1/configuration/environments
 [[d1_databases]]
-binding = "DBTEST"
+binding = "REDIRDBTEST"
 database_name = "rpntest"
 database_id = "e6db9d1f-cf58-427e-aa15-bd3fbf54d69e"
 
 [[d1_databases]]
-binding = "DB"
+binding = "REDIRDB"
 database_name = "rpn"
 database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
@@ -69,12 +70,12 @@ WS_URL = "https://api.windscribe.com/"
 STATUS = "ok"
 
 [[d1_databases]]
-binding = "DBTEST"
+binding = "SVCDBTEST"
 database_name = "rpntest"
 database_id = "e6db9d1f-cf58-427e-aa15-bd3fbf54d69e"
 
 [[d1_databases]]
-binding = "DB"
+binding = "SVCDB"
 database_name = "rpn"
 database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
@@ -93,8 +94,10 @@ database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 # console.cloud.google.com/iam-admin/serviceaccounts/details
 # key id: f0123c59fbad
 # GCP_REDIR_SVC_CREDS = "json with private key"
-# KDF key for D1 enc-at-rest
+# KDF key for D1 enc-at-rest; same ID must have same secret
+# for both prod and test (see: DB/DBTEST bindings)
 # KDF_SECRET_D1 = "64-chars-hex..."
+# KDF_SECRET_D1_TEST = "64-chars-hex..."
 # WS api keys
 # WS_WL_ID = "string"
 # WS_WL_TOKEN = "string"
