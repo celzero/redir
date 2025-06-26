@@ -6,8 +6,8 @@ CREATE TABLE IF NOT EXISTS clients (
     kind INTEGER,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- updated at timestamp
-    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    -- last updated at timestamp
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 
 CREATE TABLE IF NOT EXISTS playorders (
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS playorders (
     linkedtoken TEXT,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
 )
 
@@ -34,6 +35,7 @@ CREATE TABLE IF NOT EXISTS stripeorders (
     cid TEXT NOT NULL,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
 )
 
@@ -46,8 +48,7 @@ CREATE TABLE IF NOT EXISTS ws (
     userid TEXT NOT NULL,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    -- updated at timestamp
-    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     -- restrict deletion unless ws has been notified and sessiontoken is invalidated
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT,
 )

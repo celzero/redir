@@ -145,8 +145,9 @@ export async function insertClient(db, cid, clientinfo, kind) {
   if (db == null || cid == null || clientinfo == null || kind == null) {
     throw new Error("d1: insertClient: db/cid/clientinfo/kind missing");
   }
-  const q = "INSERT OR IGNORE INTO clients(cid, meta, kind) VALUES(?, ?, ?)";
-  const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind);
+  const q =
+    "INSERT OR IGNORE INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)";
+  const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
   return run(tx);
 }
@@ -167,10 +168,12 @@ export async function upsertPlaySub(db, cid, token, linkedtoken, info) {
   // limits: 2mb per TEXT field
   // developers.cloudflare.com/d1/platform/limits
   const q =
-    "INSERT INTO playorders(purchasetoken, meta, cid, linkedtoken) VALUES(?, ?, ?, ?) " +
+    "INSERT INTO playorders(purchasetoken, meta, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?) " +
     "ON CONFLICT(purchasetoken) DO UPDATE SET " +
-    "meta=excluded.meta, linkedtoken=excluded.linkedtoken";
-  const tx = db.prepare(q).bind(token, JSON.stringify(info), cid, linkedtoken);
+    "meta=excluded.meta, linkedtoken=excluded.linkedtoken, mtime=excluded.mtime";
+  const tx = db
+    .prepare(q)
+    .bind(token, JSON.stringify(info), cid, linkedtoken, now());
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
   return run(tx);
 }
@@ -206,8 +209,9 @@ export async function insertCreds(db, cid, userid, sessiontoken) {
     throw new Error("d1: wsInsertCreds: db/cid/userid/sessiontoken missing");
   }
   // fails if cid is already in the table
-  const q = "INSERT INTO ws (cid, sessiontoken, userid) VALUES(?, ?, ?)";
-  const tx = db.prepare(q).bind(cid, sessiontoken, userid);
+  const q =
+    "INSERT INTO ws (cid, sessiontoken, userid, mtime) VALUES(?, ?, ?, ?)";
+  const tx = db.prepare(q).bind(cid, sessiontoken, userid, mtime);
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
   return run(tx);
 }
@@ -247,4 +251,11 @@ function logd(what, meta) {
       `D1: ${what}: ${meta.servedby} (${meta.servedbyregion}) mod? ${meta.changedb} r/w ${meta.rowsread}/${meta.rowswritten} - ${meta.duration}ms`
     );
   }
+}
+
+/**
+ * @returns {string} - current timestamp in ISO format
+ */
+function now() {
+  return new Date().toISOString();
 }
