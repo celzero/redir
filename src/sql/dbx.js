@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { ExecCtx, als } from "../d";
+import { ExecCtx, als } from "../d.js";
 
 const dbdebug = false; // set to true to enable debug logging
 
