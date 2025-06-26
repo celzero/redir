@@ -27,6 +27,38 @@ export function hex2byt2str(h) {
   return byte2str(hex2buf(h));
 }
 
+/**
+ * @param {string} str (UTF-8 encoded string)
+ * @returns {ArrayBuffer}
+ */
+export function str2ab(str) {
+  const buf = new ArrayBuffer(str.length);
+  const bufView = new Uint8Array(buf);
+  for (let i = 0, strLen = str.length; i < strLen; i += 1) {
+    bufView[i] = str.charCodeAt(i);
+  }
+  return buf;
+}
+
+/**
+ * @param {ArrayBuffer|Uint8Array} buffer
+ * @returns {string} - base64url encoded string
+ */
+export function buf2b64url(buffer) {
+  btoa(String.fromCharCode(byt(buffer)))
+    .replace(/=/g, "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+}
+
+/**
+ * @param {string} b64 - base64 (standard)
+ * @returns {ArrayBuffer} - returns an ArrayBuffer
+ */
+export function b642buf(b64) {
+  str2ab(atob(b64));
+}
+
 // stackoverflow.com/a/70653061
 export function b64AsBytes(b64url) {
   const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");

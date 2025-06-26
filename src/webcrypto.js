@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { byt } from "./buf.js";
+import { b642buf, byt, str2ab } from "./buf.js";
 
 /**
  *
@@ -127,4 +127,39 @@ export function crandHex(n = 64) {
   return Array.from(crand(n / 2), (byt) =>
     byt.toString(16).padStart(2, "0")
   ).join("");
+}
+
+/**
+ * Sign a string using RSASSA-PKCS1-v1_5 with SHA-256
+ * and return the signature.
+ * @param {string} content
+ * @param {string} signingKey
+ * @returns {Promise<ArrayBuffer>} - Returns the binary signature.
+ */
+export async function rsaSsaSign(content, signingKey) {
+  const buf = str2ab(content);
+  const key = await importRsaSsa256Key(signingKey);
+  return await crypto.subtle.sign({ name: "RSASSA-PKCS1-V1_5" }, key, buf);
+}
+
+/**
+ * @param {string} pem - PEM formatted private key
+ * @returns {Promise<CryptoKey>} - Returns a CryptoKey for RSASSA-PKCS1-v1_5 with SHA-256
+ */
+export async function importRsaSsa256Key(pem) {
+  const plainKey = pem
+    .replace("-----BEGIN PRIVATE KEY-----", "")
+    .replace("-----END PRIVATE KEY-----", "")
+    .replace(/(\r\n|\n|\r)/gm, "");
+  const binaryKey = b642buf(plainKey);
+  return await crypto.subtle.importKey(
+    "pkcs8",
+    binaryKey,
+    {
+      name: "RSASSA-PKCS1-V1_5",
+      hash: { name: "SHA-256" },
+    },
+    false,
+    ["sign"]
+  );
 }

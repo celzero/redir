@@ -6,7 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import GoogleAuth from "cloudflare-workers-and-google-oauth";
+import { getGoogleAuthToken } from "./gauth.js";
+
 import { als, ExecCtx } from "./d.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex } from "./webcrypto.js";
@@ -1336,8 +1337,11 @@ function planInfo(productId) {
 // ryan-schachte.com/blog/oauth_cloudflare_workers / archive.vn/B3FYC
 async function gtoken(creds) {
   const key = JSON.parse(creds);
-  const gauth = new GoogleAuth(key, androidscope);
-  return await gauth.getGoogleAuthToken();
+  return await getGoogleAuthToken(
+    key.client_email,
+    key.private_key,
+    androidscope
+  );
 }
 
 /**
@@ -1574,8 +1578,8 @@ function ministack() {
 
   const callers = [];
 
-  // Start from index 3 to skip getCallerInfo, log function, and Error constructor
-  for (let i = 1; i < Math.min(6, lines.length); i++) {
+  // Start from index 3 to skip ministack, log function, and Error constructor
+  for (let i = 3; i < Math.min(6, lines.length); i++) {
     const line = lines[i];
     if (!line) continue;
 
