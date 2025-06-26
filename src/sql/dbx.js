@@ -6,6 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { ExecCtx, als } from "../d";
+
 const dbdebug = false; // set to true to enable debug logging
 
 /*
@@ -118,12 +120,17 @@ class D1OutMeta {
 /**
  * Get the D1 binding based on the environment.
  * @param {any} env - Worker environment
+ * @param {ExecCtx} cfg - caller configuration
  * @returns the D1 binding based on env.TEST
  * @throws {Error} - if the D1 binding is not available
  * */
-export function db(env) {
+export function db(env, cfg = null) {
   let out = env.DB;
-  if (env.TEST) {
+  cfg = cfg == null ? als.getStore() : cfg;
+  if (cfg != null) {
+    // cfg.test overrides env.TEST
+    out = cfg.test ? env.DBTEST : env.DB;
+  } else if (env.TEST) {
     out = env.DBTEST;
   }
   if (out == null) {

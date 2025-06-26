@@ -103,8 +103,8 @@ async function weakiv(ad, cid) {
 
 /**
  *
- * @param {string} seedhex
- * @param {string} ctxhex
+ * @param {string} seedhex - hex string (64 chars)
+ * @param {string} ctxhex - hex string (non-empty)
  * @returns {Promise<CryptoKey?>}
  */
 export async function keygen(seedhex, ctxhex) {

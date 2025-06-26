@@ -7,6 +7,7 @@
  */
 
 import * as bin from "./buf.js";
+import { als, ExecCtx } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as dbx from "./sql/dbx.js";
 
@@ -490,25 +491,52 @@ async function deleteCreds(env, sessiontoken) {
   return false; // Failed to delete after 3 attempts
 }
 
-function apiurl(env) {
-  if (env.TEST) {
-    return env.WS_URL_TEST;
+/**
+ * @param {any} env - Worker environment
+ * @param {ExecCtx} cfg - caller configuration
+ * @returns
+ */
+function apiurl(env, cfg = null) {
+  let out = env.WS_URL;
+  cfg = cfg == null ? als.getStore() : cfg;
+  if (cfg != null) {
+    out = cfg.test ? env.WS_URL_TEST : env.WS_URL;
+  } else if (env.TEST) {
+    out = env.WS_URL_TEST;
   }
-  return env.WS_URL;
+  return out;
 }
 
-function apiaccess(env) {
-  if (env.TEST) {
-    return env.WS_WL_ID_TEST;
+/**
+ * @param {any} env - Worker environment
+ * @param {ExecCtx} cfg - caller configuration
+ * @returns
+ */
+function apiaccess(env, cfg = null) {
+  let out = env.WS_WL_ID;
+  cfg = cfg == null ? als.getStore() : cfg;
+  if (cfg != null) {
+    out = cfg.test ? env.WS_WL_ID_TEST : env.WS_WL_ID;
+  } else if (env.TEST) {
+    out = env.WS_WL_ID_TEST;
   }
-  return env.WS_WL_ID;
+  return out;
 }
 
-function apisecret(env) {
-  if (env.TEST) {
-    return env.WS_WL_TOKEN_TEST;
+/**
+ * @param {any} env - Worker environment
+ * @param {ExecCtx} cfg - caller configuration
+ * @returns
+ */
+function apisecret(env, cfg = null) {
+  let out = env.WS_WL_TOKEN;
+  cfg = cfg == null ? als.getStore() : cfg;
+  if (cfg != null) {
+    out = cfg.test ? env.WS_WL_TOKEN_TEST : env.WS_WL_TOKEN;
+  } else if (env.TEST) {
+    out = env.WS_WL_TOKEN_TEST;
   }
-  return env.WS_WL_TOKEN;
+  return out;
 }
 
 async function sleep(sec) {

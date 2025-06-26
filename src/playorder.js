@@ -7,6 +7,7 @@
  */
 
 import GoogleAuth from "cloudflare-workers-and-google-oauth";
+import { als, ExecCtx } from "./d.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex } from "./webcrypto.js";
 import {
@@ -1004,13 +1005,13 @@ async function handleSubscriptionNotification(env, notif) {
   const sub = await getSubscription(env, purchasetoken);
   const test = sub.testPurchase != null;
 
-  env.TEST = env.TEST || test;
+  return als.run(new ExecCtx(test), async () => {
+    logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
 
-  logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
+    const cid = await getOrGenAndPersistCid(env, sub);
 
-  const cid = await getOrGenAndPersistCid(env, sub);
-
-  return await processSubscription(env, cid, sub, purchasetoken);
+    return await processSubscription(env, cid, sub, purchasetoken);
+  });
 }
 
 /**
@@ -1040,6 +1041,9 @@ async function processSubscription(env, cid, sub, purchasetoken) {
   if (active) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
     const [expiry, productId, plan] = productInfo(sub);
+
+    // TODO: check if expiry/productId/plan are valid
+    // Play Billing deletes a purchaseToken after 60d from expiry
     await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
     // TODO: handle entitlement for multiple product ids
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
@@ -1121,7 +1125,7 @@ async function handleTestNotification(notif) {
  * @returns {Promise<SubscriptionPurchaseV2>}
  * @throws {Error} - If the response is not as expected.
  */
-export async function getSubscription(env, purchaseToken) {
+async function getSubscription(env, purchaseToken) {
   // GET
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/subscriptionsv2/tokens/{purchaseToken}'
   // -H 'Accept: application/json' \
@@ -1388,90 +1392,90 @@ export async function googlePlayAcknowledgePurchase(env, req) {
   try {
     // Parse request body to get purchase token
     const url = new URL(req.url);
-    const purchaseToken = url.searchParams.get("purchaseToken");
+    const purchasetoken =
+      url.searchParams.get("purchaseToken") ||
+      url.searchParams.get("purchasetoken");
     const cid = url.searchParams.get("cid");
 
-    if (!purchaseToken) {
+    if (!purchasetoken) {
       return r400j({ error: "purchaseToken is required" });
     }
 
     // get subscription details from google play
-    const sub = await getSubscription(env, purchaseToken);
-
-    // Handle test notifications
-    const testnotif = sub.testPurchase != null;
-    if (testnotif) {
-      env.TEST = env.TEST || testnotif;
-      logi(`Handling test notification for ${purchaseToken}`);
-    }
-
-    // TODO: verify cid
-
+    const sub = await getSubscription(env, purchasetoken);
+    const test = sub.testPurchase != null;
     const state = sub.subscriptionState;
-
-    // Check if subscription is active
+    const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
+    const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
+
+    logi(
+      `handle ack for ${purchasetoken} at ${state}/${ackstate}; test? ${test}`
+    );
+
+    if (ackd) {
+      return r200j({ message: "already acknowledged", cid: cid });
+    }
     if (!active) {
       loge(`Cannot ack inactive subscription: ${cid}, state: ${state}`);
       return r400j({ error: "subscription not active", state: state });
     }
 
-    // Check if already acknowledged
-    const ackd =
-      sub.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
-    if (ackd) {
-      return r200j({ message: "already acknowledged", cid: cid });
-    }
-
     const [expiry, productId, plan] = productInfo(sub);
-    await registerOrUpdateActiveSubscription(env, cid, purchaseToken, sub);
-    if (Date.now() > expiry.getTime()) {
-      return r400j({
-        error: "subscription expired",
-        cid: cid,
-        expiry: expiry.toISOString(),
-      });
-    }
 
-    try {
-      // TODO: validate cid only for credential-less accounts
-      // credentialed accounts can have different cids
-      const existingCid = await getCidThenPersist(env, sub);
-      if (existingCid !== cid) {
+    return await als.run(new ExecCtx(test), async () => {
+      // TODO: check if expiry/productId/plan are valid
+      // Play Billing deletes a purchaseToken after 60d from expiry
+      await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
+      if (Date.now() > expiry.getTime()) {
         return r400j({
-          error: `cid ${cid} not registered with purchase token`,
+          error: "subscription expired",
+          cid: cid,
+          expiry: expiry.toISOString(),
         });
       }
-    } catch (e) {
-      loge(`Err validating CID for purchase (sent: ${cid}): ${e.message}`);
-    }
 
-    const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
-    if (!ent) {
-      return r500j({ error: "failed to get entitlement", cid: cid });
-    }
-    if (ent.status === "banned") {
-      return r400j({ error: "user banned", cid: cid });
-    }
-    if (ent.status === "expired") {
-      return r400j({ error: "entitlement expired", cid: cid });
-    }
-    if (ent.status !== "valid") {
-      return r400j({
-        error: "invalid entitlement status",
-        status: ent.status,
+      try {
+        // TODO: validate cid only for credential-less accounts
+        // credentialed accounts can have different cids
+        const existingCid = await getCidThenPersist(env, sub);
+        if (existingCid !== cid) {
+          loge(`CID (us!=them) ${existingCid} != ${cid} for ${purchasetoken}`);
+          return r400j({
+            error: `cid ${cid} not regist ered with purchase token`,
+          });
+        }
+      } catch (e) {
+        loge(`Err validating CID for purchase (sent: ${cid}): ${e.message}`);
+      }
+
+      const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
+      if (!ent) {
+        return r500j({ error: "failed to get entitlement", cid: cid });
+      }
+      if (ent.status === "banned") {
+        return r400j({ error: "user banned", cid: cid });
+      }
+      if (ent.status === "expired") {
+        return r400j({ error: "entitlement expired", cid: cid });
+      }
+      if (ent.status !== "valid") {
+        return r400j({
+          error: "invalid entitlement status",
+          status: ent.status,
+          cid: cid,
+        });
+      }
+
+      await ackSubscription(env, productId, purchasetoken, ent);
+
+      return r200j({
+        success: true,
+        message: "Subscription acknowledged successfully",
         cid: cid,
+        productId: productId,
+        expiry: expiry.toISOString(),
       });
-    }
-
-    await ackSubscription(env, productId, purchaseToken, ent);
-
-    return r200j({
-      success: true,
-      message: "Subscription acknowledged successfully",
-      cid: cid,
-      productId: productId,
-      expiry: expiry.toISOString(),
     });
   } catch (error) {
     return r500j({ error: "acknowledge failed", details: error.message });
@@ -1494,30 +1498,31 @@ export async function googlePlayGetEntitlements(env, req) {
 
     const url = new URL(req.url);
     let cid = url.searchParams.get("cid");
+    const test = url.searchParams.get("test");
     if (!cid || cid.length < mincidlength) {
       return r400j({ error: "missing/invalid client id" });
     }
 
     // Validate CID format (should be hex)
-    if (!/^[a-fA-F0-9]+$/.test(cid)) {
-      return r400j({ error: "invalid cid format" });
+    if (!/^[a-fA-F0-9]+$/.test(cid) && cid.length >= mincidlength) {
+      return r400j({ error: "invalid cid" });
     }
 
     // TODO: only allow credentialless clients to access this endpoint
-    logd(`get entitlements for ${cid}`);
+    logd(`get entitlements for ${cid}; test? ${test}`);
 
-    const out = await creds(env, cid);
+    return await als.run(new ExecCtx(test), async () => {
+      const out = await creds(env, cid);
 
-    if (!out) {
-      return r400j({ error: "entitlement not found", cid: cid });
-    }
+      if (!out) {
+        return r400j({ error: "entitlement not found", cid: cid });
+      }
+      if (out.status === "banned") {
+        return r400j({ error: "user banned", cid: cid });
+      }
 
-    // Validate entitlement status
-    if (out.status === "banned") {
-      return r400j({ error: "user banned", cid: cid });
-    }
-
-    return r200j({ success: true, entitlement: out, cid: cid });
+      return r200j({ success: true, entitlement: out, cid: cid });
+    });
   } catch (err) {
     return r500j({ error: "get entitlements failed", details: err.message });
   }

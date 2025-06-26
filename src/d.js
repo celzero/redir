@@ -6,6 +6,20 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
+
+export class ExecCtx {
+  constructor(test) {
+    /**
+     * @type {boolean} - Whether this is a test call.
+     * @default false
+     */
+    this.test = test || false;
+  }
+}
+
+export const als = new AsyncLocalStorage();
+
 export function wrap(env) {
   if (env == null) env = {};
 
@@ -20,11 +34,19 @@ export function wrap(env) {
   if (env.WS_URL_TEST == null) env.WS_URL_TEST = "";
 
   // set runtime environment variables
+
   env.TEST = env.WENV !== "prod";
 
   // bindings
-  if (env.DB == null) env.DB = null; // "rpn" d1 database
-  if (env.DBTEST == null) env.DBTEST = null; // "rpn-test" d1 database
+  if (env.REDIRDB == null) env.REDIRDB = null;
+  if (env.REDIRDBTEST == null) env.REDIRDBTEST = null;
+  if (env.SVCDB == null) env.SVCDB = null;
+  if (env.SVCDBTEST == null) env.SVCDBTEST = null;
+
+  if (env.REDIRDB == null) env.DB = env.SVCDB; // "rpn" d1 database
+  else env.DB = env.REDIRDB; // "rpn"
+  if (env.REDIRDBTEST == null) env.DBTEST = env.SVCDBTEST; // "rpn-test"
+  else env.DBTEST = env.REDIRDBTEST; // "rpn-test"
 
   // secrets
   if (env.STRIPE_API_KEY == null) env.STRIPE_API_KEY = null;
