@@ -1,6 +1,6 @@
 name = "redir"
 main = "dist/worker.js"
-compatibility_date = "2023-06-19"
+compatibility_date = "2024-09-23"
 workers_dev = true
 send_metrics = false
 upload_source_maps = true
