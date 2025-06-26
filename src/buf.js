@@ -56,7 +56,7 @@ export function buf2b64url(buffer) {
  * @returns {ArrayBuffer} - returns an ArrayBuffer
  */
 export function b642buf(b64) {
-  str2ab(atob(b64));
+  return str2ab(atob(b64));
 }
 
 // stackoverflow.com/a/70653061

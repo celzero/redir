@@ -147,10 +147,13 @@ export async function rsaSsaSign(content, signingKey) {
  * @returns {Promise<CryptoKey>} - Returns a CryptoKey for RSASSA-PKCS1-v1_5 with SHA-256
  */
 export async function importRsaSsa256Key(pem) {
+  // github.com/Schachte/cloudflare-google-auth/blob/fc62a5e683d5c3/index.ts#L84
   const plainKey = pem
+    .replace(/\\n/g, "")
+    .replace(/(\r\n|\n|\r)/gm, "")
     .replace("-----BEGIN PRIVATE KEY-----", "")
     .replace("-----END PRIVATE KEY-----", "")
-    .replace(/(\r\n|\n|\r)/gm, "");
+    .trim();
   const binaryKey = b642buf(plainKey);
   return await crypto.subtle.importKey(
     "pkcs8",
