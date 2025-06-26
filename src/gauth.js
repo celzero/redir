@@ -61,6 +61,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
     return access_token;
   } catch (err) {
     loge(err.message, err);
+    logdir(err);
   }
   return null;
 }
@@ -75,4 +76,8 @@ function logd(...args) {
 
 function loge(...args) {
   console.error("gauth:", ...args);
+}
+
+function logdir(obj) {
+  console.dir(obj);
 }
