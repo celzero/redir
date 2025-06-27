@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { emptyString } from "../buf.js";
 import { ExecCtx, als } from "../d.js";
 
 const dbdebug = false; // set to true to enable debug logging
@@ -149,14 +150,19 @@ export function db(env, cfg = null) {
  * @throws {Error} - if env or cid is null
  */
 export async function insertClient(db, cid, clientinfo, kind) {
-  if (db == null || cid == null || clientinfo == null || kind == null) {
-    throw new Error("d1: insertClient: db/cid/clientinfo/kind missing");
+  if (db == null || emptyString(cid) || kind == null) {
+    throw new Error("d1: insertClient: db/cid/kind missing");
   }
-  const q =
-    "INSERT OR IGNORE INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)";
-  const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
-  // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
-  return run(tx);
+  if (clientinfo == null) {
+    const q =
+      "INSERT OR IGNORE INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)";
+    const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
+    return run(tx);
+  } else {
+    const q = "INSERT OR IGNORE INTO clients(cid, kind, mtime) VALUES(?, ?, ?)";
+    const tx = db.prepare(q).bind(cid, kind, now());
+    return run(tx);
+  }
 }
 
 /**
@@ -168,21 +174,28 @@ export async function insertClient(db, cid, clientinfo, kind) {
  * @return {Promise<D1Out>} - D1Out object
  * @throws {Error} - if db is null or cid is null
  */
-export async function upsertPlaySub(db, cid, token, linkedtoken, info) {
-  if (db == null || cid == null || token == null || info == null) {
-    throw new Error("d1: playsub: db/cid/token/info missing");
+export async function upsertPlaySub(db, cid, token, linkedtoken, info = null) {
+  if (db == null || cid == null || token == null) {
+    throw new Error("d1: playsub: db/cid/token missing");
   }
   // limits: 2mb per TEXT field
   // developers.cloudflare.com/d1/platform/limits
-  const q =
-    "INSERT INTO playorders(purchasetoken, meta, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?) " +
-    "ON CONFLICT(purchasetoken) DO UPDATE SET " +
-    "meta=excluded.meta, linkedtoken=excluded.linkedtoken, mtime=excluded.mtime";
-  const tx = db
-    .prepare(q)
-    .bind(token, JSON.stringify(info), cid, linkedtoken, now());
-  // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
-  return run(tx);
+  if (info != null) {
+    // skip cid update and assume them to match
+    const q =
+      "INSERT INTO playorders(purchasetoken, meta, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?) " +
+      "ON CONFLICT(purchasetoken) DO UPDATE SET " +
+      "meta=excluded.meta, linkedtoken=excluded.linkedtoken, mtime=excluded.mtime";
+    const tx = db
+      .prepare(q)
+      .bind(token, JSON.stringify(info), cid, linkedtoken, now());
+    return run(tx);
+  } else {
+    const q =
+      "INSERT OR IGNORE INTO playorders(purchasetoken, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?)";
+    const tx = db.prepare(q).bind(token, cid, linkedtoken, now());
+    return run(tx);
+  }
 }
 
 /**
@@ -212,7 +225,12 @@ export async function wsCreds(db, cid) {
  * @throws {Error} - if db, cid, userid, or sessiontoken is null
  */
 export async function insertCreds(db, cid, userid, sessiontoken) {
-  if (db == null || cid == null || userid == null || sessiontoken == null) {
+  if (
+    db == null ||
+    emptyString(cid) ||
+    emptyString(userid) ||
+    emptyString(sessiontoken)
+  ) {
     throw new Error("d1: wsInsertCreds: db/cid/userid/sessiontoken missing");
   }
   // fails if cid is already in the table
