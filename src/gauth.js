@@ -46,7 +46,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
     const jwt = `${jwtUnsigned}.${jwtSigned}`;
     const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
 
-    logd(`gauth: ${user} ${jwt} ${key.length}`);
+    logd(`gauth: ${jwt} ${key.length}`);
 
     const r = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
