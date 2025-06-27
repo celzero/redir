@@ -1157,6 +1157,13 @@ async function getSubscription(env, purchaseToken) {
   //     ]
   // }
   // }
+  if (!r.ok) {
+    const err = await r.json();
+    logo(err);
+    if (err.error && err.error.message) {
+      throw new Error(`err getting sub: ${err.error.message}`);
+    }
+  }
   const json = await r.json();
   if (json != null && json.kind === "androidpublisher#subscriptionPurchaseV2") {
     return new SubscriptionPurchaseV2(json);
@@ -1583,6 +1590,11 @@ function logd(...args) {
   console.debug("gplay", ministack(), ...args);
 }
 
+function logo(obj) {
+  loge("gplay", ministack());
+  console.dir(obj);
+}
+
 function ministack() {
   const stack = new Error().stack;
   if (!stack) return "nostack";
@@ -1590,7 +1602,7 @@ function ministack() {
   const lines = stack.split("\n");
   if (!lines || lines.length === 0) return "nocallers";
 
-  const callers = [];
+  const cc = [];
 
   // Start from index 3 to skip ministack, log function, and Error constructor
   for (let i = 3; i < Math.min(6, lines.length); i++) {
@@ -1607,11 +1619,9 @@ function ministack() {
     if (match) {
       const funcName = match[1] ? match[1].trim() : "anonymous";
       const lineNum = match[3] || match[2];
-      callers.push(`${funcName}:${lineNum}`);
+      cc.push(`${funcName}:${lineNum}`);
     }
   }
 
-  return callers.length > 0
-    ? `${callers.join(">>")}`
-    : "nomatch" + lines.length;
+  return cc.length > 0 ? `${cc.join(" ")}` : "nomatch" + lines.length;
 }
