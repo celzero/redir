@@ -1011,13 +1011,14 @@ async function handleSubscriptionNotification(env, notif) {
   const typ = notificationTypeStr(notif);
   const sub = await getSubscription(env, purchasetoken);
   const test = sub.testPurchase != null;
+  const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
 
   return als.run(new ExecCtx(test), async () => {
     logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
 
     const cid = await getOrGenAndPersistCid(env, sub);
 
-    return await processSubscription(env, cid, sub, purchasetoken);
+    return await processSubscription(env, cid, sub, purchasetoken, revoked);
   });
 }
 
@@ -1026,9 +1027,11 @@ async function handleSubscriptionNotification(env, notif) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {SubscriptionPurchaseV2} sub - Subscription purchase.
+ * @param {string} purchasetoken - Purchase token.
+ * @param {boolean} revoked - Whether the subscription was revoked.
  * @returns
  */
-async function processSubscription(env, cid, sub, purchasetoken) {
+async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   const test = sub.testPurchase != null;
 
   const state = sub.subscriptionState;
@@ -1039,7 +1042,6 @@ async function processSubscription(env, cid, sub, purchasetoken) {
   // use lineItems.expiryTime to determine the exact product to revoke access to.
   const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
   const unpaid = state === "SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED";
-  const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
   // Per docs, only PURCHASED and RENEWED have to be acknowledged.
   const ackd =
     sub.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
