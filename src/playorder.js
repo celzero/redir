@@ -18,6 +18,7 @@ import {
   WSEntitlement,
 } from "./wsent.js";
 
+// setup: developers.google.com/android-publisher/getting_started
 // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
 const androidscope = ["https://www.googleapis.com/auth/androidpublisher"];
 const packageName = "com.celzero.bravedns";
@@ -1143,6 +1144,19 @@ async function getSubscription(env, purchaseToken) {
     Authorization: `Bearer ${bearer}`,
   };
   const r = await fetch(url, { headers });
+  // {
+  // "error": {
+  //     "code": 401,
+  //     "message": "The current user has insufficient permissions to perform the requested operation.",
+  //     "errors": [
+  //     {
+  //         "message": "The current user has insufficient permissions to perform the requested operation.",
+  //         "domain": "androidpublisher",
+  //         "reason": "permissionDenied"
+  //     }
+  //     ]
+  // }
+  // }
   const json = await r.json();
   if (json != null && json.kind === "androidpublisher#subscriptionPurchaseV2") {
     return new SubscriptionPurchaseV2(json);

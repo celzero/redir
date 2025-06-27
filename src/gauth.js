@@ -24,7 +24,7 @@ async function sign(content, signingKey) {
 /**
  * @param {string} user - service account email
  * @param {string} key - service account private key
- * @param {string[]} scopes - OAuth scopes; ["https://www.googleapis.com/auth/cloud-platform"]
+ * @param {string[]} scopes - OAuth scopes; ['https://www.googleapis.com/auth/cloud-platform']
  * @returns {Promise<string|null>} - Returns the Google OAuth access token or null on failure
  */
 export async function getGoogleAuthToken(user, key, scopes) {
@@ -48,7 +48,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
 
     logd(`gauth: ${user} ${jwt} ${key.length}`);
 
-    const response = await fetch("https://oauth2.googleapis.com/token", {
+    const r = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -57,7 +57,12 @@ export async function getGoogleAuthToken(user, key, scopes) {
       },
       body,
     });
-    const { access_token } = await response.json();
+    // {
+    //   "access_token": "ya29.a0ARrdaM...",
+    //   "expires_in": 3599,
+    //   "token_type": "Bearer"
+    // }
+    const { access_token } = await r.json();
     return access_token;
   } catch (err) {
     loge(err.message, err);
