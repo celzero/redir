@@ -234,11 +234,11 @@ export async function deleteCreds(db, cid) {
   }
   const q = "DELETE FROM ws WHERE cid = ?";
   const tx = db.prepare(q).bind(cid);
-  // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
   return run(tx);
 }
 
 /**
+ * developers.cloudflare.com/d1/worker-api/prepared-statements/#run
  * @param {any} tx - D1 prepared statement
  * @returns {Promise<D1Out>} - D1Out object
  */

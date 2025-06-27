@@ -1256,7 +1256,16 @@ async function getCidThenPersist(env, sub) {
   return getOrGenAndPersistCid(env, sub, false, true);
 }
 
-// if gen is true, refuse to acknowledge subs with missing obfuscated external account ID
+/**
+ * @param {any} env
+ * @param {SubscriptionPurchaseV2} sub
+ * @param {boolean} gen - Whether to generate a new CID if it cannot be retrieved.
+ * That is, if gen is true, client must refuse to acknowledge subs with missing
+ * obfuscated external account ID (cid).
+ * @param {boolean} insert - Whether to insert the CID into the database.
+ * @returns {Promise<string|null>}
+ * @throws {Error} - If the CID cannot be retrieved or generated.
+ */
 async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
   const db = dbx.db(env);
   let cid = "";
@@ -1294,6 +1303,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
  * @param {Promise<dbx.D1Out>} out - The result of db op.
  */
 async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
+  // TODO: cid must match with existing db entry, if any
   return dbx.upsertPlaySub(dbx.db(env), cid, pt, sub.linkedPurchaseToken, sub);
 }
 
