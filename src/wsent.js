@@ -343,6 +343,12 @@ async function newCreds(env, expiry, plan) {
     if (totalDays >= 10) {
       plan = "month";
       execCount = 1; // 1 month plan
+    } else if (totalDays == 1) {
+      // silent grace period ~24h
+      // TODO: if purchase token is unacknowledged, then always
+      // generate new creds as the user is unlikely to be a in silent grace period.
+      // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
+      execCount = 0;
     } else {
       // TODO: should or should not restrict new creds?
       execCount = 0; // restrict
@@ -355,6 +361,13 @@ async function newCreds(env, expiry, plan) {
   logi(
     `new creds until ${expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
   );
+
+  if (execCount <= 0) {
+    throw new Error(
+      `ws: cannot create or refersh entitlement; subscription expiring imminently`
+    );
+  }
+
   // TODO: repeatedly call execCount times
   const url = apiurl(env) + creatuser + plan;
   const headers = {
