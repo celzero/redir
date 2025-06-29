@@ -19,10 +19,20 @@ export function byte2str(b) {
   return tdecoder.decode(b);
 }
 
+/**
+ * @param {string} s - UTF-8 encoded string
+ * @returns {string} - s encoded to bytes and then to hex
+ * @see {@link hex2byt2str}
+ */
 export function str2byt2hex(s) {
-  return byt2hex(str2byte(s));
+  return buf2hex(str2byte(s));
 }
 
+/**
+ * @param {string} h - hex encoded string
+ * @returns {string} - h decoded to bytes and then to UTF-8
+ * @see {@link str2byt2hex}
+ */
 export function hex2byt2str(h) {
   return byte2str(hex2buf(h));
 }
@@ -45,6 +55,7 @@ export function str2ab(str) {
  * @returns {string} - base64url encoded string
  */
 export function buf2b64url(buffer) {
+  if (emptyBuf(buffer)) return "";
   return btoa(String.fromCharCode(...byt(buffer)))
     .replace(/=/g, "")
     .replace(/\+/g, "-")
@@ -56,17 +67,29 @@ export function buf2b64url(buffer) {
  * @returns {ArrayBuffer} - returns an ArrayBuffer
  */
 export function b642buf(b64) {
-  return str2ab(atob(b64));
+  if (emptyString(b64)) return ZEROBUF.buffer;
+  try {
+    return str2ab(atob(b64));
+  } catch (e) {
+    loge(`b642buf: failed to decode ${b64} base64: ${e.message}`, e);
+    return ZEROBUF.buffer;
+  }
 }
 
 // stackoverflow.com/a/70653061
 export function b64AsBytes(b64url) {
-  const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");
-  return new Uint8Array(
-    atob(b64)
-      .split("")
-      .map((c) => c.charCodeAt(0))
-  );
+  if (emptyString(b64url)) return ZEROBUF;
+  try {
+    const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/").replace(/\s/g, "");
+    return new Uint8Array(
+      atob(b64)
+        .split("")
+        .map((c) => c.charCodeAt(0))
+    );
+  } catch (e) {
+    loge(`b64AsBytes: failed to decode ${b64url} base64url: ${e.message}`, e);
+    return ZEROBUF;
+  }
 }
 
 /**
@@ -94,6 +117,10 @@ function raw(b) {
  * @param {Uint8Array} b
  */
 export function bytcmp(a, b) {
+  const aempty = emptyBuf(a);
+  const bempty = emptyBuf(b);
+  if (aempty && bempty) return true; // both empty
+  if (aempty || bempty) return false; // one is empty, the other
   if (a.byteLength !== b.byteLength) return false;
   for (let i = 0; i < a.byteLength; i++) {
     if (b[i] !== a[i]) return false;
@@ -139,4 +166,8 @@ export function emptyString(s) {
   } else {
     return false;
   }
+}
+
+function loge(...args) {
+  console.error("buf", ...args);
 }

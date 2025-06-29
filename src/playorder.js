@@ -1051,6 +1051,8 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
     const [expiry, productId, plan] = productInfo(sub);
 
+    // TODO: check if this purchase token is not obsoleted by any other linked tokens
+    // archive.vn/JASLQ / medium.com/androiddevelopers/implementing-linkedpurchasetoken-correctly-to-prevent-duplicate-subscriptions-82dfbf7167da
     // TODO: check if expiry/productId/plan are valid
     // Play Billing deletes a purchaseToken after 60d from expiry
     await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
@@ -1107,6 +1109,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     // SUBSCRIPTION_CANCELED, SUBSCRIPTION_ON_HOLD, SUBSCRIPTION_IN_GRACE_PERIOD, SUBSCRIPTION_PAUSED
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
     logi(`sub notif: ${cid} ${typ} / ${state}, no-op`);
+    return; // No action needed for these states
   }
 }
 
@@ -1164,6 +1167,8 @@ async function getSubscription(env, purchaseToken) {
     logo(err);
     if (err.error && err.error.message) {
       throw new Error(`err getting sub: ${err.error.message}`);
+    } else {
+      throw new Error(`err getting sub: HTTP ${r.status} ${r.statusText}`);
     }
   }
   const json = await r.json();
@@ -1284,7 +1289,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
     cid = crandHex(64);
     kind = 1; // generated
   }
-  if (kind == 1 && gen) {
+  if (kind == 1 && !gen) {
     throw new Error("cid missing for purchase token: err? " + msg);
   }
   if (insert) {
@@ -1484,11 +1489,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (existingCid !== cid) {
           loge(`CID (us!=them) ${existingCid} != ${cid} for ${purchasetoken}`);
           return r400j({
-            error: `cid ${cid} not regist ered with purchase token`,
+            error: `cid ${cid} not registered with purchase token`,
           });
         }
       } catch (e) {
         loge(`Err validating CID for purchase (sent: ${cid}): ${e.message}`);
+        return r400j({ error: "cid validation failed", cid: cid });
       }
 
       const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
@@ -1540,14 +1546,9 @@ export async function googlePlayGetEntitlements(env, req) {
 
     const url = new URL(req.url);
     let cid = url.searchParams.get("cid");
-    const test = url.searchParams.get("test");
-    if (!cid || cid.length < mincidlength) {
+    const test = url.searchParams.get("test") === "true";
+    if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
       return r400j({ error: "missing/invalid client id" });
-    }
-
-    // Validate CID format (should be hex)
-    if (!/^[a-fA-F0-9]+$/.test(cid) && cid.length >= mincidlength) {
-      return r400j({ error: "invalid cid" });
     }
 
     // TODO: only allow credentialless clients to access this endpoint

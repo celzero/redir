@@ -82,7 +82,7 @@ async function handle(r, env, ctx) {
       } else if (p2 === "entitlements") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
-        // g/entitlements?cid
+        // g/entitlements?cid&test
         return googlePlayGetEntitlements(env, r);
       }
       return r400("g: unknown resource " + p2);
