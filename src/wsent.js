@@ -301,7 +301,7 @@ function monthsUntil(t) {
 
 /**
  * @param {Date} t - time
- * @returns {number} - Number of days until t
+ * @returns {number} - Number of days until t (note <24h = 1 day)
  * @throws {TypeError} - If t is not a Date object
  */
 function daysUntil(t) {
@@ -329,6 +329,8 @@ async function newCreds(env, expiry, plan) {
     --header 'X-WS-WL-Token: '
   */
   let execCount = 0;
+  const execctx = als.getStore();
+  const testing = execctx ? execctx.test : false;
   const totalMonths = monthsUntil(expiry);
   const totalDays = daysUntil(expiry);
   const requestedPlan = plan;
@@ -338,12 +340,18 @@ async function newCreds(env, expiry, plan) {
   }
   if (totalMonths <= 0) {
     if (totalDays < 0) {
+      // in the past
       throw new Error(`ws: plan expired ${expiry}, cannot create creds`);
     }
     if (totalDays >= 10) {
       plan = "month";
       execCount = 1; // 1 month plan
     } else if (totalDays == 1) {
+      if (testing) {
+        plan = "month"; // testing, allow
+        execCount = 1; // 1 month plan
+      }
+      // may be anywhere between 1s and 1d
       // silent grace period ~24h
       // TODO: if purchase token is unacknowledged, then always
       // generate new creds as the user is unlikely to be a in silent grace period.
