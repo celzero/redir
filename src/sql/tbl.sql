@@ -52,3 +52,7 @@ CREATE TABLE IF NOT EXISTS ws (
     -- restrict deletion unless ws has been notified and sessiontoken is invalidated
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT,
 )
+
+-- developers.cloudflare.com/d1/best-practices/use-indexes
+CREATE INDEX IF NOT EXISTS idx_playorders_linkedtoken
+ON playorders(linkedtoken)
