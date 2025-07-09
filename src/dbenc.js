@@ -2,7 +2,7 @@
 // Copyright (c) 2023 RethinkDNS and its authors
 
 import * as bin from "./buf.js";
-import { hkdfalgkeysz, hkdfhmac, sha256, sha512 } from "./hmac.js";
+import { hkdfaes, hkdfalgkeysz, sha256, sha512 } from "./hmac.js";
 import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
 const debug = false;
@@ -83,7 +83,7 @@ async function key(env, ctx) {
     console.error("dbenc: key missing");
     return null;
   }
-  return await keygen(seed, ctx);
+  return await aeskeygen(seed, ctx);
 }
 
 /**
@@ -107,13 +107,13 @@ async function weakiv(ad, cid) {
  * @param {string} ctxhex - hex string (non-empty)
  * @returns {Promise<CryptoKey?>}
  */
-export async function keygen(seedhex, ctxhex) {
+export async function aeskeygen(seedhex, ctxhex) {
   if (!bin.emptyString(seedhex) && !bin.emptyString(ctxhex)) {
     try {
       const sk = bin.hex2buf(seedhex);
       const sk256 = sk.slice(0, hkdfalgkeysz);
       const info512 = await sha512(bin.hex2buf(ctxhex));
-      return await gen(sk256, info512);
+      return await gen(sk256, info512); // hdkf aes key
     } catch (ignore) {
       logd("keygen: err", ignore);
     }
@@ -133,7 +133,7 @@ async function gen(secret, info, salt = bin.ZEROBUF) {
     throw new Error("auth: empty secret/info");
   }
   // exportable: crypto.subtle.exportKey("raw", key);
-  return hkdfhmac(secret, info, salt);
+  return hkdfaes(secret, info, salt);
 }
 
 function logd(...args) {

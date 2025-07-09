@@ -196,7 +196,9 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
       wsuser.sessionAuthHash
     );
     if (!enctok) {
-      throw new Error(`ws: err encrypt(token) for ${cid} on ${expiry} ${plan}`);
+      throw new Error(
+        `ws: err encrypt(token) for ${cid} ${wsuser.userId} on ${expiry} ${plan}`
+      );
     }
     // insert new creds in to the database
     const out = await dbx.insertCreds(db, cid, wsuser.userId, enctok);

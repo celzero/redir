@@ -25,14 +25,14 @@ export async function hmacverify(ck, mac, m) {
 // cendyne.dev/posts/2023-01-30-how-to-use-hkdf.html
 // info adds entropy to extracted keys, and must be unique:
 // see: soatok.blog/2021/11/17/understanding-hkdf
-export async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
+export async function hkdfaes(skmac, usectx, salt = bin.ZEROBUF) {
   const dk = await hkdf(skmac);
   return crypto.subtle.deriveKey(
     hkdf256(salt, usectx),
     dk,
-    hmac256opts(),
+    aesgcm256opts(),
     true, // extractable? can be true for sign, verify
-    ["sign", "verify"] // usage
+    ["encrypt", "decrypt"] // usage
   );
 }
 
@@ -58,6 +58,17 @@ export async function hkdf(sk) {
 
 export function hmac256opts() {
   return { name: "HMAC", hash: "SHA-256" };
+}
+
+/**
+ * https://developer.mozilla.org/en-US/docs/Web/API/AesKeyGenParams
+ * @returns {AesKeyGenParams}
+ */
+export function aesgcm256opts() {
+  return {
+    name: "AES-GCM",
+    length: 256,
+  };
 }
 
 export function hkdf256(salt, usectx) {
