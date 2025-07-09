@@ -196,8 +196,9 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
       wsuser.sessionAuthHash
     );
     if (!enctok) {
+      const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
       throw new Error(
-        `ws: err encrypt(token) for ${cid} ${wsuser.userId} on ${expiry} ${plan}`
+        `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
       );
     }
     // insert new creds in to the database
@@ -209,7 +210,10 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
         // TODO: workers analytics failures?
         // delete if the session token does not match
         // or if 'c' is null (TODO: attempt to reinsert instead?)
-        await deleteCreds(env, wsuser.sessionAuthHash);
+        const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
+        loge(
+          `ws: err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
+        );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
       // insert ok, use these newly created creds
