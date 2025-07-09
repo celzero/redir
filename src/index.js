@@ -15,9 +15,11 @@ import {
   ksponsor,
 } from "./paylinks.js";
 import {
+  cancelSubscription,
   googlePlayAcknowledgePurchase,
   googlePlayGetEntitlements,
   googlePlayNotification,
+  revokeSubscription,
 } from "./playorder.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 
@@ -79,11 +81,19 @@ async function handle(r, env, ctx) {
         // TODO: must be a PUT request
         // g/ack?cid&purchaseToken
         return googlePlayAcknowledgePurchase(env, r);
-      } else if (p2 === "entitlements") {
+      } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
         // g/entitlements?cid&test
         return googlePlayGetEntitlements(env, r);
+      } else if (p2 === "stop") {
+        // TODO: must be a POST request
+        // g/stop?cid&purchaseToken&test
+        return cancelSubscription(env, r);
+      } else if (p2 === "refund") {
+        // TODO: must be a POST request
+        // g/refund?cid&purchaseToken&test
+        return revokeSubscription(env, r);
       }
       return r400("g: unknown resource " + p2);
     } else if (p[1] === urlmoney1) {
