@@ -160,6 +160,7 @@ export function hex2buf(h) {
 }
 
 export function emptyString(s) {
+  if (s == null) return true; // null or undefined
   if (typeof s === "string") {
     // todo: trim
     return !s || s.length === 0;
