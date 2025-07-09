@@ -223,6 +223,7 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
   if (c == null) {
     throw new Error(`ws: err insert or get creds for ${cid} on ${plan}`);
   }
+  logd(`ws: getOrGen: use existing for ${c.cid} ${c.status}`);
   return c;
 }
 
@@ -234,7 +235,11 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
  */
 export async function deleteWsEntitlement(env, cid) {
   const db = dbx.db(env);
-  const c = await creds(env, cid);
+  try {
+    const c = await creds(env, cid, "del");
+  } catch (_) {
+    return; // error, nothing to delete?
+  }
   if (c == null) {
     return; // No existing credentials, nothing to delete
   }
@@ -257,10 +262,11 @@ export async function deleteWsEntitlement(env, cid) {
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
+ * @param {string} op - Reason for getting credentials (default: "get")
  * @returns {Promise<WSEntitlement|null>} - [userid, sessiontoken] or null if no existing credentials
  * @throws {Error} - If there is an error decrypting credentials
  */
-export async function creds(env, cid) {
+export async function creds(env, cid, op = "get") {
   const db = dbx.db(env);
   const out = await dbx.wsCreds(db, cid);
   // TODO: handle !out.success; throw error?
@@ -272,11 +278,12 @@ export async function creds(env, cid) {
   const uid = row.userid || null;
   const enctok = row.sessiontoken || null; // encrypted session token
   if (bin.emptyString(uid) || bin.emptyString(enctok)) {
+    logd(`ws: err ${op} creds for ${cid} missing uid or enctok; no-op`);
     return null; // No existing credentials
   }
   const tok = await dbenc.decrypt(env, cid, bin.str2byt2hex(uid), enctok);
   if (bin.emptyString(tok)) {
-    throw new Error(`ws: err decrypt(token) for ${cid}`);
+    throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
   const wsstatus = await credsStatus(env, tok);
   if (
@@ -289,7 +296,7 @@ export async function creds(env, cid) {
   } else if (wsstatus === "invalid") {
     await dbx.deleteCreds(db, cid); // Delete invalid credentials
   }
-  logw(`ws: old creds for ${cid} invalid/expired, get new creds?`);
+  logw(`ws: cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
   return null; // need new credentials
 }
 
@@ -439,14 +446,14 @@ async function credsStatus(env, sessiontoken) {
     }
     if (r.status === 403) {
       const err = await r.json();
-      logw(`credsOK: ${r.status} forbidden: ${err}`);
+      logw(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
       if (err.errorCode === 701) {
         return "invalid"; // Session is invalid
       }
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
   } catch (err) {
-    loge(`credsOK: error checking session token:`, err);
+    loge(`creds status: error checking session token:`, err);
   }
   return "unknown"; // Unknown status
 }

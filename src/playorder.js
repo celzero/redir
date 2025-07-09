@@ -1506,41 +1506,33 @@ export async function revokeSubscription(env, req) {
 
 /**
  * @param {any} env - Workers environment.
- * @param {string} purchaseToken - Google Play purchase token.
+ * @param {string} tok - Google Play purchase token.
  * @returns {Promise<void>}
  * @throws {Error} - If the acknowledgment fails.
  */
-async function ackSubscriptionWithoutEntitlement(env, purchaseToken) {
-  return ackSubscription(
-    env,
-    purchaseToken,
-    null,
-    true // ack without entitlement
-  );
+async function ackSubscriptionWithoutEntitlement(env, tok) {
+  return ackSubscription(env, tok, null, true);
 }
 
 /**
  *
  * @param {any} env
- * @param {string} purchaseToken - Google Play purchase token.
+ * @param {string} tok - Google Play purchase token.
  * @param {WSEntitlement} ent - Windscribe entitlement.
  * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge sub payments without an entitlement.
  * @returns {Promise<void>}
  * @throws {Error} - If the acknowledgment fails.
  */
-async function ackSubscription(
-  env,
-  purchaseToken,
-  ent,
-  ackWithoutEntitlement = false
-) {
+async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
   // POST
-  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/tokens/{purchaseToken}:acknowledge'
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/subscriptions/tokens/abcDEF123ghiJKL456mnoPQR789:acknowledge' \
   // -H 'Accept: application/json' \
+  // -H 'Content-Type: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
-  const ackurl = `${ack}${purchaseToken}${acksuffix}`;
+  // -d '{"developerPayload": <string> "{\"ws\": \"entitlement\"}"}'
+  const ackurl = `${ack}${tok}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const obs = await obfuscate(purchaseToken);
+  const obs = await obfuscate(tok);
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -1548,9 +1540,9 @@ async function ackSubscription(
   };
   if (ent != null) {
     const body = JSON.stringify({
-      developerPayload: {
+      developerPayload: JSON.stringify({
         ws: ent,
-      },
+      }),
     });
     const r = await fetch(ackurl, {
       method: "POST",
@@ -1559,7 +1551,7 @@ async function ackSubscription(
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`Failed to ack sub ${obs}: ${r.status}`);
+      throw new Error(`Failed to ack sub ${obs}: ${r.status} for ${ent.cid}`);
     }
   } else {
     if (!ackWithoutEntitlement) {
@@ -1570,7 +1562,7 @@ async function ackSubscription(
     if (!r.ok) {
       const gmsg = await gerror(r);
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`err ack sub for ${obs}: ${r.status} ${gmsg}`);
+      throw new Error(`Err ack sub for ${obs}: ${r.status} ${gmsg}`);
     }
   }
 }
@@ -1717,7 +1709,8 @@ function planInfo(item) {
 /**
  * ryan-schachte.com/blog/oauth_cloudflare_workers / archive.vn/B3FYC
  * @param {string} creds - principal
- * @returns {Promise<string|null>} - The Google OAuth access token.
+ * @returns {Promise<string>} - The Google OAuth access token.
+ * @throws {Error} - If the token cannot be retrieved.
  */
 async function gtoken(creds) {
   const key = JSON.parse(creds);
@@ -1744,8 +1737,10 @@ async function gtoken(creds) {
   if (g != null && g.token) {
     gtokenCache.set(cacheKey, g);
     logd(`cached new gtoken; expires at ${new Date(g.expiry)}`);
+    return g.token;
   }
-  return g.token || null;
+
+  throw new Error("Could not get or generate gtoken");
 }
 
 /**
@@ -1992,9 +1987,9 @@ export async function googlePlayGetEntitlements(env, req) {
       return r200j({
         success: true,
         cid: cid,
-        developerPayload: {
+        developerPayload: JSON.stringify({
           ws: out,
-        },
+        }),
       });
     });
   } catch (err) {
