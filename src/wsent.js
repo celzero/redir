@@ -350,13 +350,14 @@ async function newCreds(env, expiry, plan) {
       if (testing) {
         plan = "month"; // testing, allow
         execCount = 1; // 1 month plan
+      } else {
+        // may be anywhere between 1s and 1d
+        // silent grace period ~24h
+        // TODO: if purchase token is unacknowledged, then always
+        // generate new creds as the user is unlikely to be a in silent grace period.
+        // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
+        execCount = 0;
       }
-      // may be anywhere between 1s and 1d
-      // silent grace period ~24h
-      // TODO: if purchase token is unacknowledged, then always
-      // generate new creds as the user is unlikely to be a in silent grace period.
-      // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
-      execCount = 0;
     } else {
       // TODO: should or should not restrict new creds?
       execCount = 0; // restrict
