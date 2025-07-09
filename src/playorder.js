@@ -6,11 +6,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { getGoogleAuthToken } from "./gauth.js";
-
+import { emptyString, str2byt2hex } from "./buf.js";
 import { als, ExecCtx } from "./d.js";
+import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as dbx from "./sql/dbx.js";
-import { crandHex } from "./webcrypto.js";
+import { crandHex, sha256hex } from "./webcrypto.js";
 import {
   creds,
   deleteWsEntitlement,
@@ -26,19 +26,106 @@ const subsv2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/appl
 // subscriptionId isn't required since May 21, 2025
 // ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/acknowledge
 // but: github.com/googleapis/google-api-go-client/blob/971a6f113/androidpublisher/v3/androidpublisher-gen.go#L19539
-const ack = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/`;
-const tokenp = "/tokens/";
+const ack = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
 const acksuffix = ":acknowledge";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/revoke
-const revoke = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/`;
+// and: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/revoke
+// revoke = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/`;
+const revokev2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
 const revokesuffix = ":revoke";
+// see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
+const cancelv1 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
+const cancelsuffix = ":cancel";
 
 const monthlyProxyProductId = "proxy_monthly_subscription_test";
 const annualProxyProductId = "proxy_annual_subscription_test";
+const stdProductId = "standard.tier";
+const proProductId = "pro.tier";
+const monthlyBasePlanId = "proxy-monthly";
+const yearlyBasePlanId = "proxy-yearly";
 
-// if true, NEVER acknowledge sub payments without an entitlement
-const donotAckWithoutEntitlement = true;
+/** @type Set<string> - set of known productIds */
+const knownProducts = new Set([
+  monthlyProxyProductId,
+  annualProxyProductId,
+  stdProductId,
+  proProductId,
+]);
+
+/** @type Map<string, GEntitlement> - basePlanId => Entitlement */
+const knownBasePlans = new Map();
+
 const mincidlength = 32; // ideally 64 hex chars
+
+// 2 days in milliseconds
+const revokeThresholdMs = 2 * 24 * 60 * 60 * 1000;
+
+/**
+ * Memoization cache for Google tokens.
+ * @type {Map<string, GCreds>}
+ */
+const gtokenCache = new Map();
+
+class GEntitlement {
+  constructor(prod, base, expiry = null) {
+    /** @type {string} */
+    this.basePlanId = base || "";
+    /** @type {string} */
+    this.productId = prod || "";
+    this.expiry = expiry || new Date(0); // default to epoch
+    this.deferred = false; // whether this is a deferred entitlement
+    if (expiry == null) {
+      this.deferred = true;
+    }
+  }
+  static monthly(prod, expiry) {
+    if (prod == null || prod === "") {
+      throw new Error("GEntitlement: productId is required for monthly plan");
+    }
+    return new GEntitlement(prod, monthlyBasePlanId, expiry);
+  }
+  static yearly(prod, expiry) {
+    if (prod == null || prod === "") {
+      throw new Error("GEntitlement: productId is required for yearly plan");
+    }
+    return new GEntitlement(prod, yearlyBasePlanId, expiry);
+  }
+  /**
+   * @param {GEntitlement} o
+   * @param {Date|null} t
+   * @returns {GEntitlement}
+   */
+  static until(o, t) {
+    if (!(o instanceof GEntitlement)) {
+      throw new TypeError("GEntitlement.until: o must be a GEntitlement");
+    }
+    if (!(t instanceof Date)) {
+      throw new TypeError("GEntitlement.until: t must be a Date");
+    }
+    return new GEntitlement(o.productId, o.basePlanId, t);
+  }
+  /**
+   * @returns {"month"|"year"|"deferred"|"unknown"} - The subscription period for this entitlement.
+   */
+  get plan() {
+    if (this.deferred) return "deferred";
+    if (this.basePlanId.indexOf("monthly") >= 0) return "month";
+    if (this.basePlanId.indexOf("yearly") >= 0) return "year";
+    if (this.productId.indexOf("month") >= 0) return "month";
+    if (this.productId.indexOf("year") >= 0) return "year";
+    return "unknown";
+    // TODO? throw new Error(`unknown plan ${this.basePlanId} for ${this.productId}`);
+  }
+}
+
+knownBasePlans.set(
+  monthlyBasePlanId,
+  new GEntitlement(stdProductId, monthlyBasePlanId)
+);
+knownBasePlans.set(
+  yearlyBasePlanId,
+  new GEntitlement(stdProductId, yearlyBasePlanId)
+);
 
 /*
 {
@@ -641,9 +728,9 @@ class SubscriptionLineItem {
      */
     this.productId = json.productId || "";
     /**
-     * @type {string} - The expiry time of the subscription line item in RFC3339 format.
+     * @type {string|null} - The expiry time of the subscription line item in RFC3339 format.
      */
-    this.expiryTime = json.expiryTime || "";
+    this.expiryTime = emptyString(json.expiryTime) ? null : json.expiryTime;
     /**
      * @type {string} - The latest successful order ID for the subscription line item.
      */
@@ -1041,21 +1128,46 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   // For states CANCELED, ON_HOLD, IN_GRACE_PERIOD, PAUSED, access must not be revoked.
   // use lineItems.expiryTime to determine the exact product to revoke access to.
   const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
+  // sub stands canceled but may not have expired. That is, for an auto renewing plan,
+  // all items have autoRenewEnabled set to false.
+  // Also happens if the user has upgraded / downgraded their subscription.
+  const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
   const unpaid = state === "SUBSCRIPTION_STATE_PENDING_PURCHASE_CANCELED";
   // Per docs, only PURCHASED and RENEWED have to be acknowledged.
   const ackd =
     sub.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
+  // for expired and cancelled subs, the sub may have been upgraded or downgraded
+  // instead of auto-renewed: developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement
+  const replaced = expired || cancelled ? replacing(sub) : false;
+  const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+
+  // Play Billing deletes a purchaseToken after 60d from expiry
+  await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
+
+  if (obsoleted) {
+    const hash = await obfuscate(purchasetoken);
+    logi(`Purchase token ${hash} is obsoleted, cannot ack`);
+    if (!ackd) {
+      await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+    }
+    return r200j({
+      message: "Subscription acknowledged without entitlement",
+      cid: cid,
+      purchaseId: hash,
+    });
+  }
 
   // developer.android.com/google/play/billing/subscriptions#pending
   if (active) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
-    const [expiry, productId, plan] = productInfo(sub);
+    const gprod = productInfo(sub);
+    const expiry = gprod.expiry;
+    const productId = gprod.productId;
+    const plan = gprod.plan;
 
     // TODO: check if this purchase token is not obsoleted by any other linked tokens
     // archive.vn/JASLQ / medium.com/androiddevelopers/implementing-linkedpurchasetoken-correctly-to-prevent-duplicate-subscriptions-82dfbf7167da
     // TODO: check if expiry/productId/plan are valid
-    // Play Billing deletes a purchaseToken after 60d from expiry
-    await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
     // TODO: handle entitlement for multiple product ids
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
     if (ackd) {
@@ -1072,8 +1184,8 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     }
     // developer.android.com/google/play/billing/integrate#process
     // developer.android.com/google/play/billing/subscriptions#handle-subscription
-    return await ackSubscription(env, productId, purchasetoken, ent);
-  } else if (expired || revoked || unpaid) {
+    return await ackSubscription(env, purchasetoken, ent);
+  } else if (cancelled || expired || revoked || unpaid) {
     // on revoke / unpaid, delete entitlement
     const now = Date.now();
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
@@ -1081,28 +1193,32 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
       const productId = item.productId;
 
       // TODO: handle other lineItems
-      if (
-        productId != monthlyProxyProductId &&
-        productId != annualProxyProductId
-      ) {
+      if (!knownProducts.has(productId)) {
         loge(`skip revoke sub ${cid} test? ${test}; unknown ${productId}`);
         continue;
       }
 
+      // deferring line items do not have expiryTime set; and so they musn't be processed
+      // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#ReplacementCancellation
+      const deferring = item.deferredItemReplacement != null;
       const expiry = item.expiryTime ? new Date(item.expiryTime) : new Date(0);
       const autorenew = item.autoRenewingPlan
         ? item.autoRenewingPlan.autoRenewEnabled
         : false;
-      logi(`revoke sub ${cid} ${productId} at ${expiry} (renew? ${autorenew})`);
-      if (revoked || unpaid) {
+      logi(
+        `expire/cancel sub ${cid} ${productId} at ${expiry} (renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
+      );
+      if ((revoked && !replaced) || unpaid) {
         await deleteWsEntitlement(env, cid);
-      } else if (!autorenew && expiry.getTime() < now) {
+      } else if (!autorenew && !deferring && expiry.getTime() < now) {
         // TODO: check if WSUser expiry is far into the future (a lot of grace period
         // even though sub has expired), if so, delete it or let the user use it?
         // await deleteWsEntitlement(env, cid);
         // needed? await revokeSubscription(env, cid, productId, purchasetoken);
       } else {
-        loge(`skip revoke ${cid} ${productId} ${expiry}; renews ${autorenew}`);
+        loge(
+          `skip revoke ${cid} ${productId} ${expiry}; renews ${autorenew} / rep ${replaced}`
+        );
       }
     }
   } else {
@@ -1149,77 +1265,278 @@ async function getSubscription(env, purchaseToken) {
     Authorization: `Bearer ${bearer}`,
   };
   const r = await fetch(url, { headers });
-  // {
-  // "error": {
-  //     "code": 401,
-  //     "message": "The current user has insufficient permissions to perform the requested operation.",
-  //     "errors": [
-  //     {
-  //         "message": "The current user has insufficient permissions to perform the requested operation.",
-  //         "domain": "androidpublisher",
-  //         "reason": "permissionDenied"
-  //     }
-  //     ]
-  // }
-  // }
   if (!r.ok) {
-    const err = await r.json();
-    logo(err);
-    if (err.error && err.error.message) {
-      throw new Error(`err getting sub: ${err.error.message}`);
-    } else {
-      throw new Error(`err getting sub: HTTP ${r.status} ${r.statusText}`);
-    }
+    const gmsg = await gerror(r);
+    throw new Error(`err getting sub: ${r.status} ${gmsg}`);
   }
   const json = await r.json();
   if (json != null && json.kind === "androidpublisher#subscriptionPurchaseV2") {
     return new SubscriptionPurchaseV2(json);
   } else {
-    throw new Error(`Unexpected response ${r.status}: ${json}`);
+    // TODO: should the json be logged instead?
+    throw new Error(`Unexpected response ${r.status}: ${JSON.stringify(json)}`);
   }
 }
 
 /**
- *
+ * developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
  * @param {any} env - Workers environment.
- * @param {string} cid - Client identifier (hex string).
- * @param {string} productId - Product ID of the subscription.
+ * @param {Request} req - HTTP request.
+ * @return {Promise<Response>} - Response indicating the result of the operation.
+ */
+export async function cancelSubscription(env, req) {
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return r400j({ error: "method not allowed" });
+  }
+
+  const url = new URL(req.url);
+  const cid = url.searchParams.get("cid");
+  const purchaseToken = url.searchParams.get("purchaseToken");
+  const test = url.searchParams.has("test");
+  const obstoken = await obfuscate(purchaseToken);
+
+  if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    return r400j({ error: "missing/invalid client id" });
+  }
+
+  logd(`cancel sub for ${cid}; test? ${test} for ${obstoken}`);
+
+  return await als.run(new ExecCtx(test), async () => {
+    const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
+    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+      loge(`revoke sub: not found for ${obstoken}`);
+      return r400j({
+        error: "subscription not found",
+        purchaseId: obstoken,
+      });
+    }
+    const entry = dbres.results[0];
+    const storedcid = entry.cid;
+    // TODO: only allow credentialless clients to access this endpoint
+    if (storedcid !== cid) {
+      loge(`cancel sub cid mismatch: ${cid} != ${storedcid}`);
+      return r400j({
+        error: "cannot cancel, cid mismatch",
+        purchaseId: obstoken,
+      });
+    }
+
+    const sub = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
+    const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+
+    if (canceled || expired) {
+      // If the subscription is canceled, we cannot revoke it.
+      loge(`sub ${obstoken} already canceled or expired`);
+      return r200j({
+        error: "cannot revoke, subscription canceled or expired",
+        expired: expired,
+        canceled: canceled,
+        cancelCtx: sub.canceledStateContext,
+        purchaseId: obstoken,
+      });
+    }
+    // curl -X POST \
+    //   -H "Accept: application/json" \
+    //   -d '{"cancellationType": "USER_REQUESTED_STOP_RENEWALS"}' \
+    //   "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.example.app/purchases/subscriptions/tokens/EXAMPLE_TOKEN_STRING_12345:cancel"
+    const cancelurl = `${cancelv1}${purchaseToken}${cancelsuffix}`;
+    const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+    const headers = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${bearer}`,
+    };
+    const body = JSON.stringify({
+      // user_requested_stop_renewals can be restored later.
+      cancellationType: "USER_REQUESTED_STOP_RENEWALS",
+    });
+    // May have been canceled already or expired or invalid
+    const r = await fetch(cancelurl, {
+      method: "POST",
+      headers: headers,
+      body: body,
+    });
+
+    if (!r.ok) {
+      const gerr = await gerror(r);
+      loge(`cancel sub err: ${r.status} ${gerr}`);
+      return r400j({
+        error: `Failed to cancel subscription: ${r.status} ${gerr}`,
+        purchaseId: obstoken,
+      });
+    } else {
+      logi(`cancel sub for ${obstoken}`);
+      return r200j({
+        message: "canceled subscription",
+        purchaseId: obstoken,
+      });
+    }
+  });
+}
+
+/**
+ * developer.android.com/google/play/billing/subscription-with-addons#revoke-refund-subscription-with-addons
+ * @param {any} env - Workers environment.
+ * @param {Request} req - HTTP request.
+ * @returns {Promise<Response>}
+ */
+export async function revokeSubscription(env, req) {
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return r400j({ error: "method not allowed" });
+  }
+
+  const url = new URL(req.url);
+  const cid = url.searchParams.get("cid");
+  const purchaseToken = url.searchParams.get("purchaseToken");
+  const test = url.searchParams.has("test");
+  const obstoken = await obfuscate(purchaseToken);
+
+  if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    return r400j({ error: "missing/invalid client id" });
+  }
+
+  // TODO: only allow credentialless clients to access this endpoint
+  logd(`revoke sub for ${cid}; test? ${test} for ${obstoken}`);
+
+  return await als.run(new ExecCtx(test), async () => {
+    const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
+    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+      loge(`revoke sub: not found for ${obstoken}`);
+      return r400j({
+        error: "subscription not found",
+        purchaseId: obstoken,
+      });
+    }
+    const entry = dbres.results[0];
+    const storedcid = entry.cid;
+    if (storedcid !== cid) {
+      loge(`revoke sub cid mismatch: ${cid} != ${storedcid}`);
+      return r400j({
+        error: "cannot revoke, cid mismatch",
+        purchaseId: obstoken,
+      });
+    }
+
+    const sub = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
+    const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+
+    if (canceled || expired) {
+      // If the subscription is canceled, we cannot revoke it.
+      loge(`Subscription ${obstoken} is canceled, cannot revoke`);
+      return r200j({
+        error: "cannot revoke, subscription canceled or expired",
+        expired: expired,
+        canceled: canceled,
+        cancelCtx: sub.canceledStateContext,
+        purchaseId: obstoken,
+      });
+    }
+
+    const thres = Date.now() - revokeThresholdMs;
+    const start = sub.startTime ? new Date(sub.startTime) : new Date(0);
+    if (start.getTime() > thres) {
+      // If sub is more than threshold millis ago, do not revoke it.
+      loge(`revoke sub ${obstoken} started too long ago, cannot revoke`);
+      return r400j({
+        error: "cannot revoke, sub too old, email hello@celzero.com",
+        when: start,
+        threshold: thres,
+        purchaseId: obstoken,
+      });
+    }
+
+    const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+
+    // POST
+    //   -H 'Accept: application/json' \
+    //   -H 'Content-Type: application/json' \
+    //   -d '{
+    //     "revocationContext": {
+    //       "proratedRefund": {},
+    //       "fullRefund": {},
+    //       "itemBasedRefund": {
+    //          "productId": "string",
+    //       },
+    //       {},
+    //     }
+    //   }'
+    //   'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/subscriptionsv2/tokens/{token}:revoke'
+    const revokeurl = `${revokev2}${purchaseToken}${revokesuffix}`;
+    const headers = {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${bearer}`,
+    };
+
+    const r = await fetch(revokeurl, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify({
+        revocationContext: {
+          fullRefund: {},
+        },
+      }),
+    });
+
+    if (!r.ok) {
+      const gerr = await gerror(r);
+      loge(`revoke sub err: ${r.status} ${gerr}`);
+      // TODO: retry for 3 days with pipeline?
+      return r400j({
+        error: `Failed to revoke subscription: ${r.status} ${gerr}`,
+        purchaseId: obstoken,
+      });
+    } else {
+      logi(`revoke sub for ${obstoken}`);
+      return r200j({
+        message: "revoked subscription",
+        purchaseId: obstoken,
+      });
+    }
+  });
+}
+
+/**
+ * @param {any} env - Workers environment.
  * @param {string} purchaseToken - Google Play purchase token.
  * @returns {Promise<void>}
+ * @throws {Error} - If the acknowledgment fails.
  */
-async function revokeSubscription(env, cid, productId, purchaseToken) {
-  // POST
-  //   -H 'Accept: application/json' \
-  //   'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/<pkg>/purchases/subscriptions/<sku>/tokens/<token>:revoke'
-  const revokeurl = `${revoke}${productId}${tokenp}${purchaseToken}${revokesuffix}`;
-  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const headers = {
-    Accept: "application/json",
-    Authorization: `Bearer ${bearer}`,
-  };
-  const r = await fetch(revokeurl, { method: "POST", headers });
-  if (!r.ok) {
-    // TODO: retry for 3 days with pipeline?
-    throw new Error(`Failed to revoke sub ${cid} ${productId}: ${r.status}`);
-  }
+async function ackSubscriptionWithoutEntitlement(env, purchaseToken) {
+  return ackSubscription(
+    env,
+    purchaseToken,
+    null,
+    true // ack without entitlement
+  );
 }
 
 /**
  *
  * @param {any} env
- * @param {string} productId - Product ID of the subscription.
  * @param {string} purchaseToken - Google Play purchase token.
- * @param {WSEntitlement} ent - Windscribe entitlement
+ * @param {WSEntitlement} ent - Windscribe entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge sub payments without an entitlement.
  * @returns {Promise<void>}
  * @throws {Error} - If the acknowledgment fails.
  */
-async function ackSubscription(env, productId, purchaseToken, ent) {
+async function ackSubscription(
+  env,
+  purchaseToken,
+  ent,
+  ackWithoutEntitlement = false
+) {
   // POST
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/tokens/{purchaseToken}:acknowledge'
   // -H 'Accept: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
-  const ackurl = `${ack}${productId}${tokenp}${purchaseToken}${acksuffix}`;
+  const ackurl = `${ack}${purchaseToken}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const obs = await obfuscate(purchaseToken);
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -1238,17 +1555,18 @@ async function ackSubscription(env, productId, purchaseToken, ent) {
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`Failed to ack sub ${productId}: ${r.status}`);
+      throw new Error(`Failed to ack sub ${obs}: ${r.status}`);
     }
   } else {
-    if (donotAckWithoutEntitlement) {
-      throw new Error(`No entitlement for ${productId}, cannot ack sub`);
+    if (!ackWithoutEntitlement) {
+      throw new Error(`No entitlement for ${obs}, cannot ack sub`);
     }
-    // no entitlement, just ack
+    // no entitlement, but ack anyway
     const r = await fetch(ackurl, { method: "POST", headers });
     if (!r.ok) {
+      const gmsg = await gerror(r);
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`Failed to ack sub for ${productId}: ${r.status}`);
+      throw new Error(`err ack sub for ${obs}: ${r.status} ${gmsg}`);
     }
   }
 }
@@ -1344,42 +1662,86 @@ async function recursivelyGetCid(env, sub, n = 1) {
 
 /**
  * @param {SubscriptionPurchaseV2} sub
- * @returns {[expiry: Date, productId: string, plan: "month"|"year"|"unknown"]} - The expiry date and product ID of the subscription.
+ * @returns {GEntitlement|null} - The expiry date and product ID of the subscription.
  * @throws {Error} - If the subscription line items are invalid.
  */
 function productInfo(sub) {
   if (!sub || !sub.lineItems || sub.lineItems.length === 0) {
     throw new Error("No sub line items");
   }
-  // TODO: support multiple line items
-  // TODO: match incoming purchaetoken with orderid?
-  const item = sub.lineItems[0];
-  // expiryTime is in RFC3339 format
-  // "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z", or "2014-10-02T15:01:23+05:30".
-  return [new Date(item.expiryTime), item.productId, planInfo(item.productId)];
+  for (const item of sub.lineItems) {
+    // multiple line items for deferred upgrades/downgrades
+    // developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement
+    // const deferringAnotherItem = item.deferredItemReplacement != null;
+    // deferred line items do not have expiry time set
+    const deferred = emptyString(item.expiryTime);
+    if (deferred) continue; // no-op
+    // TODO: match incoming purchasetoken with orderid?
+    return planInfo(item);
+  }
+  return null; // no valid line items found
 }
 
 /**
- * @param {string} productId
- * @return {"month" | "year" | "unknown"} - The plan type based on the product ID.
+ * @param {SubscriptionLineItem} item
+ * @return {GEntitlement|null} - The entitlement based on the product ID.
  */
-function planInfo(productId) {
-  if (productId === monthlyProxyProductId) {
-    return "month";
-  } else if (productId === annualProxyProductId) {
-    return "year";
+function planInfo(item) {
+  const productId = item.productId;
+  if (!knownProducts.has(productId)) {
+    return null; // unknown product
   }
-  return "unknown";
+  // expiryTime is in RFC3339 format:
+  // "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z", or "2014-10-02T15:01:23+05:30".
+  const until = item.expiryTime ? new Date(item.expiryTime) : null;
+  if (productId === monthlyProxyProductId) {
+    return GEntitlement.monthly(productId, until);
+  } else if (productId === annualProxyProductId) {
+    return GEntitlement.yearly(productId, until);
+  }
+  if (!item.offerDetails || !item.offerDetails.basePlanId) {
+    return null; // no base plan
+  }
+  const baseplan = item.offerDetails.basePlanId;
+  const ent = knownBasePlans.get(baseplan);
+  if (ent != null) {
+    return GEntitlement.until(ent, until);
+  }
+  return null; // unknown base plan
 }
 
-// ryan-schachte.com/blog/oauth_cloudflare_workers / archive.vn/B3FYC
+/**
+ * ryan-schachte.com/blog/oauth_cloudflare_workers / archive.vn/B3FYC
+ * @param {string} creds - principal
+ * @returns {Promise<string|null>} - The Google OAuth access token.
+ */
 async function gtoken(creds) {
   const key = JSON.parse(creds);
-  return await getGoogleAuthToken(
+  const cacheKey = key.client_email;
+
+  if (!cacheKey) {
+    return null;
+  }
+
+  const safetyMarginMs = 1 * 60 * 1000; // 1m
+  // Check if we have a valid cached token
+  const cached = gtokenCache.get(cacheKey);
+  if (cached && cached.token && cached.expiry > Date.now() + safetyMarginMs) {
+    logd(`cached gtoken; expires ${new Date(cached.expiry)}`);
+    return cached.token;
+  }
+
+  const g = await getGoogleAuthToken(
     key.client_email,
-    key.private_key,
+    key.private_key || null,
     androidscope
   );
+
+  if (g != null && g.token) {
+    gtokenCache.set(cacheKey, g);
+    logd(`cached new gtoken; expires at ${new Date(g.expiry)}`);
+  }
+  return g.token || null;
 }
 
 /**
@@ -1455,20 +1817,30 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
+    const obstoken = await obfuscate(purchasetoken);
 
-    logi(
-      `handle ack for ${purchasetoken} at ${state}/${ackstate}; test? ${test}`
-    );
+    logi(`handle ack for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
     if (ackd) {
-      return r200j({ message: "already acknowledged", cid: cid });
+      return r200j({
+        message: "already acknowledged",
+        purchaseId: obstoken,
+        cid: cid,
+      });
     }
     if (!active) {
       loge(`Cannot ack inactive subscription: ${cid}, state: ${state}`);
-      return r400j({ error: "subscription not active", state: state });
+      return r400j({
+        error: "subscription not active",
+        purchaseId: obstoken,
+        state: state,
+      });
     }
 
-    const [expiry, productId, plan] = productInfo(sub);
+    const gprod = productInfo(sub);
+    const expiry = gprod.expiry;
+    const productId = gprod.productId;
+    const plan = gprod.plan;
 
     return await als.run(new ExecCtx(test), async () => {
       // TODO: check if expiry/productId/plan are valid
@@ -1478,6 +1850,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         return r400j({
           error: "subscription expired",
           cid: cid,
+          purchaseId: obstoken,
           expiry: expiry.toISOString(),
         });
       }
@@ -1487,14 +1860,32 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         // credentialed accounts can have different cids
         const existingCid = await getCidThenPersist(env, sub);
         if (existingCid !== cid) {
-          loge(`CID (us!=them) ${existingCid} != ${cid} for ${purchasetoken}`);
+          loge(`CID (us!=them) ${existingCid} != ${cid} for ${obstoken}`);
           return r400j({
+            purchaseId: obstoken,
             error: `cid ${cid} not registered with purchase token`,
           });
         }
       } catch (e) {
         loge(`Err validating CID for purchase (sent: ${cid}): ${e.message}`);
-        return r400j({ error: "cid validation failed", cid: cid });
+        return r400j({
+          purchaseId: obstoken,
+          error: "cid validation failed",
+          cid: cid,
+        });
+      }
+
+      const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+      if (obsoleted) {
+        logi(`Purchase token ${obstoken} is obsoleted, cannot ack`);
+        await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+        return r200j({
+          message: "Subscription acknowledged without entitlement",
+          cid: cid,
+          productId: productId,
+          purchaseId: obstoken,
+          expiry: expiry.toISOString(),
+        });
       }
 
       const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
@@ -1502,31 +1893,45 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         return r500j({ error: "failed to get entitlement", cid: cid });
       }
       if (ent.status === "banned") {
-        return r400j({ error: "user banned", cid: cid });
+        return r400j({
+          error: "user banned",
+          cid: cid,
+          purchaseId: obstoken,
+        });
       }
       if (ent.status === "expired") {
-        return r400j({ error: "entitlement expired", cid: cid });
+        return r400j({
+          error: "entitlement expired",
+          cid: cid,
+          purchaseId: obstoken,
+        });
       }
       if (ent.status !== "valid") {
         return r400j({
           error: "invalid entitlement status",
           status: ent.status,
           cid: cid,
+          purchaseId: obstoken,
         });
       }
 
-      await ackSubscription(env, productId, purchasetoken, ent);
+      await ackSubscription(env, purchasetoken, ent);
 
       return r200j({
-        success: true,
         message: "Subscription acknowledged successfully",
         cid: cid,
         productId: productId,
+        purchaseId: obstoken,
         expiry: expiry.toISOString(),
       });
     });
-  } catch (error) {
-    return r500j({ error: "acknowledge failed", details: error.message });
+  } catch (err) {
+    const obstoken = await obfuscate(purchasetoken);
+    return r500j({
+      error: "acknowledge failed",
+      details: err.message,
+      purchaseId: obstoken,
+    });
   }
 }
 
@@ -1546,7 +1951,7 @@ export async function googlePlayGetEntitlements(env, req) {
 
     const url = new URL(req.url);
     let cid = url.searchParams.get("cid");
-    const test = url.searchParams.get("test") === "true";
+    const test = url.searchParams.has("test");
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
       return r400j({ error: "missing/invalid client id" });
     }
@@ -1564,11 +1969,43 @@ export async function googlePlayGetEntitlements(env, req) {
         return r400j({ error: "user banned", cid: cid });
       }
 
-      return r200j({ success: true, entitlement: out, cid: cid });
+      return r200j({
+        success: true,
+        cid: cid,
+        developerPayload: {
+          ws: out,
+        },
+      });
     });
   } catch (err) {
     return r500j({ error: "get entitlements failed", details: err.message });
   }
+}
+
+/**
+ * @param {any} env - Workers environment.
+ * @param {string} t - purchase token.
+ */
+async function isPurchaseTokenLinked(env, t) {
+  const out = await dbx.firstLinkedPurchaseTokenEntry(dbx.db(env), t);
+  if (out == null || !out.success) {
+    return false; // no linked purchase token found
+  }
+  if (out.results == null || out.results.length === 0) {
+    return false; // no linked purchase token found
+  }
+  logi(`is linked purchase token ${t}: ${JSON.stringify(out.results)}`);
+  return out.results.length > 0;
+}
+
+/**
+ * @param {SubscriptionPurchaseV2} sub
+ * @returns {boolean} - Whether the subscription is being replaced or not.
+ */
+function replacing(sub) {
+  const ctx = sub.canceledStateContext;
+  if (ctx == null) return false;
+  return ctx.replacementCancellation != null;
 }
 
 function r200j(j) {
@@ -1593,6 +2030,10 @@ function r200t(txt) {
 
 function logi(...args) {
   console.info("gplay", ministack(), ...args);
+}
+
+function logw(...args) {
+  console.warn("gplay", ministack(), ...args);
 }
 
 function loge(...args) {
@@ -1637,4 +2078,50 @@ function ministack() {
   }
 
   return cc.length > 0 ? `${cc.join(" ")}` : "nomatch" + lines.length;
+}
+
+/**
+ * @param {Response} r - Fetch response object.
+ * @returns {Promise<string>} - Error message from the response, or an empty string if no error.
+ */
+async function gerror(r) {
+  try {
+    // {
+    // "error": {
+    //     "code": 401,
+    //     "message": "The current user has insufficient permissions to perform the requested operation.",
+    //     "errors": [
+    //     {
+    //         "message": "The current user has insufficient permissions to perform the requested operation.",
+    //         "domain": "androidpublisher",
+    //         "reason": "permissionDenied"
+    //     }
+    //     ]
+    // }
+    // }
+    const msg = await r.json();
+    if (msg == null || typeof msg !== "object") {
+      return "unknown msg: " + msg;
+    }
+    logo(msg);
+    if (msg.error && msg.error.message) {
+      return msg.error.message;
+    }
+    return msg;
+  } catch (e) {
+    // If JSON parsing fails, return the response text
+    return `err getting gerr: ${e.message}, code: ${r.status}`;
+  }
+}
+
+/**
+ * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
+ * then hashes it to a hex string.
+ * @param {string} str - input string to obfuscate.
+ * @returns {Promise<string>} - sha256 hash of the input as hex.
+ */
+async function obfuscate(str) {
+  const hex = str2byt2hex(str);
+  const hash = await sha256hex(hex);
+  return hash;
 }
