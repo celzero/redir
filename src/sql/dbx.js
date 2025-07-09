@@ -153,7 +153,7 @@ export async function insertClient(db, cid, clientinfo, kind) {
   if (db == null || emptyString(cid) || kind == null) {
     throw new Error("d1: insertClient: db/cid/kind missing");
   }
-  if (clientinfo == null) {
+  if (clientinfo != null) {
     const q =
       "INSERT OR IGNORE INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)";
     const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
@@ -236,7 +236,7 @@ export async function insertCreds(db, cid, userid, sessiontoken) {
   // fails if cid is already in the table
   const q =
     "INSERT INTO ws (cid, sessiontoken, userid, mtime) VALUES(?, ?, ?, ?)";
-  const tx = db.prepare(q).bind(cid, sessiontoken, userid, mtime);
+  const tx = db.prepare(q).bind(cid, sessiontoken, userid, now());
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
   return run(tx);
 }
