@@ -12,10 +12,10 @@ import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, sha256hex } from "./webcrypto.js";
 import {
-    creds,
-    deleteWsEntitlement,
-    getOrGenWsEntitlement,
-    WSEntitlement,
+  creds,
+  deleteWsEntitlement,
+  getOrGenWsEntitlement,
+  WSEntitlement,
 } from "./wsent.js";
 
 // setup: developers.google.com/android-publisher/getting_started
@@ -1292,7 +1292,9 @@ export async function cancelSubscription(env, req) {
 
   const url = new URL(req.url);
   const cid = url.searchParams.get("cid");
-  const purchaseToken = url.searchParams.get("purchaseToken");
+  const purchaseToken =
+    url.searchParams.get("purchaseToken") ||
+    url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
   const obstoken = await obfuscate(purchaseToken);
 
@@ -1390,7 +1392,9 @@ export async function revokeSubscription(env, req) {
 
   const url = new URL(req.url);
   const cid = url.searchParams.get("cid");
-  const purchaseToken = url.searchParams.get("purchaseToken");
+  const purchaseToken =
+    url.searchParams.get("purchaseToken") ||
+    url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
   const obstoken = await obfuscate(purchaseToken);
 
