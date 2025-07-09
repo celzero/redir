@@ -11,6 +11,7 @@ import { als, ExecCtx } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as dbx from "./sql/dbx.js";
 
+const debugws = true; // set to true to enable debug logging
 const resourceuser = "Users";
 const resourcesession = "Session";
 const creatuser = resourceuser + "?session_type_id=4&plan=";
@@ -588,4 +589,10 @@ function loge(...args) {
 
 function logi(...args) {
   console.info("win:", ...args);
+}
+
+function logd(...args) {
+  if (debugws) {
+    console.debug("win:", ...args);
+  }
 }
