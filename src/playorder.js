@@ -12,10 +12,10 @@ import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, sha256hex } from "./webcrypto.js";
 import {
-  creds,
-  deleteWsEntitlement,
-  getOrGenWsEntitlement,
-  WSEntitlement,
+    creds,
+    deleteWsEntitlement,
+    getOrGenWsEntitlement,
+    WSEntitlement,
 } from "./wsent.js";
 
 // setup: developers.google.com/android-publisher/getting_started
@@ -1099,6 +1099,7 @@ async function handleSubscriptionNotification(env, notif) {
   const sub = await getSubscription(env, purchasetoken);
   const test = sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
+  // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
 
   return als.run(new ExecCtx(test), async () => {
     logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
@@ -1161,8 +1162,12 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   if (active) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
     const gprod = productInfo(sub);
+    if (!gprod) {
+      loge(`skip ack sub ${cid} test? ${test}; no product info`);
+      return;
+    }
     const expiry = gprod.expiry;
-    const productId = gprod.productId;
+    // const productId = gprod.productId;
     const plan = gprod.plan;
 
     // TODO: check if this purchase token is not obsoleted by any other linked tokens
@@ -1192,12 +1197,6 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     for (const item of sub.lineItems) {
       const productId = item.productId;
 
-      // TODO: handle other lineItems
-      if (!knownProducts.has(productId)) {
-        loge(`skip revoke sub ${cid} test? ${test}; unknown ${productId}`);
-        continue;
-      }
-
       // deferring line items do not have expiryTime set; and so they musn't be processed
       // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#ReplacementCancellation
       const deferring = item.deferredItemReplacement != null;
@@ -1209,6 +1208,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         `expire/cancel sub ${cid} ${productId} at ${expiry} (renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
       );
       if ((revoked && !replaced) || unpaid) {
+        // TODO: validate if productId being revoked/unpaid may have granted a WSEntitlement
         await deleteWsEntitlement(env, cid);
       } else if (!autorenew && !deferring && expiry.getTime() < now) {
         // TODO: check if WSUser expiry is far into the future (a lot of grace period
@@ -1662,7 +1662,7 @@ async function recursivelyGetCid(env, sub, n = 1) {
 
 /**
  * @param {SubscriptionPurchaseV2} sub
- * @returns {GEntitlement|null} - The expiry date and product ID of the subscription.
+ * @returns {GEntitlement|null} The expiry date and product ID of the subscription.
  * @throws {Error} - If the subscription line items are invalid.
  */
 function productInfo(sub) {
@@ -1816,10 +1816,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const state = sub.subscriptionState;
     const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
+    const canceled = state === "SUBSCRIPTION_STATE_CANCELED";
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
     const obstoken = await obfuscate(purchasetoken);
 
-    logi(`handle ack for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
+    logi(`ack sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
     if (ackd) {
       return r200j({
@@ -1828,8 +1829,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         cid: cid,
       });
     }
-    if (!active) {
-      loge(`Cannot ack inactive subscription: ${cid}, state: ${state}`);
+    // canceled subs could be expiring in the future
+    if (!active && !canceled) {
+      loge(`ack sub err inactive subscription: ${cid}, state: ${state}`);
       return r400j({
         error: "subscription not active",
         purchaseId: obstoken,
@@ -1838,6 +1840,14 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     }
 
     const gprod = productInfo(sub);
+    if (!gprod) {
+      loge(`ack sub err invalid product for ${obstoken}`);
+      return r400j({
+        error: "not a valid product",
+        purchaseId: obstoken,
+      });
+    }
+
     const expiry = gprod.expiry;
     const productId = gprod.productId;
     const plan = gprod.plan;
@@ -1888,6 +1898,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         });
       }
 
+      logi(`ack sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
+
+      // TODO: check if productId grants a WSEntitlement
       const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
       if (!ent) {
         return r500j({ error: "failed to get entitlement", cid: cid });
@@ -1918,7 +1931,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       await ackSubscription(env, purchasetoken, ent);
 
       return r200j({
-        message: "Subscription acknowledged successfully",
+        message: "Subscription acknowledged",
         cid: cid,
         productId: productId,
         purchaseId: obstoken,
