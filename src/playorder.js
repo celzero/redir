@@ -360,7 +360,7 @@ class TestNotification {
   "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED",
   "externalAccountIdentifiers": {
     "externalAccountId": "user-ext-acc-88765",
-    "obfuscatedExternalAccountId": " obfuscated-acc-id-aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
+    "obfuscatedExternalAccountId": "obfuscated-acc-id-aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789",
     "obfuscatedExternalProfileId": "obfuscated-prof-id-9876543210zYxWvUtSrQpOnMlKjIhGfEdCbA"
   },
   "subscribeWithGoogleInfo": {
@@ -1799,6 +1799,9 @@ function notificationTypeStr(notif) {
  */
 export async function googlePlayAcknowledgePurchase(env, req) {
   try {
+    if (req.method !== "POST") {
+      return r400j({ error: "method not allowed" });
+    }
     // Parse request body to get purchase token
     const url = new URL(req.url);
     const purchasetoken =

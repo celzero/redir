@@ -78,7 +78,7 @@ async function handle(r, env, ctx) {
       if (p2 === "rtdn") {
         return googlePlayNotification(env, r);
       } else if (p2 === "ack") {
-        // TODO: must be a PUT request
+        // TODO: must be a POST request
         // g/ack?cid&purchaseToken
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "ent") {
