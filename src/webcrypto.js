@@ -6,17 +6,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b642buf, byt, str2ab } from "./buf.js";
+import { b642buf, buf2hex, byt, hex2buf, str2ab } from "./buf.js";
 
 /**
- *
- * @param {CryptoKey} key
- * @param {BufferSource} iv
- * @param {BufferSource} taggedciphertext
- * @returns
+ * @param {CryptoKey} aeskey - The AES-GCM key
+ * @param {BufferSource} iv - The initialization vector
+ * @param {BufferSource} taggedciphertext - The encrypted data with authentication tag
+ * @returns {Promise<Uint8Array>} - The decrypted plaintext
  */
 export async function decryptAesGcm(aeskey, iv, taggedciphertext) {
-  const plaintext = crypto.subtle.decrypt(
+  const plaintext = await crypto.subtle.decrypt(
     {
       name: "AES-GCM",
       iv: iv,
@@ -29,11 +28,10 @@ export async function decryptAesGcm(aeskey, iv, taggedciphertext) {
 }
 
 /**
- *
- * @param {BufferSource} aeskey
- * @param {BufferSource} iv
- * @param {BufferSource} plaintext
- * @returns {Promise<Uint8Array>}
+ * @param {BufferSource} aeskey - The AES-GCM key
+ * @param {BufferSource} iv - The initialization vector
+ * @param {BufferSource} plaintext - The data to encrypt
+ * @returns {Promise<Uint8Array>} - The encrypted data with authentication tag
  */
 export async function encryptAesGcm(aeskey, iv, plaintext) {
   const taggedciphertext = await crypto.subtle.encrypt(
@@ -49,11 +47,13 @@ export async function encryptAesGcm(aeskey, iv, plaintext) {
 }
 
 /**
- *
- * @param {Uint8Array} raw
- * @returns {Promise<CryptoKey>}
+ * @param {Uint8Array} raw - The raw key material (32 bytes for AES-256)
+ * @returns {Promise<CryptoKey>} - The imported AES-GCM key
  */
 export function importAes256Key(raw) {
+  if (!raw || raw.length !== 32) {
+    throw new Error("AES-256 key must be exactly 32 bytes");
+  }
   return crypto.subtle.importKey(
     "raw",
     raw,
@@ -67,10 +67,13 @@ export function importAes256Key(raw) {
 }
 
 /**
- * @param {Uint8Array} raw
- * @returns {Promise<CryptoKey>}
+ * @param {Uint8Array} raw - The raw key material for HMAC
+ * @returns {Promise<CryptoKey>} - The imported HMAC key
  */
 export function importHmacKey(raw) {
+  if (!raw || raw.length === 0) {
+    throw new Error("HMAC key cannot be empty");
+  }
   return crypto.subtle.importKey(
     "raw",
     raw,
@@ -81,13 +84,18 @@ export function importHmacKey(raw) {
 }
 
 /**
- * @param {CryptoKey} key
- * @param {Uint8Array} msg
+ * @param {CryptoKey} key - The HMAC key
+ * @param {Uint8Array} msg - The message to sign
+ * @returns {Promise<ArrayBuffer>} - The HMAC signature
  */
 export function hmacsign(key, msg) {
   return crypto.subtle.sign("HMAC", key, msg);
 }
 
+/**
+ * @param {object} pubjwkstr - The JWK public key object
+ * @returns {Promise<CryptoKey>} - The imported RSA-PSS public key
+ */
 export async function importRsaPssPubKey(pubjwkstr) {
   return crypto.subtle.importKey(
     "jwk",
@@ -111,18 +119,33 @@ export async function sha256(m) {
 }
 
 /**
- * @param {Uint8Array} m
- * @returns {Promise<Uint8Array>}
+ * @param {string} m - hex string to hash
+ * @returns {Promise<string>} - Returns the SHA-256 hash of the string as a hex string
+ */
+export async function sha256hex(m) {
+  const u8 = await sha256(hex2buf(m));
+  return buf2hex(u8);
+}
+
+/**
+ * @param {number} n - Number of bytes to generate (default: 32)
+ * @returns {Uint8Array} - Random bytes
  */
 export function crand(n = 32) {
+  if (n <= 0) {
+    throw new Error("n must be a positive number");
+  }
   return crypto.getRandomValues(new Uint8Array(n));
 }
 
 /**
- * @param {number} n
- * @returns {string} Hex string of length n
+ * @param {number} n - Number of hex characters to generate (default: 64)
+ * @returns {string} - Hex string of length n
  */
 export function crandHex(n = 64) {
+  if (n <= 0 || n % 2 !== 0) {
+    throw new Error("n must be a positive even number");
+  }
   // b as hex string
   return Array.from(crand(n / 2), (byt) =>
     byt.toString(16).padStart(2, "0")
@@ -132,11 +155,18 @@ export function crandHex(n = 64) {
 /**
  * Sign a string using RSASSA-PKCS1-v1_5 with SHA-256
  * and return the signature.
- * @param {string} content
- * @param {string} signingKey
+ * @param {string} content - The content to sign
+ * @param {string} signingKey - PEM formatted private key
  * @returns {Promise<ArrayBuffer>} - Returns the binary signature.
  */
 export async function rsaSsaSign(content, signingKey) {
+  if (!content || typeof content !== "string") {
+    throw new Error("Content must be a non-empty string");
+  }
+  if (!signingKey || typeof signingKey !== "string") {
+    throw new Error("Signing key must be a non-empty string");
+  }
+
   const buf = str2ab(content);
   const key = await importRsaSsa256Key(signingKey);
   return await crypto.subtle.sign({ name: "RSASSA-PKCS1-V1_5" }, key, buf);
@@ -147,6 +177,10 @@ export async function rsaSsaSign(content, signingKey) {
  * @returns {Promise<CryptoKey>} - Returns a CryptoKey for RSASSA-PKCS1-v1_5 with SHA-256
  */
 export async function importRsaSsa256Key(pem) {
+  if (!pem || typeof pem !== "string") {
+    throw new Error("PEM key must be a non-empty string");
+  }
+
   // github.com/Schachte/cloudflare-google-auth/blob/fc62a5e683d5c3/index.ts#L84
   const plainKey = pem
     .replace(/\\n/g, "")
@@ -154,6 +188,11 @@ export async function importRsaSsa256Key(pem) {
     .replace("-----BEGIN PRIVATE KEY-----", "")
     .replace("-----END PRIVATE KEY-----", "")
     .trim();
+
+  if (!plainKey) {
+    throw new Error("Invalid PEM format: no key data found");
+  }
+
   const binaryKey = b642buf(plainKey);
   return await crypto.subtle.importKey(
     "pkcs8",
