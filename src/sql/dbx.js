@@ -192,10 +192,41 @@ export async function upsertPlaySub(db, cid, token, linkedtoken, info = null) {
     return run(tx);
   } else {
     const q =
-      "INSERT OR IGNORE INTO playorders(purchasetoken, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?)";
+      "INSERT OR IGNORE INTO playorders(purchasetoken, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?)";
     const tx = db.prepare(q).bind(token, cid, linkedtoken, now());
     return run(tx);
   }
+}
+
+/**
+ * @param {any} db
+ * @param {string} token
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playSub(db, token) {
+  if (db == null || token == null) {
+    throw new Error("d1: playsub: db/cid/token missing");
+  }
+  const q = "SELECT * from playorders where purchasetoken = ?";
+  const tx = db.prepare(q).bind(token);
+  return run(tx);
+}
+
+/**
+ * @param {any} db
+ * @param {string} token
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function firstLinkedPurchaseTokenEntry(db, token) {
+  if (db == null || token == null) {
+    throw new Error("d1: playsub: db/cid/token missing");
+  }
+  const q =
+    "SELECT * from playorders where linkedtoken = ? ORDER BY mtime LIMIT 1";
+  const tx = db.prepare(q).bind(token);
+  return run(tx);
 }
 
 /**
