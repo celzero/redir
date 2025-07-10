@@ -11,16 +11,19 @@ import { b642buf, buf2hex, byt, hex2buf, str2ab } from "./buf.js";
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
  * @param {BufferSource} iv - The initialization vector
+ * @param {BufferSource} aad - Additional authenticated data (AAD)
  * @param {BufferSource} taggedciphertext - The encrypted data with authentication tag
  * @returns {Promise<Uint8Array>} - The decrypted plaintext
  */
-export async function decryptAesGcm(aeskey, iv, taggedciphertext) {
+export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
+  const params = {
+    name: "AES-GCM",
+    iv: iv,
+    additionalData: aad,
+    tagLength: 128, // default (in bits)
+  };
   const plaintext = await crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: iv,
-      tagLength: 128, // default (in bits)
-    },
+    params,
     aeskey,
     taggedciphertext
   );
@@ -30,16 +33,20 @@ export async function decryptAesGcm(aeskey, iv, taggedciphertext) {
 /**
  * @param {BufferSource} aeskey - The AES-GCM key
  * @param {BufferSource} iv - The initialization vector
+ * @param {BufferSource} aad - Additional authenticated data (AAD)
  * @param {BufferSource} plaintext - The data to encrypt
  * @returns {Promise<Uint8Array>} - The encrypted data with authentication tag
  */
-export async function encryptAesGcm(aeskey, iv, plaintext) {
+export async function encryptAesGcm(aeskey, iv, aad, plaintext) {
+  /** @type {AesGcmParams} */
+  const params = {
+    name: "AES-GCM",
+    iv: iv,
+    additionalData: aad,
+    tagLength: 128, // default (in bits)
+  };
   const taggedciphertext = await crypto.subtle.encrypt(
-    {
-      name: "AES-GCM",
-      iv: iv,
-      tagLength: 128, // default (in bits)
-    },
+    params,
     aeskey,
     plaintext
   );

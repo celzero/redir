@@ -286,7 +286,9 @@ export async function creds(env, cid, op = "get") {
     log.d(`err ${op} creds for ${cid} missing uid or enctok; no-op`);
     return null; // No existing credentials
   }
-  const tok = await dbenc.decrypt(env, cid, bin.str2byt2hex(uid), enctok);
+  const uhex = bin.str2byt2hex(uid);
+  const aadhex = bin.str2byt2hex(wstokaad);
+  const tok = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tok)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }

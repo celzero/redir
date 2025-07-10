@@ -12,13 +12,14 @@ const log = new glog.Log("dbenc", 1);
  *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {string} ad - IV nonce (hex string)
+ * @param {string} iv - IV nonce (hex string)
+ * @param {string} aad - additional data, ideally tablename+colname (hex string)
  * @param {string} taggedciphertext - to decrypt (hex string)
  * @returns {Promise<string|null>} - decrypted plaintext (hex) or null
  */
-export async function decrypt(env, cid, ad, taggedciphertext) {
-  const enckey = await key(env, cid);
-  const iv = await weakiv(ad, cid);
+export async function decrypt(env, cid, iv, aad, taggedciphertext) {
+  const enckey = await key(env, cid, "dbenc");
+  const iv = await fixedNonce(aad, cid);
   if (!enckey || !iv) {
     log.e("decrypt: key/iv missing");
     return null;
@@ -79,15 +80,22 @@ export async function encrypt(env, cid, uniq, aad, plaintext) {
 /**
  *
  * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {any} ctx - context for key generation (string)
  * @returns {Promise<CryptoKey|null>} - Returns a CryptoKey or null if the key is missing or invalid
  */
-async function key(env, ctx) {
-  const seed = env.KDF_SECRET_D1;
-  if (!seed) {
-    console.error("dbenc: key missing");
+async function key(env, cid, ctxstr) {
+  if (bin.emptyString(cid) || bin.emptyString(ctxstr)) {
+    log.e("key: cid/ctxstr missing");
     return null;
   }
-  return await aeskeygen(seed, ctx);
+  const seed = env.KDF_SECRET_D1;
+  if (!seed) {
+    log.e("key missing");
+    return null;
+  }
+  const ctx = bin.str2byt2hex(ctxstr);
+  return await aeskeygen(seed, cid, ctx);
 }
 
 /**
@@ -107,18 +115,24 @@ async function fixedNonce(ad, cid) {
 
 /**
  * @param {string} seedhex - hex string (64 chars)
- * @param {string} ctxhex - hex string (non-empty)
+ * @param {string} cid - Client ID (hex string)
+ * @param {string} ctxhex - key context (hex string)
  * @returns {Promise<CryptoKey?>}
  */
-export async function aeskeygen(seedhex, ctxhex) {
-  if (!bin.emptyString(seedhex) && !bin.emptyString(ctxhex)) {
+export async function aeskeygen(seedhex, cid, ctxhex) {
+  if (
+    !bin.emptyString(seedhex) &&
+    !bin.emptyString(ctxhex) &&
+    !bin.emptyString(cid)
+  ) {
     try {
       const sk = bin.hex2buf(seedhex);
       const sk256 = sk.slice(0, hkdfalgkeysz);
-      const info512 = await sha512(bin.hex2buf(ctxhex));
+
+      const info512 = await sha512(bin.hex2buf(cid) + bin.hex2buf(ctxhex));
       return await gen(sk256, info512); // hdkf aes key
     } catch (ignore) {
-      logd("keygen: err", ignore);
+      log.d("keygen: err", ignore);
     }
   }
   log.d("keygen: invalid seed/ctx");

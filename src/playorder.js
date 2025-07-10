@@ -13,10 +13,10 @@ import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, sha256hex } from "./webcrypto.js";
 import {
-  creds,
-  deleteWsEntitlement,
-  getOrGenWsEntitlement,
-  WSEntitlement,
+    creds,
+    deleteWsEntitlement,
+    getOrGenWsEntitlement,
+    WSEntitlement,
 } from "./wsent.js";
 
 // setup: developers.google.com/android-publisher/getting_started
