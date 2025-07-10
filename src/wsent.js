@@ -240,11 +240,10 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
  */
 export async function deleteWsEntitlement(env, cid) {
   const db = dbx.db(env);
+  let c = null;
   try {
-    const c = await creds(env, cid, "del");
-  } catch (_) {
-    return; // error, nothing to delete?
-  }
+    c = await creds(env, cid, "del");
+  } catch (_) {}
   if (c == null) {
     return; // No existing credentials, nothing to delete
   }
