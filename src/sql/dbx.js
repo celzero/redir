@@ -8,8 +8,9 @@
 
 import { emptyString } from "../buf.js";
 import { ExecCtx, als } from "../d.js";
+import * as glog from "../log.js";
 
-const dbdebug = false; // set to true to enable debug logging
+const log = new glog.Log("dbx", 1);
 
 /*
 {
@@ -293,20 +294,10 @@ export async function deleteCreds(db, cid) {
  */
 async function run(tx) {
   const out = D1Out.fromJson(await tx.run());
-  logd(tx.sql, out.meta);
+  log.d(
+    `${tx.sql}: ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
+  );
   return out;
-}
-
-/**
- * @param {string} what
- * @param {D1OutMeta} meta
- */
-function logd(what, meta) {
-  if (dbdebug) {
-    console.debug(
-      `D1: ${what}: ${meta.servedby} (${meta.servedbyregion}) mod? ${meta.changedb} r/w ${meta.rowsread}/${meta.rowswritten} - ${meta.duration}ms`
-    );
-  }
 }
 
 /**

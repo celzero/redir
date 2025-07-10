@@ -3,9 +3,10 @@
 
 import * as bin from "./buf.js";
 import { hkdfaes, hkdfalgkeysz, sha256, sha512 } from "./hmac.js";
+import * as glog from "./log.js";
 import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
-const debug = false;
+const log = new glog.Log("dbenc", 1);
 
 /**
  *
@@ -19,7 +20,7 @@ export async function decrypt(env, cid, ad, taggedciphertext) {
   const enckey = await key(env, cid);
   const iv = await weakiv(ad, cid);
   if (!enckey || !iv) {
-    console.error("dbenc: decrypt: key/iv missing");
+    log.e("decrypt: key/iv missing");
     return null;
   }
   try {
@@ -27,7 +28,7 @@ export async function decrypt(env, cid, ad, taggedciphertext) {
     const plaintext = await decryptAesGcm(enckey, iv, ct);
     return bin.buf2hex(plaintext);
   } catch (err) {
-    console.error("dbenc: decrypt: failed", err);
+    log.e("decrypt: failed", err);
     return null;
   }
 }
@@ -36,38 +37,41 @@ export async function decrypt(env, cid, ad, taggedciphertext) {
  * Encrypts plaintext into a tagged ciphertext using AES-GCM.
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {string} adstr - IV nonce (string)
+ * @param {string} uniq - unique nonce (string)
+ * @param {string} aadstr - additional data (string)
  * @param {string} plainstr - plaintext to encrypt (string)
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex string) or null
  * @throws {Error} - If the plaintext is not a valid string or if encryption fails
  */
-export async function encryptText(env, cid, adstr, plainstr) {
-  const adhex = bin.buf2hex(bin.str2byte(adstr));
-  const pthex = bin.buf2hex(bin.str2byte(plainstr));
-  return await encrypt(env, cid, adhex, pthex);
+export async function encryptText(env, cid, uniq, aadstr, plainstr) {
+  const noncehex = bin.str2byt2hex(uniq);
+  const aadhex = bin.str2byt2hex(aadstr);
+  const pthex = bin.str2byt2hex(plainstr);
+  return await encrypt(env, cid, noncehex, aadhex, pthex);
 }
 
 /**
  *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {string} ad - IV nonce (hex string)
+ * @param {string} uniq - unique nonce (hex string)
+ * @param {string} aad - additional data (hex string)
  * @param {string} plaintext - plaintext to encrypt (hex string)
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex) or null
  */
-export async function encrypt(env, cid, ad, plaintext) {
-  const enckey = await key(env, cid);
-  const iv = await weakiv(ad, cid);
+export async function encrypt(env, cid, uniq, aad, plaintext) {
+  const enckey = await key(env, cid, "dbenc");
+  const iv = await fixedNonce(uniq, cid);
   if (!enckey || !iv) {
-    console.error("dbenc: encrypt: key/iv missing");
+    log.e("encrypt: key/iv missing");
     return null;
   }
   try {
     const pt = bin.hex2buf(plaintext);
-    const taggedciphertext = await encryptAesGcm(enckey, iv, pt);
+    const taggedciphertext = await encryptAesGcm(enckey, iv, aad, pt);
     return bin.buf2hex(taggedciphertext);
   } catch (err) {
-    console.error("dbenc: encrypt: failed", err);
+    log.e("encrypt: failed", err);
     return null;
   }
 }
@@ -92,9 +96,9 @@ async function key(env, ctx) {
  * @param {string} cid - hex string
  * @returns
  */
-async function weakiv(ad, cid) {
+async function fixedNonce(ad, cid) {
   if (bin.emptyString(ad) || bin.emptyString(cid)) {
-    throw new Error("dbenc: iv: userid/cid missing");
+    throw new Error("iv: userid/cid missing");
   }
   const ctx = bin.hex2buf(ad + cid);
   const iv = await sha256(ctx);
@@ -102,7 +106,6 @@ async function weakiv(ad, cid) {
 }
 
 /**
- *
  * @param {string} seedhex - hex string (64 chars)
  * @param {string} ctxhex - hex string (non-empty)
  * @returns {Promise<CryptoKey?>}
@@ -118,7 +121,7 @@ export async function aeskeygen(seedhex, ctxhex) {
       logd("keygen: err", ignore);
     }
   }
-  logd("keygen: invalid seed/ctx");
+  log.d("keygen: invalid seed/ctx");
   return null;
 }
 
@@ -130,13 +133,8 @@ export async function aeskeygen(seedhex, ctxhex) {
  */
 async function gen(secret, info, salt = bin.ZEROBUF) {
   if (bin.emptyBuf(secret) || bin.emptyBuf(info)) {
-    throw new Error("auth: empty secret/info");
+    throw new Error("empty secret/info");
   }
   // exportable: crypto.subtle.exportKey("raw", key);
   return hkdfaes(secret, info, salt);
-}
-
-function logd(...args) {
-  if (!debug) return;
-  console.debug(...args);
 }

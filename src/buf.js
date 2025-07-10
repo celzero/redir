@@ -6,10 +6,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import * as glog from "./log.js";
+
 export const ZEROBUF = new Uint8Array(0);
 
 const tencoder = new TextEncoder();
 const tdecoder = new TextDecoder();
+
+const log = new glog.Log("buf", 1);
 
 export function str2byte(s) {
   return tencoder.encode(s);
@@ -71,7 +75,7 @@ export function b642buf(b64) {
   try {
     return str2ab(atob(b64));
   } catch (e) {
-    loge(`b642buf: failed to decode ${b64} base64: ${e.message}`, e);
+    log.e(`b642buf: failed to decode ${b64} base64: ${e.message}`, e);
     return ZEROBUF.buffer;
   }
 }
@@ -87,7 +91,7 @@ export function b64AsBytes(b64url) {
         .map((c) => c.charCodeAt(0))
     );
   } catch (e) {
-    loge(`b64AsBytes: failed to decode ${b64url} base64url: ${e.message}`, e);
+    log.e(`b64AsBytes: failed to decode ${b64url} base64url: ${e.message}`, e);
     return ZEROBUF;
   }
 }
@@ -167,8 +171,4 @@ export function emptyString(s) {
   } else {
     return false;
   }
-}
-
-function loge(...args) {
-  console.error("buf", ...args);
 }

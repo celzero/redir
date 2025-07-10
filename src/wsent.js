@@ -9,12 +9,16 @@
 import * as bin from "./buf.js";
 import { als, ExecCtx } from "./d.js";
 import * as dbenc from "./dbenc.js";
+import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
 
-const debugws = true; // set to true to enable debug logging
 const resourceuser = "Users";
 const resourcesession = "Session";
 const creatuser = resourceuser + "?session_type_id=4&plan=";
+
+const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
+
+const log = new glog.Log("wse", 1);
 
 /*
     {
@@ -184,7 +188,6 @@ export class WSEntitlement {
  * @throws {Error} - If there is an error generating or retrieving credentials
  */
 export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
-  const db = dbx.db(env);
   let c = await creds(env, cid);
   if (c == null) {
     // No existing credentials, generate new ones
@@ -194,6 +197,7 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
       env,
       cid,
       wsuser.userId,
+      wstokaad,
       wsuser.sessionAuthHash
     );
     if (!enctok) {
@@ -203,7 +207,7 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
       );
     }
     // insert new creds in to the database
-    const out = await dbx.insertCreds(db, cid, wsuser.userId, enctok);
+    const out = await dbx.insertCreds(dbx.db(env), cid, wsuser.userId, enctok);
     if (!out || !out.success) {
       // on write err, refetch creds
       c = await creds(env, cid); // retry get once
@@ -212,8 +216,8 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
         // delete if the session token does not match
         // or if 'c' is null (TODO: attempt to reinsert instead?)
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
-        loge(
-          `ws: err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
+        log.e(
+          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
@@ -222,9 +226,9 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
     }
   }
   if (c == null) {
-    throw new Error(`ws: err insert or get creds for ${cid} on ${plan}`);
+    throw new Error(`err insert or get creds for ${cid} on ${plan}`);
   }
-  logd(`ws: getOrGen: use existing for ${c.cid} ${c.status}`);
+  log.d(`getOrGen: use existing for ${c.cid} ${c.status}`);
   return c;
 }
 
@@ -279,7 +283,7 @@ export async function creds(env, cid, op = "get") {
   const uid = row.userid || null;
   const enctok = row.sessiontoken || null; // encrypted session token
   if (bin.emptyString(uid) || bin.emptyString(enctok)) {
-    logd(`ws: err ${op} creds for ${cid} missing uid or enctok; no-op`);
+    log.d(`err ${op} creds for ${cid} missing uid or enctok; no-op`);
     return null; // No existing credentials
   }
   const tok = await dbenc.decrypt(env, cid, bin.str2byt2hex(uid), enctok);
@@ -297,7 +301,7 @@ export async function creds(env, cid, op = "get") {
   } else if (wsstatus === "invalid") {
     await dbx.deleteCreds(db, cid); // Delete invalid credentials
   }
-  logw(`ws: cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
+  log.w(`cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
   return null; // need new credentials
 }
 
@@ -381,13 +385,13 @@ async function newCreds(env, expiry, plan) {
     execCount = totalMonths; // x months plan
   }
 
-  logi(
+  log.i(
     `new creds until ${expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
   );
 
   if (execCount <= 0) {
     throw new Error(
-      `ws: cannot create or refersh entitlement; subscription expiring imminently`
+      `cannot create or refersh entitlement; subscription expiring imminently`
     );
   }
 
@@ -447,14 +451,14 @@ async function credsStatus(env, sessiontoken) {
     }
     if (r.status === 403) {
       const err = await r.json();
-      logw(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
+      log.w(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
       if (err.errorCode === 701) {
         return "invalid"; // Session is invalid
       }
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
   } catch (err) {
-    loge(`creds status: error checking session token:`, err);
+    log.e(`creds status: error checking session token:`, err);
   }
   return "unknown"; // Unknown status
 }
@@ -504,7 +508,9 @@ async function deleteCreds(env, sessiontoken) {
       if (r.ok) {
         return true; // Successfully deleted
       }
-      logw(`deleteCreds: attempt ${tries} failed: ${r.status} ${r.statusText}`);
+      log.w(
+        `deleteCreds: attempt ${tries} failed: ${r.status} ${r.statusText}`
+      );
       /* 403 Forbidden
       {
       "errorCode": 701,
@@ -520,7 +526,7 @@ async function deleteCreds(env, sessiontoken) {
         }
       }
     } catch (err) {
-      loge(`deleteCreds: attempt ${tries} error:`, err);
+      log.e(`deleteCreds: attempt ${tries} error:`, err);
       // TODO: queue retry
     }
   }
@@ -577,22 +583,4 @@ function apisecret(env, cfg = null) {
 
 async function sleep(sec) {
   return new Promise((resolve) => setTimeout(resolve, sec * 1000));
-}
-
-function logw(...args) {
-  console.warn("win:", ...args);
-}
-
-function loge(...args) {
-  console.error("win:", ...args);
-}
-
-function logi(...args) {
-  console.info("win:", ...args);
-}
-
-function logd(...args) {
-  if (debugws) {
-    console.debug("win:", ...args);
-  }
 }

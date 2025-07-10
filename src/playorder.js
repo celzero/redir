@@ -9,6 +9,7 @@
 import { emptyString, str2byt2hex } from "./buf.js";
 import { als, ExecCtx } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
+import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, sha256hex } from "./webcrypto.js";
 import {
@@ -43,6 +44,8 @@ const stdProductId = "standard.tier";
 const proProductId = "pro.tier";
 const monthlyBasePlanId = "proxy-monthly";
 const yearlyBasePlanId = "proxy-yearly";
+
+const log = new glog.Log("playorder", 1);
 
 /** @type Set<string> - set of known productIds */
 const knownProducts = new Set([
@@ -2044,55 +2047,23 @@ function r200t(txt) {
 }
 
 function logi(...args) {
-  console.info("gplay", ministack(), ...args);
+  log.i(...args);
 }
 
 function logw(...args) {
-  console.warn("gplay", ministack(), ...args);
+  log.w(...args);
 }
 
 function loge(...args) {
-  console.error("gplay", ministack(), ...args);
+  log.e(...args);
 }
 
 function logd(...args) {
-  console.debug("gplay", ministack(), ...args);
+  log.d(...args);
 }
 
 function logo(obj) {
-  loge("gplay", ministack());
-  console.dir(obj);
-}
-
-function ministack() {
-  const stack = new Error().stack;
-  if (!stack) return "nostack";
-
-  const lines = stack.split("\n");
-  if (!lines || lines.length === 0) return "nocallers";
-
-  const cc = [];
-
-  // Start from index 3 to skip ministack, log function, and Error constructor
-  for (let i = 3; i < Math.min(6, lines.length); i++) {
-    const line = lines[i];
-    if (!line) continue;
-
-    // Extract function name and line number from stack trace
-    // Format varies by environment, but typically: "at functionName (file:line:column)"
-    const match =
-      line.match(/\s+([^(]+)\s*\(([^:]+):(\d+):\d+\)/) ||
-      line.match(/\s+([^@]+)@([^:]+):(\d+):\d+/) ||
-      line.match(/\s+(.+):(\d+):\d+/);
-
-    if (match) {
-      const funcName = match[1] ? match[1].trim() : "anonymous";
-      const lineNum = match[3] || match[2];
-      cc.push(`${funcName}:${lineNum}`);
-    }
-  }
-
-  return cc.length > 0 ? `${cc.join(" ")}` : "nomatch" + lines.length;
+  log.o(obj);
 }
 
 /**

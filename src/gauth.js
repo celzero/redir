@@ -7,9 +7,12 @@
  */
 
 import { buf2b64url, emptyString, str2byte } from "./buf.js";
+import * as glog from "./log.js";
 import { rsaSsaSign } from "./webcrypto.js";
 
 // from: gist.github.com/markelliot/6627143be1fc8209c9662c504d0ff205?permalink_comment_id=4177336#gistcomment-4177336
+
+const log = new glog.Log("gauth", 1);
 
 /**
  * {
@@ -56,7 +59,7 @@ async function sign(content, signingKey) {
  */
 export async function getGoogleAuthToken(user, key, scopes) {
   if (emptyString(user) || emptyString(key)) {
-    loge("getGoogleAuthToken: invalid user/key parameters");
+    log.e("getGoogleAuthToken: invalid user/key parameters");
     return null;
   }
 
@@ -78,7 +81,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
     const jwt = `${jwtUnsigned}.${jwtSigned}`;
     const body = `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`;
 
-    logd(`gauth: ${jwt.length} ${key.length}`);
+    log.d(`${jwt.length} ${key.length}`);
 
     const r = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -91,7 +94,7 @@ export async function getGoogleAuthToken(user, key, scopes) {
     });
 
     if (!r.ok) {
-      loge(`getGoogleAuthToken: HTTP ${r.status} ${r.statusText}`);
+      log.e(`getGoogleAuthToken: HTTP ${r.status} ${r.statusText}`);
       return null;
     }
 
@@ -103,24 +106,12 @@ export async function getGoogleAuthToken(user, key, scopes) {
     const json = await r.json();
     return new GCreds(json);
   } catch (err) {
-    loge(err.message, err);
-    logdir(err);
+    log.e(err.message, err);
+    log.o(err);
   }
   return null;
 }
 
 function obj2b64url(object) {
   return buf2b64url(str2byte(JSON.stringify(object)));
-}
-
-function logd(...args) {
-  console.debug("gauth:", ...args);
-}
-
-function loge(...args) {
-  console.error("gauth:", ...args);
-}
-
-function logdir(obj) {
-  console.dir(obj);
 }
