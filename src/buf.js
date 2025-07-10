@@ -29,6 +29,7 @@ export function byte2str(b) {
  * @see {@link hex2byt2str}
  */
 export function str2byt2hex(s) {
+  if (emptyString(s)) return "";
   return buf2hex(str2byte(s));
 }
 
@@ -38,6 +39,7 @@ export function str2byt2hex(s) {
  * @see {@link str2byt2hex}
  */
 export function hex2byt2str(h) {
+  if (emptyString(h)) return "";
   return byte2str(hex2buf(h));
 }
 
@@ -148,6 +150,7 @@ export function byt(b) {
  * @returns {string}
  */
 export function buf2hex(b) {
+  if (emptyBuf(b)) return "";
   const u8 = byt(b);
   return Array.from(u8)
     .map((byte) => byte.toString(16).padStart(2, "0"))
