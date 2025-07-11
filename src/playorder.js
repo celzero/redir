@@ -1985,6 +1985,9 @@ export async function googlePlayGetEntitlements(env, req) {
       if (out.status === "banned") {
         return r400j({ error: "user banned", cid: cid });
       }
+      if (out.status === "expired") {
+        // renew creds
+      }
 
       return r200j({
         success: true,

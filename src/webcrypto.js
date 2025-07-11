@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b642buf, buf2hex, byt, hex2buf, str2ab, ZEROBUF } from "./buf.js";
+import { b642buf, buf2hex, byt, hex2buf, str2ab } from "./buf.js";
 
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
@@ -17,7 +17,7 @@ import { b642buf, buf2hex, byt, hex2buf, str2ab, ZEROBUF } from "./buf.js";
  */
 export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
   if (!aad) {
-    aad = ZEROBUF;
+    aad = null; // ZEROBUF is not the same as null
   }
   /** @type {AesGcmParams} */
   const params = {
@@ -43,7 +43,7 @@ export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
  */
 export async function encryptAesGcm(aeskey, iv, aad, plaintext) {
   if (!aad) {
-    aad = ZEROBUF;
+    aad = null; // ZEROBUF is not the same as null
   }
   /** @type {AesGcmParams} */
   const params = {
