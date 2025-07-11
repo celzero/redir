@@ -59,8 +59,8 @@ const knownBasePlans = new Map();
 
 const mincidlength = 32; // ideally 64 hex chars
 
-// 2 days in milliseconds
-const revokeThresholdMs = 2 * 24 * 60 * 60 * 1000;
+// 3 days in milliseconds
+const revokeThresholdMs = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Memoization cache for Google tokens.
