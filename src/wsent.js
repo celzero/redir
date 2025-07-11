@@ -296,6 +296,9 @@ export async function creds(env, cid, op = "get") {
   if (ctime.getTime() > dbenc.aadRequirementStartTime) {
     aadhex = bin.str2byt2hex(wstokaad);
   }
+  log.d(
+    `ws: ${op} creds for ${cid} uid: ${uhex} enctok: ${enctok} ctime: ${ctime.getTime()}`
+  );
   const tok = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tok)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);

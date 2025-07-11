@@ -16,12 +16,17 @@ export const aadRequirementStartTime = 1752256401335;
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} uniq - uniq nonce (hex string)
- * @param {string} aadhex - additional data, ideally tablename+colname (hex string)
+ * @param {string?} aadhex - additional data, ideally tablename+colname (hex string)
  * @param {string} taggedciphertext - to decrypt (hex string)
  * @returns {Promise<string|null>} - decrypted plaintext (hex) or null
  */
 export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
-  const enckey = await key(env, cid, "dbenc");
+  let keyctx = "";
+  if (!bin.emptyString(aadhex)) {
+    // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
+    keyctx = "dbenc";
+  }
+  const enckey = await key(env, cid, keyctx);
   const iv = await fixedNonce(uniq, cid);
   if (!enckey || !iv) {
     log.e("decrypt: key/iv missing");
@@ -43,14 +48,14 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} uniq - unique nonce (string)
- * @param {string} aadstr - additional data (string)
+ * @param {string?} aadstr - additional data (string)
  * @param {string} plainstr - plaintext to encrypt (string)
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex string) or null
  * @throws {Error} - If the plaintext is not a valid string or if encryption fails
  */
 export async function encryptText(env, cid, uniq, aadstr, plainstr) {
   const noncehex = bin.str2byt2hex(uniq);
-  const aadhex = bin.str2byt2hex(aadstr);
+  const aadhex = bin.str2byt2hex(aadstr); // optional, may be empty
   const pthex = bin.str2byt2hex(plainstr);
   return await encrypt(env, cid, noncehex, aadhex, pthex);
 }
@@ -60,12 +65,17 @@ export async function encryptText(env, cid, uniq, aadstr, plainstr) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} uniq - unique nonce (hex string)
- * @param {string} aad - additional data (hex string)
+ * @param {string?} aadhex - additional data (hex string)
  * @param {string} plaintext - plaintext to encrypt (hex string)
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex) or null
  */
-export async function encrypt(env, cid, uniq, aad, plaintext) {
-  const enckey = await key(env, cid, "dbenc");
+export async function encrypt(env, cid, uniq, aadhex, plaintext) {
+  let keyctx = "";
+  if (!bin.emptyString(aadhex)) {
+    // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
+    keyctx = "dbenc";
+  }
+  const enckey = await key(env, cid, keyctx);
   const iv = await fixedNonce(uniq, cid);
   if (!enckey || !iv) {
     log.e("encrypt: key/iv missing");
@@ -73,7 +83,7 @@ export async function encrypt(env, cid, uniq, aad, plaintext) {
   }
   try {
     const pt = bin.hex2buf(plaintext);
-    const taggedciphertext = await encryptAesGcm(enckey, iv, aad, pt);
+    const taggedciphertext = await encryptAesGcm(enckey, iv, aadhex, pt);
     return bin.buf2hex(taggedciphertext);
   } catch (err) {
     log.e("encrypt: failed", err);
@@ -85,12 +95,12 @@ export async function encrypt(env, cid, uniq, aad, plaintext) {
  *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {any} ctx - context for key generation (string)
+ * @param {string?} ctxstr - context for key generation (string)
  * @returns {Promise<CryptoKey|null>} - Returns a CryptoKey or null if the key is missing or invalid
  */
-async function key(env, cid, ctxstr) {
-  if (bin.emptyString(cid) || bin.emptyString(ctxstr)) {
-    log.e("key: cid/ctxstr missing");
+async function key(env, cid, ctxstr = "") {
+  if (bin.emptyString(cid)) {
+    log.e("key: cid missing");
     return null;
   }
   const seed = env.KDF_SECRET_D1;
@@ -98,8 +108,8 @@ async function key(env, cid, ctxstr) {
     log.e("key missing");
     return null;
   }
-  const ctx = bin.str2byt2hex(ctxstr);
-  return await aeskeygen(seed, cid, ctx);
+  const ctxhex = bin.str2byt2hex(ctxstr); // ctxhex may be empty string
+  return await aeskeygen(seed, cid, ctxhex);
 }
 
 /**
@@ -124,16 +134,13 @@ async function fixedNonce(lo, hi) {
  * @returns {Promise<CryptoKey?>}
  */
 export async function aeskeygen(seedhex, cid, ctxhex) {
-  if (
-    !bin.emptyString(seedhex) &&
-    !bin.emptyString(ctxhex) &&
-    !bin.emptyString(cid)
-  ) {
+  ctxhex = ctxhex || "";
+  if (!bin.emptyString(seedhex) && !bin.emptyString(cid)) {
     try {
       const sk = bin.hex2buf(seedhex);
       const sk256 = sk.slice(0, hkdfalgkeysz);
 
-      const info512 = await sha512(bin.hex2buf(cid) + bin.hex2buf(ctxhex));
+      const info512 = await sha512(bin.hex2buf(cid + ctxhex));
       return await gen(sk256, info512); // hdkf aes key
     } catch (ignore) {
       log.d("keygen: err", ignore);
