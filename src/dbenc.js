@@ -8,25 +8,29 @@ import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
 const log = new glog.Log("dbenc", 1);
 
+// 11 July 2024
+export const aadRequirementStartTime = 1752256401335;
+
 /**
  *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {string} iv - IV nonce (hex string)
- * @param {string} aad - additional data, ideally tablename+colname (hex string)
+ * @param {string} uniq - uniq nonce (hex string)
+ * @param {string} aadhex - additional data, ideally tablename+colname (hex string)
  * @param {string} taggedciphertext - to decrypt (hex string)
  * @returns {Promise<string|null>} - decrypted plaintext (hex) or null
  */
-export async function decrypt(env, cid, iv, aad, taggedciphertext) {
+export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
   const enckey = await key(env, cid, "dbenc");
-  const iv = await fixedNonce(aad, cid);
+  const iv = await fixedNonce(uniq, cid);
   if (!enckey || !iv) {
     log.e("decrypt: key/iv missing");
     return null;
   }
   try {
-    const ct = bin.hex2buf(taggedciphertext);
-    const plaintext = await decryptAesGcm(enckey, iv, ct);
+    const cipher = bin.hex2buf(taggedciphertext);
+    const aad = bin.hex2buf(aadhex);
+    const plaintext = await decryptAesGcm(enckey, iv, aad, cipher);
     return bin.buf2hex(plaintext);
   } catch (err) {
     log.e("decrypt: failed", err);

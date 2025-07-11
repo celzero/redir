@@ -306,3 +306,21 @@ async function run(tx) {
 function now() {
   return new Date().toISOString();
 }
+
+/**
+ * SQLite DATETIME is not in ISO format but is in UTC.
+ * @param {string} datestr - non-ISO date string of form "2025-07-09 19:57:41"
+ * @returns {Date} - Date object with UTC timezone ex: 2025-07-09T19:57:41Z
+ */
+export function utc(datestr) {
+  if (emptyString(datestr)) {
+    return new Date();
+  }
+  // convert to ISO format
+  const parts = datestr.split(" ");
+  if (parts.length !== 2) {
+    return new Date(datestr); // return as-is if not in expected format
+  }
+  const [date, time] = parts;
+  return new Date(`${date}T${time}Z`);
+}

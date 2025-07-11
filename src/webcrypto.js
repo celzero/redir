@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b642buf, buf2hex, byt, hex2buf, str2ab } from "./buf.js";
+import { b642buf, buf2hex, byt, hex2buf, str2ab, ZEROBUF } from "./buf.js";
 
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
@@ -16,10 +16,14 @@ import { b642buf, buf2hex, byt, hex2buf, str2ab } from "./buf.js";
  * @returns {Promise<Uint8Array>} - The decrypted plaintext
  */
 export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
+  if (!aad) {
+    aad = ZEROBUF;
+  }
+  /** @type {AesGcmParams} */
   const params = {
     name: "AES-GCM",
-    iv: iv,
-    additionalData: aad,
+    iv: iv, // 96 bit (12 byte) nonce
+    additionalData: aad, // optional
     tagLength: 128, // default (in bits)
   };
   const plaintext = await crypto.subtle.decrypt(
@@ -38,11 +42,14 @@ export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
  * @returns {Promise<Uint8Array>} - The encrypted data with authentication tag
  */
 export async function encryptAesGcm(aeskey, iv, aad, plaintext) {
+  if (!aad) {
+    aad = ZEROBUF;
+  }
   /** @type {AesGcmParams} */
   const params = {
     name: "AES-GCM",
-    iv: iv,
-    additionalData: aad,
+    iv: iv, // 96 bit (12 byte) nonce
+    additionalData: aad, // optional
     tagLength: 128, // default (in bits)
   };
   const taggedciphertext = await crypto.subtle.encrypt(

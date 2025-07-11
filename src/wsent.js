@@ -281,12 +281,16 @@ export async function creds(env, cid, op = "get") {
   const row = out.results[0];
   const uid = row.userid || null;
   const enctok = row.sessiontoken || null; // encrypted session token
+  const ctime = dbx.sqliteutc(row.ctime);
   if (bin.emptyString(uid) || bin.emptyString(enctok)) {
     log.d(`err ${op} creds for ${cid} missing uid or enctok; no-op`);
     return null; // No existing credentials
   }
   const uhex = bin.str2byt2hex(uid);
-  const aadhex = bin.str2byt2hex(wstokaad);
+  let aadhex = null;
+  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
+    aadhex = bin.str2byt2hex(wstokaad);
+  }
   const tok = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tok)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
