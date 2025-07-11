@@ -104,15 +104,15 @@ async function key(env, cid, ctxstr) {
 
 /**
  *
- * @param {string} ad - hex string
- * @param {string} cid - hex string
- * @returns
+ * @param {string} lo - hex string
+ * @param {string} hi - hex string
+ * @returns {Promise<ArrayBufferLike>} - 12-byte fixed nonce (BufferSource)
  */
-async function fixedNonce(ad, cid) {
-  if (bin.emptyString(ad) || bin.emptyString(cid)) {
-    throw new Error("iv: userid/cid missing");
+async function fixedNonce(lo, hi) {
+  if (bin.emptyString(lo) || bin.emptyString(hi)) {
+    throw new Error("iv: lo/hi missing");
   }
-  const ctx = bin.hex2buf(ad + cid);
+  const ctx = bin.hex2buf(lo + hi);
   const iv = await sha256(ctx);
   return iv.slice(0, 12); // AES-GCM requires a 12-byte IV
 }
