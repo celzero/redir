@@ -13,29 +13,28 @@ import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, sha256hex } from "./webcrypto.js";
 import {
-    creds,
-    deleteWsEntitlement,
-    getOrGenWsEntitlement,
-    WSEntitlement,
+  creds,
+  deleteWsEntitlement,
+  getOrGenWsEntitlement,
+  WSEntitlement,
 } from "./wsent.js";
 
 // setup: developers.google.com/android-publisher/getting_started
 // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
 const androidscope = ["https://www.googleapis.com/auth/androidpublisher"];
 const packageName = "com.celzero.bravedns";
-const subsv2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
+
 // subscriptionId isn't required since May 21, 2025
 // ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/acknowledge
 // but: github.com/googleapis/google-api-go-client/blob/971a6f113/androidpublisher/v3/androidpublisher-gen.go#L19539
-const ack = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
+const iap1 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
+const iap2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
 const acksuffix = ":acknowledge";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/revoke
 // and: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/revoke
 // revoke = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/`;
-const revokev2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
 const revokesuffix = ":revoke";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
-const cancelv1 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
 const cancelsuffix = ":cancel";
 
 const monthlyProxyProductId = "proxy_monthly_subscription_test";
@@ -1262,7 +1261,7 @@ async function getSubscription(env, purchaseToken) {
   // -H 'Accept: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const url = `${subsv2}${purchaseToken}`;
+  const url = `${iap2}${purchaseToken}`;
   const headers = {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
@@ -1346,7 +1345,7 @@ export async function cancelSubscription(env, req) {
     //   -H "Accept: application/json" \
     //   -d '{"cancellationType": "USER_REQUESTED_STOP_RENEWALS"}' \
     //   "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.example.app/purchases/subscriptions/tokens/EXAMPLE_TOKEN_STRING_12345:cancel"
-    const cancelurl = `${cancelv1}${purchaseToken}${cancelsuffix}`;
+    const cancelurl = `${iap1}${purchaseToken}${cancelsuffix}`;
     const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
     const headers = {
       Accept: "application/json",
@@ -1445,12 +1444,12 @@ export async function revokeSubscription(env, req) {
 
     const thres = Date.now() - revokeThresholdMs;
     const start = sub.startTime ? new Date(sub.startTime) : new Date(0);
-    if (start.getTime() > thres) {
-      // If sub is more than threshold millis ago, do not revoke it.
+    if (thres > start.getTime()) {
+      // If sub is not within threshold millis ago, do not revoke it.
       loge(`revoke sub ${obstoken} started too long ago, cannot revoke`);
       return r400j({
         error: "cannot revoke, sub too old, email hello@celzero.com",
-        when: start,
+        when: start.toISOString(),
         threshold: thres,
         purchaseId: obstoken,
       });
@@ -1471,8 +1470,8 @@ export async function revokeSubscription(env, req) {
     //       {},
     //     }
     //   }'
-    //   'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{packageName}/purchases/subscriptionsv2/tokens/{token}:revoke'
-    const revokeurl = `${revokev2}${purchaseToken}${revokesuffix}`;
+    //   'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/subscriptionsv2/tokens/{token}:revoke'
+    const revokeurl = `${iap2}${purchaseToken}${revokesuffix}`;
     const headers = {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -1533,7 +1532,7 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
   // -H 'Content-Type: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
   // -d '{"developerPayload": <string> "{\"ws\": \"entitlement\"}"}'
-  const ackurl = `${ack}${tok}${acksuffix}`;
+  const ackurl = `${iap1}${tok}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
   const obs = await obfuscate(tok);
   const headers = {
