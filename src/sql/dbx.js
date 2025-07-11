@@ -312,7 +312,7 @@ function now() {
  * @param {string} datestr - non-ISO date string of form "2025-07-09 19:57:41"
  * @returns {Date} - Date object with UTC timezone ex: 2025-07-09T19:57:41Z
  */
-export function utc(datestr) {
+export function sqliteutc(datestr) {
   if (emptyString(datestr)) {
     return new Date();
   }

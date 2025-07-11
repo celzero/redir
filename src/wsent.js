@@ -192,12 +192,17 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
   if (c == null) {
     // No existing credentials, generate new ones
     const wsuser = await newCreds(env, expiry, plan);
+    let aad = null;
+    if (wsuser.regDate * 1000 > dbenc.aadRequirementStartTime) {
+      // always true for new creds
+      aad = wstokaad;
+    }
     // Encrypt the session token
     const enctok = await dbenc.encryptText(
       env,
       cid,
       wsuser.userId,
-      wstokaad,
+      aad,
       wsuser.sessionAuthHash
     );
     if (!enctok) {
