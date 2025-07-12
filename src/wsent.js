@@ -201,23 +201,17 @@ export class WSEntitlement {
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID
- * @param {Date} expiry - Expiry date of the subscription
+ * @param {Date} exp - Expiry date of the subscription
  * @param {string} plan - "yearly" | "monthly" | "unknown"
  * @param {boolean} [renew=true] - Whether to renew the entitlement if it is expired
  * @return {Promise<WSEntitlement|null>} - returns the entitlement
  * @throws {Error} - If there is an error generating or retrieving credentials
  */
-export async function getOrGenWsEntitlement(
-  env,
-  cid,
-  expiry,
-  plan,
-  refresh = true
-) {
+export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   let c = await creds(env, cid);
   if (c == null) {
     // No existing credentials, generate new ones
-    const wsuser = await newCreds(env, expiry, plan);
+    const wsuser = await newCreds(env, exp, plan);
     let aad = null;
     if (wsuser.regDate * 1000 > dbenc.aadRequirementStartTime) {
       // always true for new creds
@@ -234,7 +228,7 @@ export async function getOrGenWsEntitlement(
     if (!enctok) {
       const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
       throw new Error(
-        `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
+        `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`
       );
     }
     // insert new creds in to the database
@@ -248,7 +242,7 @@ export async function getOrGenWsEntitlement(
         // or if 'c' is null (TODO: attempt to reinsert instead?)
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
         log.e(
-          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${expiry} ${plan}`
+          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
@@ -270,7 +264,7 @@ export async function getOrGenWsEntitlement(
       `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`
     );
     try {
-      c = await maybeUpdateCreds(env, c, expiry, plan);
+      c = await maybeUpdateCreds(env, c, exp, plan);
     } catch (err) {
       if (c.status === "expired") {
         // existing "c" has expired ... do not ignore refresh/renew error
