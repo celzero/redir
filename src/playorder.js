@@ -1101,9 +1101,10 @@ async function handleSubscriptionNotification(env, notif) {
   const sub = await getSubscription(env, purchasetoken);
   const test = sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
+  const obstoken = await obfuscate(purchasetoken);
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
 
-  return als.run(new ExecCtx(test), async () => {
+  return als.run(new ExecCtx(test, obstoken), async () => {
     logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
 
     const cid = await getOrGenAndPersistCid(env, sub);
