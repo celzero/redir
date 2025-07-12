@@ -248,7 +248,6 @@ export async function wsCreds(db, cid) {
 }
 
 /**
- *
  * @param {any} db - D1 binding
  * @param {string} cid - Client ID (hex string)
  * @param {string} userid - WS User ID

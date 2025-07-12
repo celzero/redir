@@ -7,7 +7,7 @@
  */
 
 import { emptyString, str2byt2hex } from "./buf.js";
-import { als, ExecCtx } from "./d.js";
+import { als, ExecCtx, obsToken } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
@@ -1143,20 +1143,20 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   // instead of auto-renewed: developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement
   const replaced = expired || cancelled ? replacing(sub) : false;
   const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+  const obstoken = obsToken();
 
   // Play Billing deletes a purchaseToken after 60d from expiry
   await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
 
   if (obsoleted) {
-    const hash = await obfuscate(purchasetoken);
-    logi(`Purchase token ${hash} is obsoleted, cannot ack`);
+    logi(`Purchase token ${obstoken} is obsoleted, cannot ack`);
     if (!ackd) {
       await ackSubscriptionWithoutEntitlement(env, purchasetoken);
     }
     return r200j({
       message: "Subscription acknowledged without entitlement",
       cid: cid,
-      purchaseId: hash,
+      purchaseId: obstoken,
     });
   }
 
@@ -1306,7 +1306,7 @@ export async function cancelSubscription(env, req) {
 
   logd(`cancel sub for ${cid}; test? ${test} for ${obstoken}`);
 
-  return await als.run(new ExecCtx(test), async () => {
+  return await als.run(new ExecCtx(test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
       loge(`revoke sub: not found for ${obstoken}`);
@@ -1331,7 +1331,7 @@ export async function cancelSubscription(env, req) {
     const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
 
     if (canceled || expired) {
-      // If the subscription is canceled, we cannot revoke it.
+      // If the subscription has expired, we cannot cancel it.
       loge(`sub ${obstoken} already canceled or expired`);
       return r200j({
         error: "cannot revoke, subscription canceled or expired",
@@ -1407,7 +1407,7 @@ export async function revokeSubscription(env, req) {
   // TODO: only allow credentialless clients to access this endpoint
   logd(`revoke sub for ${cid}; test? ${test} for ${obstoken}`);
 
-  return await als.run(new ExecCtx(test), async () => {
+  return await als.run(new ExecCtx(test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
       loge(`revoke sub: not found for ${obstoken}`);
@@ -1450,10 +1450,13 @@ export async function revokeSubscription(env, req) {
       return r400j({
         error: "cannot revoke, sub too old, email hello@celzero.com",
         when: start.toISOString(),
-        threshold: thres,
+        threshold: new Date(thres).toISOString(),
         purchaseId: obstoken,
       });
     }
+
+    // windscribe session is deleted when handleSubscriptionNotification
+    // is called for SUBSCRIPTION_REVOKED (see: deleteWSEntitlement).
 
     const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
 
@@ -1534,7 +1537,7 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
   // -d '{"developerPayload": <string> "{\"ws\": \"entitlement\"}"}'
   const ackurl = `${iap1}${tok}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const obs = await obfuscate(tok);
+  const obs = obsToken();
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -1856,7 +1859,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const productId = gprod.productId;
     const plan = gprod.plan;
 
-    return await als.run(new ExecCtx(test), async () => {
+    return await als.run(new ExecCtx(test, obstoken), async () => {
       // TODO: check if expiry/productId/plan are valid
       // Play Billing deletes a purchaseToken after 60d from expiry
       await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
@@ -1943,11 +1946,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       });
     });
   } catch (err) {
-    const obstoken = await obfuscate(purchasetoken);
     return r500j({
       error: "acknowledge failed",
       details: err.message,
-      purchaseId: obstoken,
+      purchaseId: obsToken(),
     });
   }
 }

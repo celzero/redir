@@ -86,7 +86,7 @@ class WSUser {
      */
     this.rebill = json.rebill || -1;
     /**
-     * @type {string} - premium expiry date in yyyy-mm-dd format
+     * @type {Date} - premium expiry date in yyyy-mm-dd format
      */
     this.expiry = json.premium_expiry_date
       ? new Date(json.premium_expiry_date)
@@ -111,6 +111,21 @@ class WSUser {
      * @type {string} - location hash (hex)
      */
     this.locHash = json.loc_hash;
+  }
+}
+
+/*
+  {
+  "success": 1
+  }
+*/
+class WSSuccessResponse {
+  constructor(json) {
+    if (typeof json !== "object" || json == null) {
+      json = {};
+    }
+    /** @type {number} - 1 on success, 0 on failure */
+    this.success = json.success || 0;
   }
 }
 
@@ -155,9 +170,10 @@ export class WSEntitlement {
   /**
    * @param {string} cid - Client ID (hex)
    * @param {string} sessiontoken - Session token (id:type:timestamp:sig1:sig2)
+   * @param {Date} exp - Expiry date of the entitlement
    * @param {string} status - "valid" | "invalid" | "banned" | "expired" | "unknown"
    */
-  constructor(cid, sessiontoken, status) {
+  constructor(cid, sessiontoken, exp, status) {
     if (bin.emptyString(cid) || bin.emptyString(sessiontoken)) {
       throw new TypeError("ws: cid and token must not be empty");
     }
@@ -166,6 +182,8 @@ export class WSEntitlement {
     this.cid = cid; // Client ID
     /** @type {string} sessiontoken - Session token */
     this.sessiontoken = sessiontoken; // Session token
+    /** @type {Date} expiry */
+    this.expiry = exp || new Date(0); // Expiry date of the entitlement
     /** @type {string} status - "valid" | "invalid" | "banned" | "expired" | "unknown" */
     this.status = status || "unknown"; // Status of the entitlement
   }
@@ -174,6 +192,7 @@ export class WSEntitlement {
     return JSON.stringify({
       cid: this.cid,
       sessiontoken: this.sessiontoken,
+      expiry: this.expiry.toISOString(),
       status: this.status,
     });
   }
@@ -184,10 +203,17 @@ export class WSEntitlement {
  * @param {string} cid - Client ID
  * @param {Date} expiry - Expiry date of the subscription
  * @param {string} plan - "yearly" | "monthly" | "unknown"
+ * @param {boolean} [renew=true] - Whether to renew the entitlement if it is expired
  * @return {Promise<WSEntitlement|null>} - returns the entitlement
  * @throws {Error} - If there is an error generating or retrieving credentials
  */
-export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
+export async function getOrGenWsEntitlement(
+  env,
+  cid,
+  expiry,
+  plan,
+  refresh = true
+) {
   let c = await creds(env, cid);
   if (c == null) {
     // No existing credentials, generate new ones
@@ -227,11 +253,36 @@ export async function getOrGenWsEntitlement(env, cid, expiry, plan) {
       } // else: fallthrough; uses c if it exists or errors out
     } else {
       // insert ok, use these newly created creds
-      c = new WSEntitlement(cid, wsuser.sessionAuthHash, wsStatus(wsuser));
+      c = new WSEntitlement(
+        cid,
+        wsuser.expiry,
+        wsuser.sessionAuthHash,
+        wsStatus(wsuser)
+      );
     }
   }
   if (c == null) {
     throw new Error(`err insert or get creds for ${cid} on ${plan}`);
+  }
+  // if WSEntitlement has "expired", attempt to renew it
+  if (c.status === "expired" || renew) {
+    log.w(
+      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`
+    );
+    try {
+      c = await maybeUpdateCreds(env, c, expiry, plan);
+    } catch (err) {
+      if (c.status === "expired") {
+        // existing "c" has expired ... do not ignore refresh/renew error
+        throw err;
+      } else {
+        // existing "c" has not expired ... use it
+        log.e(
+          `getOrGen: err renewing entitlement for ${c.cid} ${c.status}`,
+          err
+        );
+      }
+    }
   }
   log.d(`getOrGen: use existing for ${c.cid} ${c.status}`);
   return c;
@@ -258,9 +309,9 @@ export async function deleteWsEntitlement(env, cid) {
   }
   const deleted = await deleteCreds(env, c.sessiontoken);
   if (!deleted) {
+    // TODO: tombstone db record?
     throw new Error(`ws: could not delete creds for ${cid}`);
   }
-  // TODO: tombstone record the creds?
   const out = await dbx.deleteCreds(db, cid);
   if (!out || !out.success) {
     throw new Error(`ws: db delete err for ${cid} ${c.status}`);
@@ -303,44 +354,134 @@ export async function creds(env, cid, op = "get") {
   if (bin.emptyString(tok)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
-  const wsstatus = await credsStatus(env, tok);
+  const [wsstatus, wsuser] = await credsStatus(env, tok);
+  // TODO: insert into db depending on "op"?
+  // dbx.upsertCredsMeta
   if (
     wsstatus === "valid" || // all okay
     wsstatus === "expired" || // can be renewed
     wsstatus === "banned" || // banned user, do not proceed
     wsstatus === "unknown" // try our luck, maybe it is valid
   ) {
-    return new WSEntitlement(cid, tok, wsstatus); // Return existing credentials
+    return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus); // Return existing credentials
   } else if (wsstatus === "invalid") {
-    await dbx.deleteCreds(db, cid); // Delete invalid credentials
+    // TODO: also call /Delete? but will it fail anyway?
+    await dbx.deleteCreds(dbx.db(env), cid);
   }
   log.w(`cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
   return null; // need new credentials
 }
 
 /**
+ * @param {any} env - Worker environment
+ * @param {WSEntitlement} c - Existing entitlement
+ * @param {Date} subExpiry - Expiry date of the subscription
+ * @param {"month"|"year"} plan - Requested plan
+ * @returns {Promise<WSEntitlement>} - Returns updated WSEntitlement object
+ * @throws {Error} - If there is an error updating the entitlement
+ */
+async function maybeUpdateCreds(env, c, subExpiry, plan) {
+  // google play enforces a 1-day grace period after expiry
+  const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  if (c.expiry.getTime() >= subExpiry.getTime() - oneDayMs) {
+    log.d(`updateCreds: no-op; ent > sub: ${c.expiry} > ${subExpiry}`);
+    return c; // No need to update, existing expiry is greater than the requested expiry
+  }
+  /*
+  curl --location --request PUT '.../Users?plan=month|year&delete_credentials=0|1' \
+    --header 'X-WS-WL-ID: ' \
+    --header 'X-WS-WL-Token: ' \
+    --header 'Authorization: Bearer ...' \
+   */
+
+  /** @type {ExecCtx} */
+  const execctx = als.getStore();
+  const testing = execctx ? execctx.test : false;
+  const requestedPlan = plan;
+
+  const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
+
+  log.i(
+    `update creds until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
+  );
+
+  if (execCount <= 0) {
+    throw new Error(
+      `cannot update entitlement; subscription expiring soon: ${subExpiry.toISOString()}`
+    );
+  }
+
+  const url =
+    apiurl(env) + resourceuser + "?plan=" + plan + "&delete_credentials=0";
+  const headers = {
+    "X-WS-WL-ID": apiaccess(env),
+    "X-WS-WL-Token": apisecret(env),
+    Authorization: `Bearer ${c.sessiontoken}`,
+  };
+  const r = await fetch(url, { method: "PUT", headers });
+  if (!r.ok) {
+    const err = await r.json();
+    const errstr = JSON.stringify(err);
+    log.w(`update creds: ${r.status} forbidden: ${errstr}`);
+    throw new Error(`could not update creds: ${r.status} ${errstr}`);
+  }
+  // data = { data: { ... }, metadata: { ... } }
+  /*
+  {
+    "data": {
+        "success": 1
+    },
+    "metadata": {
+        "serviceRequestId": "string",
+        "hostName": "string",
+        "duration": "string",
+        "logStatus": "string",
+        "md5": "string"
+    }
+  }
+  */
+  const data = await r.json();
+  if (!data || typeof data !== "object") {
+    throw new Error("invalid response from WS server");
+  }
+  const meta = new WSMetaResponse(data.metadata);
+  const wsdone = new WSSuccessResponse(data.data);
+  if (!wsdone || wsdone.success !== 1) {
+    throw new Error(
+      `upgrade not successful for ${c.cid} expiring on ${c.expiry} (sub expiry: ${subExpiry}) by` +
+        ` ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
+    );
+  }
+  // TODO: fetch the updated user data
+  const [wsstatus, wsuser] = await credsStatus(env, c.sessiontoken);
+  // do not expect wsstatus to be "unknown" or "invalid" here
+  return new WSEntitlement(c.cid, c.sessiontoken, wsuser?.expiry, wsstatus);
+}
+
+/**
  * @param {Date} t - time
+ * @param {Date} [base=new Date()] - Starting date for calculations
  * @returns {number} - Number of months until t
  */
-function monthsUntil(t) {
-  const now = new Date();
+function monthsUntil(t, base = new Date()) {
   const months =
-    (t.getFullYear() - now.getFullYear()) * 12 +
-    (t.getMonth() - now.getMonth());
+    (t.getFullYear() - base.getFullYear()) * 12 +
+    (t.getMonth() - base.getMonth());
   return months;
 }
 
 /**
  * @param {Date} t - time
+ * @param {Date} [base=new Date()] - Starting date for calculations
  * @returns {number} - Number of days until t (note <24h = 1 day)
  * @throws {TypeError} - If t is not a Date object
  */
-function daysUntil(t) {
+function daysUntil(t, base = new Date()) {
   if (!(t instanceof Date)) {
     throw new TypeError("daysUntil: t must be a Date object");
   }
   const onedayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-  const diffTime = t.getTime() - Date.now();
+  const diffTime = t.getTime() - base.getTime();
   const diffDays = Math.ceil(diffTime / onedayMs); // Convert ms to days
   return diffDays;
 }
@@ -359,44 +500,12 @@ async function newCreds(env, expiry, plan) {
     --header 'X-WS-WL-ID: ' \
     --header 'X-WS-WL-Token: '
   */
-  let execCount = 0;
+  /** @type {ExecCtx} */
   const execctx = als.getStore();
   const testing = execctx ? execctx.test : false;
-  const totalMonths = monthsUntil(expiry);
-  const totalDays = daysUntil(expiry);
   const requestedPlan = plan;
-  if (totalMonths > 9) {
-    plan = "year";
-    execCount = 1; // 12 month plan
-  }
-  if (totalMonths <= 0) {
-    if (totalDays < 0) {
-      // in the past
-      throw new Error(`ws: plan expired ${expiry}, cannot create creds`);
-    }
-    if (totalDays >= 10) {
-      plan = "month";
-      execCount = 1; // 1 month plan
-    } else if (totalDays == 1) {
-      if (testing) {
-        plan = "month"; // testing, allow
-        execCount = 1; // 1 month plan
-      } else {
-        // may be anywhere between 1s and 1d
-        // silent grace period ~24h
-        // TODO: if purchase token is unacknowledged, then always
-        // generate new creds as the user is unlikely to be a in silent grace period.
-        // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
-        execCount = 0;
-      }
-    } else {
-      // TODO: should or should not restrict new creds?
-      execCount = 0; // restrict
-    }
-  } else {
-    plan = "month"; // default to monthly plan
-    execCount = totalMonths; // x months plan
-  }
+
+  const [plan, execCount] = expiry2plan(expiry, testing);
 
   log.i(
     `new creds until ${expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
@@ -404,7 +513,7 @@ async function newCreds(env, expiry, plan) {
 
   if (execCount <= 0) {
     throw new Error(
-      `cannot create or refersh entitlement; subscription expiring imminently`
+      `cannot create entitlement; subscription expiring imminently`
     );
   }
 
@@ -416,7 +525,10 @@ async function newCreds(env, expiry, plan) {
   };
   const r = await fetch(url, { method: "POST", headers });
   if (!r.ok) {
-    throw new Error(`could not create new creds: ${r.status} ${r.statusText}`);
+    const err = await r.json();
+    const errstr = JSON.stringify(err);
+    log.w(`new creds: ${r.status} forbidden: ${errstr}`);
+    throw new Error(`could not create new creds: ${r.status} ${errstr}`);
   }
   // data = { data: { ... }, metadata: { ... } }
   const data = await r.json();
@@ -427,10 +539,7 @@ async function newCreds(env, expiry, plan) {
   const wsuser = new WSUser(data.data);
   if (!wsuser.userId || !wsuser.sessionAuthHash) {
     throw new Error(
-      "missing userId or sessionAuthHash in response",
-      meta.hostName,
-      meta.serviceRequestId,
-      meta.hostName
+      `new creds: missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
     );
   }
   return wsuser; // Return the new credentials
@@ -439,12 +548,13 @@ async function newCreds(env, expiry, plan) {
 /**
  *
  * @param {string} sessiontoken - id:type:timestamp:sig1:sig2
- * @return {Promise<"valid"|"invalid"|"banned"|"expired"|"unknown">} statuses:
+ * @return {Promise<["valid"|"invalid"|"banned"|"expired"|"unknown", WSUser]>} statuses:
  * - "valid" if the session token is ok,
  * - "invalid" if it is not ok,
  * - "expired" if it is ok but expired,
  * - "banned" if the user is banned,
  * - "unknown" if the status is unknown (due to errors)
+ * WSUser: The entitlement.
  */
 async function credsStatus(env, sessiontoken) {
   // curl --request GET 'https://api-staging.windscribe.com/Session'
@@ -459,21 +569,33 @@ async function credsStatus(env, sessiontoken) {
       const d = await r.json();
       if (d && d.data) {
         const wsuser = new WSUser(d.data);
-        return wsStatus(wsuser);
+        return [wsStatus(wsuser), wsuser];
       } // else: fallthrough and return "unknown"
     }
-    if (r.status === 403) {
+    /* 400 Bad Request
+    {
+      "errorCode": 6002,
+      "errorMessage": "Server error validating session",
+      "errorDescription": "Server error validating session",
+      "logStatus": null
+    }
+    */
+    if (r.status >= 400) {
       const err = await r.json();
       log.w(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
       if (err.errorCode === 701) {
-        return "invalid"; // Session is invalid
+        return ["invalid", null]; // Session is invalid
+      }
+      if (err.errorCode === 6002) {
+        // TODO: windscribe bug; return "unknown"?
+        return ["invalid", null]; // Server error validating session
       }
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
   } catch (err) {
     log.e(`creds status: error checking session token:`, err);
   }
-  return "unknown"; // Unknown status
+  return ["unknown", null]; // Unknown status
 }
 
 /**
@@ -518,6 +640,20 @@ async function deleteCreds(env, sessiontoken) {
     await sleep(tries); // Wait 1s, 2s, 3s
     try {
       const r = await fetch(url, { method: "DELETE", headers });
+      /*
+        {
+          "data": {
+              "success": 1
+          },
+          "metadata": {
+              "serviceRequestId": "string",
+              "hostName": "string",
+              "duration": "string",
+              "logStatus": "string",
+              "md5": "string"
+          }
+        }
+      */
       if (r.ok) {
         return true; // Successfully deleted
       }
@@ -534,6 +670,8 @@ async function deleteCreds(env, sessiontoken) {
       */
       if (r.status === 403) {
         const err = await r.json();
+        const errstr = JSON.stringify(err);
+        log.w(`deleteCreds: attempt ${tries} err: ${errstr}`);
         if (err.errorCode === 701) {
           return true; // Session is invalid, can never delete
         }
@@ -544,6 +682,51 @@ async function deleteCreds(env, sessiontoken) {
     }
   }
   return false; // Failed to delete after 3 attempts
+}
+
+/**
+ * @param {Date} expiry
+ * @param {boolean} [testing=false] - Testing mode?
+ * @param {Date} [since=new Date()] - Starting date for calculations
+ * @returns {["month"|"year", number]} - plan and multipler (ie, ["month", 6] means a 6mo plan)
+ */
+function expiry2plan(expiry, testing = false, since = new Date()) {
+  let execCount = 0;
+  const totalMonths = monthsUntil(expiry, since);
+  const totalDays = daysUntil(expiry, since);
+  if (totalMonths > 9) {
+    plan = "year";
+    execCount = 1; // 12 month plan
+  }
+  if (totalMonths <= 0) {
+    if (totalDays < 0) {
+      // in the past
+      throw new Error(`ws: plan expired ${expiry}, cannot create creds`);
+    }
+    if (totalDays >= 10) {
+      plan = "month";
+      execCount = 1; // 1 month plan
+    } else if (totalDays == 1) {
+      if (testing) {
+        plan = "month"; // testing, allow
+        execCount = 1; // 1 month plan
+      } else {
+        // may be anywhere between 1s and 1d
+        // silent grace period ~24h
+        // TODO: if purchase token is unacknowledged, then always
+        // generate new creds as the user is unlikely to be a in silent grace period.
+        // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
+        execCount = 0;
+      }
+    } else {
+      // TODO: should or should not restrict new creds?
+      execCount = 0; // restrict
+    }
+  } else {
+    plan = "month"; // default to monthly plan
+    execCount = totalMonths; // x months plan
+  }
+  return [plan, execCount];
 }
 
 /**
