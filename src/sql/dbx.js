@@ -158,11 +158,11 @@ export async function insertClient(db, cid, clientinfo, kind) {
     const q =
       "INSERT OR IGNORE INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)";
     const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
-    return run(tx);
+    return run(tx, q);
   } else {
     const q = "INSERT OR IGNORE INTO clients(cid, kind, mtime) VALUES(?, ?, ?)";
     const tx = db.prepare(q).bind(cid, kind, now());
-    return run(tx);
+    return run(tx, q);
   }
 }
 
@@ -190,12 +190,12 @@ export async function upsertPlaySub(db, cid, token, linkedtoken, info = null) {
     const tx = db
       .prepare(q)
       .bind(token, JSON.stringify(info), cid, linkedtoken, now());
-    return run(tx);
+    return run(tx, q);
   } else {
     const q =
       "INSERT OR IGNORE INTO playorders(purchasetoken, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?)";
     const tx = db.prepare(q).bind(token, cid, linkedtoken, now());
-    return run(tx);
+    return run(tx, q);
   }
 }
 
@@ -211,7 +211,7 @@ export async function playSub(db, token) {
   }
   const q = "SELECT * from playorders where purchasetoken = ?";
   const tx = db.prepare(q).bind(token);
-  return run(tx);
+  return run(tx, q);
 }
 
 /**
@@ -227,7 +227,7 @@ export async function firstLinkedPurchaseTokenEntry(db, token) {
   const q =
     "SELECT * from playorders where linkedtoken = ? ORDER BY mtime LIMIT 1";
   const tx = db.prepare(q).bind(token);
-  return run(tx);
+  return run(tx, q);
 }
 
 /**
@@ -244,7 +244,7 @@ export async function wsCreds(db, cid) {
   const q = "SELECT * FROM ws WHERE cid = ?";
   const tx = db.prepare(q).bind(cid);
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#first
-  return run(tx);
+  return run(tx, q);
 }
 
 /**
@@ -269,7 +269,7 @@ export async function insertCreds(db, cid, userid, sessiontoken) {
     "INSERT INTO ws (cid, sessiontoken, userid, mtime) VALUES(?, ?, ?, ?)";
   const tx = db.prepare(q).bind(cid, sessiontoken, userid, now());
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#run
-  return run(tx);
+  return run(tx, q);
 }
 
 /**
@@ -283,18 +283,19 @@ export async function deleteCreds(db, cid) {
   }
   const q = "DELETE FROM ws WHERE cid = ?";
   const tx = db.prepare(q).bind(cid);
-  return run(tx);
+  return run(tx, q);
 }
 
 /**
  * developers.cloudflare.com/d1/worker-api/prepared-statements/#run
  * @param {any} tx - D1 prepared statement
+ * @param {string} [sql] - optional SQL query string for logging
  * @returns {Promise<D1Out>} - D1Out object
  */
-async function run(tx) {
+async function run(tx, sql = "") {
   const out = D1Out.fromJson(await tx.run());
   log.d(
-    `${tx.sql}: ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
+    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
   );
   return out;
 }
