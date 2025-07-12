@@ -376,11 +376,11 @@ export async function creds(env, cid, op = "get") {
  * @param {any} env - Worker environment
  * @param {WSEntitlement} c - Existing entitlement
  * @param {Date} subExpiry - Expiry date of the subscription
- * @param {"month"|"year"} plan - Requested plan
+ * @param {"month"|"year"} requestedPlan - Requested plan
  * @returns {Promise<WSEntitlement>} - Returns updated WSEntitlement object
  * @throws {Error} - If there is an error updating the entitlement
  */
-async function maybeUpdateCreds(env, c, subExpiry, plan) {
+async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   // google play enforces a 1-day grace period after expiry
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   if (c.expiry.getTime() >= subExpiry.getTime() - oneDayMs) {
@@ -397,7 +397,6 @@ async function maybeUpdateCreds(env, c, subExpiry, plan) {
   /** @type {ExecCtx} */
   const execctx = als.getStore();
   const testing = execctx ? execctx.test : false;
-  const requestedPlan = plan;
 
   const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
 
@@ -448,7 +447,7 @@ async function maybeUpdateCreds(env, c, subExpiry, plan) {
   const wsdone = new WSSuccessResponse(data.data);
   if (!wsdone || wsdone.success !== 1) {
     throw new Error(
-      `upgrade not successful for ${c.cid} expiring on ${c.expiry} (sub expiry: ${subExpiry}) by` +
+      `upgrade not successful for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}] (sub expiry: ${subExpiry}) by` +
         ` ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
     );
   }
@@ -490,11 +489,11 @@ function daysUntil(t, base = new Date()) {
  *
  * @param {any} env - Worker environment
  * @param {Date} expiry - Expiry date of the entitlement
- * @param {"month"|"year"} plan
+ * @param {"month"|"year"} requestedPlan
  * @returns {Promise<WSUser>} - Returns a WSUser object with new credentials
  * @throws {Error} - If there is an error creating new credentials
  */
-async function newCreds(env, expiry, plan) {
+async function newCreds(env, expiry, requestedPlan) {
   /*
     curl --request POST '.../Users?session_type_id=4&plan=year' \
     --header 'X-WS-WL-ID: ' \
@@ -503,7 +502,6 @@ async function newCreds(env, expiry, plan) {
   /** @type {ExecCtx} */
   const execctx = als.getStore();
   const testing = execctx ? execctx.test : false;
-  const requestedPlan = plan;
 
   const [plan, execCount] = expiry2plan(expiry, testing);
 
