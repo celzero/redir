@@ -345,7 +345,7 @@ export async function creds(env, cid, op = "get") {
     `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`
   );
   const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
-  if (bin.emptyString(tok)) {
+  if (bin.emptyString(tokhex)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
   const tok = bin.hex2byt2str(tokhex);
