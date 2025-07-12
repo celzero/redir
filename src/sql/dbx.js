@@ -241,7 +241,7 @@ export async function wsCreds(db, cid) {
   if (db == null || cid == null) {
     throw new Error("d1: wsCreds: db/cid missing");
   }
-  const q = "SELECT userid, sessiontoken FROM ws WHERE cid = ?";
+  const q = "SELECT * FROM ws WHERE cid = ?";
   const tx = db.prepare(q).bind(cid);
   // developers.cloudflare.com/d1/worker-api/prepared-statements/#first
   return run(tx);
