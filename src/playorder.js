@@ -44,7 +44,7 @@ const proProductId = "pro.tier";
 const monthlyBasePlanId = "proxy-monthly";
 const yearlyBasePlanId = "proxy-yearly";
 
-const log = new glog.Log("playorder", 1);
+const log = new glog.Log("playorder");
 
 /** @type Set<string> - set of known productIds */
 const knownProducts = new Set([

@@ -12,7 +12,7 @@ import { rsaSsaSign } from "./webcrypto.js";
 
 // from: gist.github.com/markelliot/6627143be1fc8209c9662c504d0ff205?permalink_comment_id=4177336#gistcomment-4177336
 
-const log = new glog.Log("gauth", 1);
+const log = new glog.Log("gauth");
 
 /**
  * {

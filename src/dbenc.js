@@ -6,7 +6,7 @@ import { hkdfaes, hkdfalgkeysz, sha256, sha512 } from "./hmac.js";
 import * as glog from "./log.js";
 import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
-const log = new glog.Log("dbenc", 1);
+const log = new glog.Log("dbenc");
 
 // 11 July 2024
 export const aadRequirementStartTime = 1752256401335;
@@ -113,7 +113,6 @@ async function key(env, cid, ctxstr = "") {
 }
 
 /**
- *
  * @param {string} lo - hex string
  * @param {string} hi - hex string
  * @returns {Promise<ArrayBufferLike>} - 12-byte fixed nonce (BufferSource)

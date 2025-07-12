@@ -18,7 +18,7 @@ const creatuser = resourceuser + "?session_type_id=4&plan=";
 
 const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
 
-const log = new glog.Log("wse", 1);
+const log = new glog.Log("wse");
 
 /*
     {

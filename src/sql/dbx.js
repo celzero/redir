@@ -10,7 +10,7 @@ import { emptyString } from "../buf.js";
 import { ExecCtx, als } from "../d.js";
 import * as glog from "../log.js";
 
-const log = new glog.Log("dbx", 1);
+const log = new glog.Log("dbx");
 
 /*
 {

@@ -13,7 +13,7 @@ export const ZEROBUF = new Uint8Array(0);
 const tencoder = new TextEncoder();
 const tdecoder = new TextDecoder();
 
-const log = new glog.Log("buf", 1);
+const log = new glog.Log("buf");
 
 export function str2byte(s) {
   return tencoder.encode(s);
