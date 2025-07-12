@@ -350,10 +350,11 @@ export async function creds(env, cid, op = "get") {
   log.d(
     `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`
   );
-  const tok = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
+  const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tok)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
+  const tok = bin.hex2byt2str(tokhex);
   const [wsstatus, wsuser] = await credsStatus(env, tok);
   // TODO: insert into db depending on "op"?
   // dbx.upsertCredsMeta
