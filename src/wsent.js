@@ -348,7 +348,7 @@ export async function creds(env, cid, op = "get") {
     aadhex = bin.str2byt2hex(wstokaad);
   }
   log.d(
-    `ws: ${op} creds for ${cid} uid: ${uhex} enctok: ${enctok} ctime: ${ctime.getTime()}`
+    `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`
   );
   const tok = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tok)) {
