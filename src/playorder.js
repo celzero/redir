@@ -1628,7 +1628,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
  * @param {any} env
  * @param {string} cid - Client ID, usually the obfuscatedExternalAccountId.
  * @param {string} pt - Purchase token.
- * @param {SubscriptionPurchaseV2} sub
+ * @param {SubscriptionPurchaseV2} sub - The subscription purchase object.
  * @param {Promise<dbx.D1Out>} out - The result of db op.
  */
 async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
