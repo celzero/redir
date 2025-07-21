@@ -79,7 +79,7 @@ async function handle(r, env, ctx) {
         return googlePlayNotification(env, r);
       } else if (p2 === "ack") {
         // TODO: must be a POST request
-        // g/ack?cid&purchaseToken
+        // g/ack?cid&purchaseToken[&force]
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: must be a GET request

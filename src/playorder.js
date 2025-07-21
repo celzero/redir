@@ -1815,6 +1815,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       url.searchParams.get("purchaseToken") ||
       url.searchParams.get("purchasetoken");
     const cid = url.searchParams.get("cid");
+    const force = url.searchParam.get("force");
 
     if (!purchasetoken) {
       return r400j({ error: "purchaseToken is required" });
@@ -1832,13 +1833,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
     logi(`ack sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
-    if (ackd) {
-      return r200j({
-        message: "already acknowledged",
-        purchaseId: obstoken,
-        cid: cid,
-      });
-    }
     // canceled subs could be expiring in the future
     if (!active && !canceled) {
       loge(`ack sub err inactive subscription: ${cid}, state: ${state}`);
@@ -1898,7 +1892,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
       if (obsoleted) {
         logi(`Purchase token ${obstoken} is obsoleted, cannot ack`);
-        await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+        if (!ackd) {
+          await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+        }
         return r200j({
           message: "Subscription acknowledged without entitlement",
           cid: cid,
@@ -1912,24 +1908,24 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
       // TODO: check if productId grants a WSEntitlement
       const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
-      if (!ent) {
+      if (!force && !ent) {
         return r500j({ error: "failed to get entitlement", cid: cid });
       }
-      if (ent.status === "banned") {
+      if (ent.status === "banned" && !force) {
         return r400j({
           error: "user banned",
           cid: cid,
           purchaseId: obstoken,
         });
       }
-      if (ent.status === "expired") {
+      if (ent.status === "expired" && !force) {
         return r400j({
           error: "entitlement expired",
           cid: cid,
           purchaseId: obstoken,
         });
       }
-      if (ent.status !== "valid") {
+      if (ent.status !== "valid" && !force) {
         return r400j({
           error: "invalid entitlement status",
           status: ent.status,
@@ -1938,7 +1934,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         });
       }
 
-      await ackSubscription(env, purchasetoken, ent);
+      if (!ackd) {
+        await ackSubscription(env, purchasetoken, ent);
+      }
 
       return r200j({
         message: "Subscription acknowledged",
@@ -1982,15 +1980,15 @@ export async function googlePlayGetEntitlements(env, req) {
     logd(`get entitlements for ${cid}; test? ${test}`);
 
     return await als.run(new ExecCtx(test), async () => {
-      const out = await creds(env, cid);
+      const ent = await creds(env, cid);
 
-      if (!out) {
+      if (!ent) {
         return r400j({ error: "entitlement not found", cid: cid });
       }
-      if (out.status === "banned") {
+      if (ent.status === "banned") {
         return r400j({ error: "user banned", cid: cid });
       }
-      if (out.status === "expired") {
+      if (ent.status === "expired") {
         // renew creds
       }
 
@@ -1998,7 +1996,7 @@ export async function googlePlayGetEntitlements(env, req) {
         success: true,
         cid: cid,
         developerPayload: JSON.stringify({
-          ws: out,
+          ws: ent,
         }),
       });
     });
