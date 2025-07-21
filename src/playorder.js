@@ -1107,7 +1107,7 @@ async function handleSubscriptionNotification(env, notif) {
   return als.run(new ExecCtx(test, obstoken), async () => {
     logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
 
-    const cid = await getOrGenAndPersistCid(env, sub);
+    const cid = await getCidThenPersist(env, sub);
 
     return await processSubscription(env, cid, sub, purchasetoken, revoked);
   });
@@ -1580,7 +1580,9 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
  * @throws {Error} - If the CID cannot be retrieved or generated.
  */
 async function getCidThenPersist(env, sub) {
-  return getOrGenAndPersistCid(env, sub, false, true);
+  const gen = true;
+  const persist = true;
+  return getOrGenAndPersistCid(env, sub, !gen, persist);
 }
 
 /**

@@ -33,6 +33,15 @@ export function obsToken() {
   return cfg?.obstoken || "";
 }
 
+/**
+ * @returns {boolean} - Whether this is a test run.
+ */
+export function testmode() {
+  /** @type {ExecCtx} */
+  const cfg = als.getStore();
+  return cfg?.test || false;
+}
+
 export function wrap(env) {
   if (env == null) env = {};
 

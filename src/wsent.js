@@ -7,7 +7,7 @@
  */
 
 import * as bin from "./buf.js";
-import { als, ExecCtx } from "./d.js";
+import { als, ExecCtx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
@@ -172,11 +172,14 @@ export class WSEntitlement {
    * @param {string} sessiontoken - Session token (id:type:timestamp:sig1:sig2)
    * @param {Date} exp - Expiry date of the entitlement
    * @param {string} status - "valid" | "invalid" | "banned" | "expired" | "unknown"
+   * @param {boolean} [test=false] - Whether this is a test entitlement
    */
-  constructor(cid, sessiontoken, exp, status) {
+  constructor(cid, sessiontoken, exp, status, test = false) {
     if (bin.emptyString(cid) || bin.emptyString(sessiontoken)) {
       throw new TypeError("ws: cid and token must not be empty");
     }
+    /** @type {string} */
+    this.kind = "ws#v1";
     // TODO: validate cid and sessiontoken formats
     /** @type {string} cid - Client ID */
     this.cid = cid; // Client ID
@@ -186,6 +189,8 @@ export class WSEntitlement {
     this.expiry = exp || new Date(0); // Expiry date of the entitlement
     /** @type {string} status - "valid" | "invalid" | "banned" | "expired" | "unknown" */
     this.status = status || "unknown"; // Status of the entitlement
+    /** @type {boolean} - Whether this is a test entitlement */
+    this.test = test || false; // Whether this is a test entitlement
   }
 
   toString() {
@@ -251,7 +256,8 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         cid,
         wsuser.expiry,
         wsuser.sessionAuthHash,
-        wsStatus(wsuser)
+        wsStatus(wsuser),
+        testmode()
       );
     }
   }
@@ -264,6 +270,11 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`
     );
     try {
+      // No downgrade of the user is necessary if they stop paying
+      // (cancel their subscription). Not running new PUT /Users (update)
+      // for that account for the new month/year. If users renew at
+      // some point later, running a PUT /Users to re-activate the
+      // existing account is enough to re-activate their entitlement.
       c = await maybeUpdateCreds(env, c, exp, plan);
     } catch (err) {
       if (c.status === "expired") {
@@ -358,7 +369,7 @@ export async function creds(env, cid, op = "get") {
     wsstatus === "banned" || // banned user, do not proceed
     wsstatus === "unknown" // try our luck, maybe it is valid
   ) {
-    return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus); // Return existing credentials
+    return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, testmode()); // Return existing credentials
   } else if (wsstatus === "invalid") {
     // TODO: also call /Delete? but will it fail anyway?
     await dbx.deleteCreds(dbx.db(env), cid);
@@ -389,9 +400,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     --header 'Authorization: Bearer ...' \
    */
 
-  /** @type {ExecCtx} */
-  const execctx = als.getStore();
-  const testing = execctx ? execctx.test : false;
+  const testing = testmode();
 
   const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
 
@@ -405,6 +414,15 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     );
   }
 
+  // Calling the PUT /Users adds 1 month or 1 year to the expiry date.
+  // If expiry date was 2025-07-15, and the PUT request is run anytime
+  // before or on this date, and say adds a month, the new expiry date
+  // is 2025-08-15. If the PUT request is run again after the account
+  // has already expired, and was downgraded (say, on 2025-07-19) it
+  // adds 1 month from that date, and new expiry will be 2025-08-19.
+  // Issuing subsequent PUT requests would keep adding +1mo (or +1y)
+  // to this date. If it's the last day of the month, the +1mo will
+  // keep it the same (30th -> 31st -> 30th).
   const url =
     apiurl(env) + resourceuser + "?plan=" + plan + "&delete_credentials=0";
   const headers = {
@@ -449,7 +467,13 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   // TODO: fetch the updated user data
   const [wsstatus, wsuser] = await credsStatus(env, c.sessiontoken);
   // do not expect wsstatus to be "unknown" or "invalid" here
-  return new WSEntitlement(c.cid, c.sessiontoken, wsuser?.expiry, wsstatus);
+  return new WSEntitlement(
+    c.cid,
+    c.sessiontoken,
+    wsuser?.expiry,
+    wsstatus,
+    testmode
+  );
 }
 
 /**
