@@ -3,6 +3,12 @@
 
 import * as bin from "./buf.js";
 
+/**
+ * IKM must be at least as many bytes as the hash fn (sha256 for hmac256)
+ *for hkdf256 to hold dual PRF:
+ * blog.trailofbits.com/2025/01/28/best-practices-for-key-derivation/
+ * @type {number}
+ */
 export const hkdfalgkeysz = 32; // sha256
 
 export function rand(sz = 16) {

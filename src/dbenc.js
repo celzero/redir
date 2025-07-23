@@ -139,6 +139,7 @@ export async function aeskeygen(seedhex, cid, ctxhex) {
       const sk = bin.hex2buf(seedhex);
       const sk256 = sk.slice(0, hkdfalgkeysz);
 
+      // better info is always of a fixed size
       const info512 = await sha512(bin.hex2buf(cid + ctxhex));
       return await gen(sk256, info512); // hdkf aes key
     } catch (ignore) {
