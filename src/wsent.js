@@ -192,15 +192,6 @@ export class WSEntitlement {
     /** @type {boolean} - Whether this is a test entitlement */
     this.test = test || false; // Whether this is a test entitlement
   }
-
-  toString() {
-    return JSON.stringify({
-      cid: this.cid,
-      sessiontoken: this.sessiontoken,
-      expiry: this.expiry.toISOString(),
-      status: this.status,
-    });
-  }
 }
 
 /**
@@ -254,8 +245,8 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       // insert ok, use these newly created creds
       c = new WSEntitlement(
         cid,
-        wsuser.expiry,
         wsuser.sessionAuthHash,
+        wsuser.expiry,
         wsStatus(wsuser),
         testmode()
       );
