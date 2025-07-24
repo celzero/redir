@@ -83,7 +83,8 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
   }
   try {
     const pt = bin.hex2buf(plaintext);
-    const taggedciphertext = await encryptAesGcm(enckey, iv, aadhex, pt);
+    const aad = bin.hex2buf(aadhex);
+    const taggedciphertext = await encryptAesGcm(enckey, iv, aad, pt);
     return bin.buf2hex(taggedciphertext);
   } catch (err) {
     log.e("encrypt: failed", err);
