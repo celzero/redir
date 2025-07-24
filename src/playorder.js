@@ -1165,7 +1165,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   if (active) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
     const gprod = productInfo(sub);
-    if (!gprod) {
+    if (gprod == null) {
       loge(`skip ack sub ${cid} test? ${test}; no product info`);
       return;
     }
@@ -1844,7 +1844,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     }
 
     const gprod = productInfo(sub);
-    if (!gprod) {
+    if (gprod == null) {
       loge(`ack sub err invalid product for ${obstoken}`);
       return r400j({
         error: "not a valid product",

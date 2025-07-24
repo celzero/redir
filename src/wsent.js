@@ -408,7 +408,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     `update creds until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
   );
 
-  if (execCount <= 0) {
+  if (plan == "unknown" || execCount <= 0) {
     throw new Error(
       `cannot update entitlement; subscription expiring soon: ${subExpiry.toISOString()}`
     );
@@ -528,7 +528,7 @@ async function newCreds(env, expiry, requestedPlan) {
     `new creds until ${expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
   );
 
-  if (execCount <= 0) {
+  if (plan == "unknown" || execCount <= 0) {
     throw new Error(
       `cannot create entitlement; subscription expiring imminently`
     );
@@ -705,10 +705,11 @@ async function deleteCreds(env, sessiontoken) {
  * @param {Date} expiry
  * @param {boolean} [testing=false] - Testing mode?
  * @param {Date} [since=new Date()] - Starting date for calculations
- * @returns {["month"|"year", number]} - plan and multipler (ie, ["month", 6] means a 6mo plan)
+ * @returns {["month"|"year"|"unknown", number]} - plan and multipler (ie, ["month", 6] means a 6mo plan)
  */
 function expiry2plan(expiry, testing = false, since = new Date()) {
   let execCount = 0;
+  let plan = "unknown";
   const totalMonths = monthsUntil(expiry, since);
   const totalDays = daysUntil(expiry, since);
   if (totalMonths > 9) {
@@ -733,10 +734,12 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
         // TODO: if purchase token is unacknowledged, then always
         // generate new creds as the user is unlikely to be a in silent grace period.
         // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
+        // plan is "unknown"
         execCount = 0;
       }
     } else {
       // TODO: should or should not restrict new creds?
+      // plan is "unknown"
       execCount = 0; // restrict
     }
   } else {
