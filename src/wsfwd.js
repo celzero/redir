@@ -46,8 +46,8 @@ export async function forwardToWs(env, r) {
   const u = new URL(r.url);
 
   const [cid, token, needsAuth] = await bearerAndCidForWs(env, r);
-  if (needsAuth && (emptyString(token) || cid == null)) {
-    return r401("needs auth");
+  if (needsAuth && (emptyString(token) || emptyString(cid))) {
+    return r401("needs cid or auth");
   }
   const [typ, sensitive] = reqType(u);
   const cloned = new Request(r);
