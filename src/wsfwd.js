@@ -45,8 +45,7 @@ function r421t(u) {
 export async function forwardToWs(env, r) {
   const u = new URL(r.url);
 
-  const needsAuth = forwardToWsWithAuth(u);
-  const [cid, token] = await bearerAndCidForWs(env, r);
+  const [cid, token, needsAuth] = await bearerAndCidForWs(env, r);
   if (needsAuth && (emptyString(token) || cid == null)) {
     return r401("needs auth");
   }
@@ -139,27 +138,37 @@ function forwardToWsWithAuth(url) {
 /**
  * @param {any} env - Worker environment
  * @param {Request} req - The request object
- * @returns {Promise<[string|null, string|null]>} - [cid, token] or [null, null] if not available
+ * @returns {Promise<[string|null, string|null, boolean]>} - [cid, token, needsAuth] or [null, null, false] if not available
  */
 async function bearerAndCidForWs(env, req) {
   const url = new URL(req.url);
   const q = url.searchParams;
   const authHeader = req.headers.get("Authorization");
   const authVals = authHeader ? authHeader.split(" ") : [];
+  const needsAuth = forwardToWsWithAuth(url);
+  const cid = q.get("cid");
+
   if (authVals.length < 2 || authVals[0] !== "Bearer") {
-    return [null, null]; // no auth
+    log.d("bearerAndCidForWs: no auth header", authHeader, "or vals", authVals);
+    return [null, null, needsAuth];
   }
+  if (!needsAuth) {
+    return [cid, null, /*false*/ needsAuth];
+  }
+
   /** @type {string} - of type "id:typ:epoch:sig1:sig2" */
   const enctoken = authVals[1];
-  if (enctoken.split(":") > 4) {
+  const toks = enctoken.split(":");
+  if (toks.length > 4) {
+    log.d("bearerAndCidForWs: already decrypted", toks[0]);
     // already decrypted (or was left unencrypted)
-    return [q.get("cid"), enctoken];
+    return [cid, enctoken, needsAuth];
   }
-  const cid = q.get("cid");
   if (emptyString(cid) || emptyString(enctoken)) {
-    return [null, null]; // no cid
+    log.d("bearerAndCidForWs: no cid", cid, "or token", emptyString(enctoken));
+    return [null, null, needsAuth]; // no cid or token
   }
-  return [cid, await decryptText(env, cid, enctoken)];
+  return [cid, await decryptText(env, cid, enctoken), needsAuth];
 }
 
 /**
