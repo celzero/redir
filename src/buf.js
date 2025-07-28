@@ -69,6 +69,24 @@ export function buf2b64url(buffer) {
 }
 
 /**
+ *
+ * @param  {...BufferSource} args - Concatenates multiple BufferSources into a single Uint8Array
+ * @returns {Uint8Array} - Concatenated Uint8Array
+ */
+export function cat(...args) {
+  if (args.length === 0) return ZEROBUF;
+  const totalLength = args.reduce((sum, arg) => sum + arg.byteLength, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arg of args) {
+    const view = byt(arg);
+    result.set(view, offset);
+    offset += view.byteLength;
+  }
+  return result;
+}
+
+/**
  * @param {string} b64 - base64 (standard)
  * @returns {ArrayBuffer} - returns an ArrayBuffer
  */
@@ -99,6 +117,22 @@ export function b64AsBytes(b64url) {
 }
 
 /**
+ * @param {Uint8Array} a
+ * @param {Uint8Array} b
+ */
+export function bytcmp(a, b) {
+  const aempty = emptyBuf(a);
+  const bempty = emptyBuf(b);
+  if (aempty && bempty) return true; // both empty
+  if (aempty || bempty) return false; // one is empty, the other
+  if (a.byteLength !== b.byteLength) return false;
+  for (let i = 0; i < a.byteLength; i++) {
+    if (b[i] !== a[i]) return false;
+  }
+  return true;
+}
+
+/**
  * Check if Buffer is empty
  * @param {ArrayBuffer|Buffer} b
  * @returns {boolean}
@@ -116,22 +150,6 @@ function raw(b) {
   if (emptyBuf(b)) return ZEROBUF.buffer;
   if (b instanceof ArrayBuffer) return b;
   return b.buffer;
-}
-
-/**
- * @param {Uint8Array} a
- * @param {Uint8Array} b
- */
-export function bytcmp(a, b) {
-  const aempty = emptyBuf(a);
-  const bempty = emptyBuf(b);
-  if (aempty && bempty) return true; // both empty
-  if (aempty || bempty) return false; // one is empty, the other
-  if (a.byteLength !== b.byteLength) return false;
-  for (let i = 0; i < a.byteLength; i++) {
-    if (b[i] !== a[i]) return false;
-  }
-  return true;
 }
 
 /**
@@ -166,6 +184,10 @@ export function hex2buf(h) {
   return new Uint8Array(h.match(/.{1,2}/g).map((w) => parseInt(w, 16)));
 }
 
+/**
+ * @param {String} s
+ * @returns {boolean} - true if the string is empty or null
+ */
 export function emptyString(s) {
   if (s == null) return true; // null or undefined
   if (typeof s === "string") {
