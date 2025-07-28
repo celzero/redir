@@ -149,7 +149,12 @@ async function bearerAndCidForWs(env, req) {
   if (authVals.length < 2 || authVals[0] !== "Bearer") {
     return [null, null]; // no auth
   }
+  /** @type {string} - of type "id:typ:epoch:sig1:sig2" */
   const enctoken = authVals[1];
+  if (enctoken.split(":") > 4) {
+    // already decrypted (or was left unencrypted)
+    return [q.get("cid"), enctoken];
+  }
   const cid = q.get("cid");
   if (emptyString(cid) || emptyString(enctoken)) {
     return [null, null]; // no cid
