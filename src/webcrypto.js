@@ -10,8 +10,8 @@ import { b642buf, buf2hex, byt, emptyBuf, hex2buf, str2ab } from "./buf.js";
 
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
- * @param {BufferSource} iv - The initialization vector
- * @param {BufferSource} aad - Additional authenticated data (AAD)
+ * @param {BufferSource} iv - The initialization vector (12 byte)
+ * @param {BufferSource?} aad - Additional authenticated data (AAD)
  * @param {BufferSource} taggedciphertext - The encrypted data with authentication tag
  * @returns {Promise<Uint8Array>} - The decrypted plaintext
  */
@@ -36,8 +36,8 @@ export async function decryptAesGcm(aeskey, iv, aad, taggedciphertext) {
 
 /**
  * @param {BufferSource} aeskey - The AES-GCM key
- * @param {BufferSource} iv - The initialization vector
- * @param {BufferSource} aad - Additional authenticated data (AAD)
+ * @param {BufferSource} iv - The initialization vector (12 byte)
+ * @param {BufferSource?} aad - Additional authenticated data (AAD)
  * @param {BufferSource} plaintext - The data to encrypt
  * @returns {Promise<Uint8Array>} - The encrypted data with authentication tag
  */

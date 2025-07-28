@@ -138,9 +138,13 @@ export async function aeskeygen(seedhex, cid, ctxhex) {
   if (!bin.emptyString(seedhex) && !bin.emptyString(cid)) {
     try {
       const sk = bin.hex2buf(seedhex);
-      const sk256 = sk.slice(0, hkdfalgkeysz);
+      if (sk.length < hkdfalgkeysz) {
+        log.e("keygen: seed too short", sk.length, hkdfalgkeysz);
+        return null;
+      }
 
-      // better info is always of a fixed size
+      const sk256 = sk.slice(0, hkdfalgkeysz);
+      // info must always of a fixed size for ALL KDF calls
       const info512 = await sha512(bin.hex2buf(cid + ctxhex));
       return await gen(sk256, info512); // hdkf aes key
     } catch (ignore) {

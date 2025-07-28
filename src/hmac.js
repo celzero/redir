@@ -11,16 +11,35 @@ import * as bin from "./buf.js";
  */
 export const hkdfalgkeysz = 32; // sha256
 
+/**
+ * AES-GCM IV size in bytes
+ * 12 bytes is the recommended size for AES-GCM IV
+ */
+export const aesivsz = 12; // AES-GCM IV size
+
 export function rand(sz = 16) {
   const t = new Uint8Array(sz);
   crypto.getRandomValues(t);
   return t;
 }
 
+/**
+ * @param {CryptoKey} ck - The HMAC key
+ * @param {BufferSource} m - message to sign
+ * @returns {Promise<ArrayBuffer>} - The HMAC signature
+ * @throws {Error} - If the key is not valid or signing fails
+ */
 export async function hmacsign(ck, m) {
   return crypto.subtle.sign("HMAC", ck, m);
 }
 
+/**
+ * @param {CryptoKey} ck - The HMAC key
+ * @param {ArrayBuffer} mac - The HMAC signature to verify
+ * @param {BufferSource} m - The message to verify against
+ * @returns {Promise<boolean>} - True if the signature is valid, false otherwise
+ * @throws {Error} - If the key is not valid or verification fails
+ */
 export async function hmacverify(ck, mac, m) {
   return crypto.subtle.verify("HMAC", ck, mac, m);
 }
