@@ -40,7 +40,7 @@ const log = new glog.Log("wse");
         "loc_hash": "string"
     }
 */
-class WSUser {
+export class WSUser {
   constructor(json) {
     if (typeof json !== "object" || json == null) {
       throw new TypeError("wsuser: null or invalid json");
@@ -100,7 +100,7 @@ class WSUser {
      */
     this.regDate = new Date(json.reg_date * 1000);
     /**
-     * @type {any|null}
+     * @type {string|null} - last reset date "yyyy-mm-dd" or null if not applicable
      */
     this.lastReset = json.last_reset;
     /**
@@ -111,6 +111,27 @@ class WSUser {
      * @type {string} - location hash (hex)
      */
     this.locHash = json.loc_hash;
+  }
+
+  jsonable() {
+    return {
+      user_id: this.userId,
+      session_auth_hash: this.sessionAuthHash,
+      username: this.username,
+      traffic_used: this.trafficUsed,
+      traffic_max: this.trafficMax,
+      status: this.status,
+      email: this.email,
+      email_status: this.emailStatus,
+      billing_plan_id: this.billingPlanId,
+      rebill: this.rebill,
+      premium_expiry_date: this.expiry.toISOString().split("T")[0], // yyyy-mm-dd
+      is_premium: this.isPremium ? 1 : 0,
+      reg_date: Math.floor(this.regDate.getTime() / 1000), // unix timestamp in seconds
+      last_reset: this.lastReset,
+      loc_rev: this.locRev,
+      loc_hash: this.locHash,
+    };
   }
 }
 
@@ -138,7 +159,7 @@ class WSSuccessResponse {
         "md5": "64007038ec43f031bde9c3b14648f9dd"
     }
 */
-class WSMetaResponse {
+export class WSMetaResponse {
   constructor(json) {
     if (typeof json !== "object" || json == null) {
       json = {};
@@ -463,7 +484,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     c.sessiontoken,
     wsuser?.expiry,
     wsstatus,
-    testmode
+    testmode()
   );
 }
 

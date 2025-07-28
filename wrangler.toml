@@ -101,6 +101,8 @@ database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 # for both prod and test (see: DB/DBTEST bindings)
 # KDF_SECRET_D1 = "64-chars-hex..."
 # KDF_SECRET_D1_TEST = "64-chars-hex..."
+# KDF_SECRET_CLIENT = "64-chars-hex..."
+# KDF_SECRET_CLIENT_TEST = "64-chars-hex..."
 # WS api keys
 # WS_WL_ID = "string"
 # WS_WL_TOKEN = "string"

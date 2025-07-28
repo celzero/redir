@@ -22,6 +22,7 @@ import {
   revokeSubscription,
 } from "./playorder.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
+import { forwardToWs } from "./wsfwd.js";
 
 const urlredirect = "r"; // redirect to dest url
 const urlstripe = "s"; // unused? stripe checkout webhook
@@ -51,6 +52,10 @@ async function handle(r, env, ctx) {
   try {
     const url = new URL(r.url);
     const path = url.pathname;
+
+    if (mustWsFwd(url)) {
+      return forwardToWs(env, r);
+    }
 
     if (path == null || path.length === 0) return r302(home);
 
@@ -470,6 +475,16 @@ function rsapubkey(env) {
     }
   }
   return env[kpub];
+}
+
+/**
+ * @param {URL} url
+ * @returns {boolean} - true if the request must be sent to Windscribe
+ */
+function mustWsFwd(url) {
+  const q = url.searchParams;
+  const w = q.get("rpn");
+  return w != null && w.length > 0 && w.startsWith("ws");
 }
 
 export default {
