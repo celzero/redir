@@ -45,10 +45,12 @@ function r421t(u) {
 export async function forwardToWs(env, r) {
   const u = new URL(r.url);
 
-  const [cid, token, needsAuth] = await bearerAndCidForWs(env, r);
-  if (needsAuth && (emptyString(token) || emptyString(cid))) {
-    return r401("needs cid or auth");
+  const [cid, token, needsAuth, mustEncrypt] = await bearerAndCidForWs(env, r);
+  if (needsAuth) {
+    if (emptyString(token)) return r401("needs cid or auth");
+    if (mustEncrypt && emptyString(cid)) return r401("needs cid or auth");
   }
+
   const [typ, sensitive] = reqType(u);
   const cloned = new Request(r);
 
@@ -72,10 +74,15 @@ export async function forwardToWs(env, r) {
     // j = { data: { ... }, metadata: { ... } }
     const j = await r.json();
     const wsuser = new WSUser(j.data);
-    if (wsuser.sessionAuthHash) {
-      const enctoken = await encryptText(env, cid, wsuser.sessionAuthHash);
-      wsuser.sessionAuthHash = enctoken;
+
+    if (mustEncrypt && !emptyString(wsuser.sessionAuthHash)) {
+      const enctokenhex = await encryptText(env, cid, wsuser.sessionAuthHash);
+      if (emptyString(enctokenhex)) {
+        throw new Error("encrypt auth payload empty");
+      }
+      wsuser.sessionAuthHash = enctokenhex;
     }
+
     return new Response(
       JSON.stringify({
         data: wsuser.jsonable(),
@@ -138,7 +145,8 @@ function forwardToWsWithAuth(url) {
 /**
  * @param {any} env - Worker environment
  * @param {Request} req - The request object
- * @returns {Promise<[string|null, string|null, boolean]>} - [cid, token, needsAuth] or [null, null, false] if not available
+ * @returns {Promise<[string|null, string|null, boolean, boolean]>} - [cid, token, needsAuth, mustDecrypt]
+ *          or [null, null, needsAuth, mustDecrypt] if not available
  */
 async function bearerAndCidForWs(env, req) {
   const url = new URL(req.url);
@@ -146,14 +154,17 @@ async function bearerAndCidForWs(env, req) {
   const authHeader = req.headers.get("Authorization");
   const authVals = authHeader ? authHeader.split(" ") : [];
   const needsAuth = forwardToWsWithAuth(url);
-  const cid = q.get("cid");
+  const cid = q.get("cid"); // may be null
+  const validcid = cid != null && cid.length > 0 && /^[0-9a-f]{64}$/.test(cid);
+  if (!validcid) cid = null; // ensure cid is null if invalid
+
+  if (!needsAuth) {
+    return [null, null, /*needsAuth*/ false, /*mustEncrypt*/ false];
+  }
 
   if (authVals.length < 2 || authVals[0] !== "Bearer") {
     log.d("bearerAndCidForWs: no auth header", authHeader, "or vals", authVals);
-    return [null, null, needsAuth];
-  }
-  if (!needsAuth) {
-    return [cid, null, /*false*/ needsAuth];
+    return [cid, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
 
   /** @type {string} - of type "id:typ:epoch:sig1:sig2" */
@@ -162,13 +173,16 @@ async function bearerAndCidForWs(env, req) {
   if (toks.length > 4) {
     log.d("bearerAndCidForWs: already decrypted", toks[0]);
     // already decrypted (or was left unencrypted)
-    return [cid, enctoken, needsAuth];
+    return [cid, enctoken, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
-  if (emptyString(cid) || emptyString(enctoken)) {
+
+  if (!validcid || emptyString(enctoken)) {
     log.d("bearerAndCidForWs: no cid", cid, "or token", emptyString(enctoken));
-    return [null, null, needsAuth]; // no cid or token
+    return [cid, null, /*needsAuth*/ true, /*mustEncrypt*/ false]; // no cid or token
   }
-  return [cid, await decryptText(env, cid, enctoken), needsAuth];
+
+  const dectok = await decryptText(env, cid, enctoken);
+  return [cid, dectok, needsAuth, /*mustEncrypt*/ true];
 }
 
 /**
