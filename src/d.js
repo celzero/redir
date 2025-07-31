@@ -9,7 +9,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export class ExecCtx {
-  constructor(test, obstoken = "") {
+  /**
+   * @param {any} env - Worker environment
+   * @param {boolean} test - Whether this is a test call
+   * @param {string} obstoken - Obfuscated purchase token
+   */
+  constructor(env, test, obstoken = "") {
+    /**
+     * @type {any} - The Workers environment.
+     */
+    this.env = env || null;
     /**
      * @type {boolean} - Whether this is a test call.
      * @default false
@@ -31,6 +40,15 @@ export function obsToken() {
   /** @type {ExecCtx} */
   const cfg = als.getStore();
   return cfg?.obstoken || "";
+}
+
+/**
+ * @returns {any?} - The Workers environment.
+ */
+export function workersEnv() {
+  /** @type {ExecCtx} */
+  const cfg = als.getStore();
+  return cfg?.env || null;
 }
 
 /**

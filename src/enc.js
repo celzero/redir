@@ -11,7 +11,6 @@ const log = new glog.Log("dbenc");
 const ctx2 = bin.str2byte("encryptforclient");
 
 /**
- *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} ivtaggedciphertext - to decrypt (hex string)
@@ -107,6 +106,7 @@ async function clientkey(env, ctx1, ctx2) {
     log.e("key: ctx missing");
     return null;
   }
+  env = !env ? workersEnv() : env;
   const seed = env.KDF_SECRET_CLIENT;
   if (!seed) {
     log.e("key: KDF_SECRET_CLIENT missing");

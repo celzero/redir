@@ -1104,7 +1104,7 @@ async function handleSubscriptionNotification(env, notif) {
   const obstoken = await obfuscate(purchasetoken);
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
 
-  return als.run(new ExecCtx(test, obstoken), async () => {
+  return als.run(new ExecCtx(env, test, obstoken), async () => {
     logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
 
     const cid = await getCidThenPersist(env, sub);
@@ -1307,7 +1307,7 @@ export async function cancelSubscription(env, req) {
 
   logd(`cancel sub for ${cid}; test? ${test} for ${obstoken}`);
 
-  return await als.run(new ExecCtx(test, obstoken), async () => {
+  return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
       loge(`revoke sub: not found for ${obstoken}`);
@@ -1408,7 +1408,7 @@ export async function revokeSubscription(env, req) {
   // TODO: only allow credentialless clients to access this endpoint
   logd(`revoke sub for ${cid}; test? ${test} for ${obstoken}`);
 
-  return await als.run(new ExecCtx(test, obstoken), async () => {
+  return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
       loge(`revoke sub: not found for ${obstoken}`);
@@ -1856,7 +1856,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const productId = gprod.productId;
     const plan = gprod.plan;
 
-    return await als.run(new ExecCtx(test, obstoken), async () => {
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
       // TODO: check if expiry/productId/plan are valid
       // Play Billing deletes a purchaseToken after 60d from expiry
       await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
@@ -1979,7 +1979,7 @@ export async function googlePlayGetEntitlements(env, req) {
     // TODO: only allow credentialless clients to access this endpoint
     logd(`get entitlements for ${cid}; test? ${test}`);
 
-    return await als.run(new ExecCtx(test), async () => {
+    return await als.run(new ExecCtx(env, test), async () => {
       const ent = await creds(env, cid);
 
       if (!ent) {
