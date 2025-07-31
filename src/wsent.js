@@ -272,8 +272,10 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       c = await creds(env, cid); // retry get once
       if (c == null || c.sessiontoken !== wsuser.sessionAuthHash) {
         // TODO: workers analytics failures?
-        // delete if the session token does not match
-        // or if 'c' is null (TODO: attempt to reinsert instead?)
+        // delete newly created wsuser if the session token does not match
+        // what's stored against this cid in the db.
+        // or, if 'c' is null (TODO: attempt to reinsert instead?), which
+        // means this new wsuser was not inserted at all.
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
         log.e(
           `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`
