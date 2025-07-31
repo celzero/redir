@@ -23,6 +23,7 @@ import {
 } from "./playorder.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
+import * as xc from "./xc.js";
 
 const urlredirect = "r"; // redirect to dest url
 const urlstripe = "s"; // unused? stripe checkout webhook
@@ -30,6 +31,7 @@ const urlmoney1 = "mb"; // unused? sign the blind message
 const urlmoney2 = "mt"; // unused? generate token
 const urlsproxy = "p"; // sproxy metadata
 const urlgplay = "g"; // redirect to play store
+const crosssvc = "x"; // cross-service calls
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
 
@@ -67,6 +69,17 @@ async function handle(r, env, ctx) {
     if (p[1] === urlredirect) {
       // r; redirects
       return redirect(r, url, p, home);
+    } else if (p[1] === crosssvc) {
+      // x; cross-service calls
+      // ex: x/crt
+      const p2 = p[2] ? p[2].toLowerCase() : "";
+      if (!p2 || p2.length === 0) {
+        return r400("x: missing resource");
+      }
+      if (p2 === "crt") {
+        return xc.certfile(env, r);
+      }
+      return r400("x: unknown resource " + p2);
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
