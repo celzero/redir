@@ -373,7 +373,7 @@ async function clientaddrs(apikey, req) {
       return ["unknown: " + json.status];
     })
     .catch((ex) => {
-      return ex.message;
+      return ["unknown: " + ex.message];
     });
 }
 
