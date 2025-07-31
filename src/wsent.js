@@ -9,6 +9,7 @@
 import * as bin from "./buf.js";
 import { als, ExecCtx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
+import * as enc from "./enc.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
 
@@ -204,7 +205,7 @@ export class WSEntitlement {
     // TODO: validate cid and sessiontoken formats
     /** @type {string} cid - Client ID */
     this.cid = cid; // Client ID
-    /** @type {string} sessiontoken - Session token */
+    /** @type {string} sessiontoken - session token, may be encrypted */
     this.sessiontoken = sessiontoken; // Session token
     /** @type {Date} expiry */
     this.expiry = exp || new Date(0); // Expiry date of the entitlement
@@ -212,6 +213,22 @@ export class WSEntitlement {
     this.status = status || "unknown"; // Status of the entitlement
     /** @type {boolean} - Whether this is a test entitlement */
     this.test = test || false; // Whether this is a test entitlement
+  }
+
+  /**
+   * Converts the entitlement to be sent to the end client.
+   * @param {any} env - Worker environment
+   * @returns {Promise<WSEntitlement>} - Returns the entitlement in a client-readable format
+   * @throws {Error} - If there is an error encrypting the session token
+   */
+  async toClientEntitlement(env) {
+    return new WSEntitlement(
+      this.cid,
+      await enc.encryptText(env, this.cid, this.sessiontoken),
+      this.expiry,
+      this.status,
+      this.test
+    );
   }
 }
 

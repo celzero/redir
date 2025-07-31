@@ -1547,7 +1547,7 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
   if (ent != null) {
     const body = JSON.stringify({
       developerPayload: JSON.stringify({
-        ws: ent,
+        ws: await ent.toClientEntitlement(env),
       }),
     });
     const r = await fetch(ackurl, {
@@ -1996,7 +1996,7 @@ export async function googlePlayGetEntitlements(env, req) {
         success: true,
         cid: cid,
         developerPayload: JSON.stringify({
-          ws: ent,
+          ws: await ent.toClientEntitlement(env),
         }),
       });
     });
