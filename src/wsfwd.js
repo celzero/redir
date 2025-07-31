@@ -45,6 +45,11 @@ function r421t(u) {
 export async function forwardToWs(env, r) {
   const u = new URL(r.url);
 
+  if (!allowlisted(u)) {
+    log.w("forwardToWs: not allowlisted", u.pathname);
+    return r421t("lost");
+  }
+
   const [cid, token, needsAuth, mustEncrypt] = await bearerAndCidForWs(env, r);
   if (needsAuth) {
     if (emptyString(token)) return r401("needs cid or auth");
@@ -200,4 +205,30 @@ function reqType(u) {
     return [typ, sensitive];
   }
   return ["", false];
+}
+
+const wswginitpath = "/wgconfigs/init";
+const wswgconnectpath = "/wgconfigs/connect";
+const wssessionpath = "/session";
+const wsportpath = "/portmap";
+const wslocpath = "serverlist/mob-v2/";
+
+/**
+ * @param {URL} u - URL to check
+ * @returns {boolean} - true if the path is allowlisted for WebSocket forwarding
+ */
+function allowlisted(u) {
+  if (u == null) return false; // no url
+
+  const p = u.pathname;
+  if (emptyString(p)) return false; // no pathname
+
+  p = p.toLowerCase(); // normalize to lowercase
+  if (p.startsWith(wswginitpath)) return true;
+  if (p.startsWith(wswgconnectpath)) return true;
+  if (p.startsWith(wssessionpath)) return true;
+  if (p.startsWith(wsportpath)) return true;
+  if (p.startsWith(wslocpath)) return true;
+
+  return false;
 }
