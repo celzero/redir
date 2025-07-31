@@ -159,7 +159,7 @@ async function bearerAndCidForWs(env, req) {
   const authHeader = req.headers.get("Authorization");
   const authVals = authHeader ? authHeader.split(" ") : [];
   const needsAuth = forwardToWsWithAuth(url);
-  const cid = q.get("cid"); // may be null
+  let cid = q.get("cid"); // may be null
   const validcid = cid != null && cid.length > 0 && /^[0-9a-f]{64}$/.test(cid);
   if (!validcid) cid = null; // ensure cid is null if invalid
 
