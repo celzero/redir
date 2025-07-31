@@ -95,7 +95,6 @@ export async function encrypt(env, cid, plaintext) {
 }
 
 /**
- *
  * @param {any} env - Worker environment
  * @param {BufferSource} ctx1 - keying context 1 (from client)
  * @param {BufferSource} ctx2 - keying context 2
@@ -117,13 +116,12 @@ async function clientkey(env, ctx1, ctx2) {
 }
 
 /**
- * @param {BufferSource} sk - secret keying material
+ * @param {ArrayBufferLike} sk - secret keying material
  * @param {BufferSource} ctx1 - key context 1
  * @param {BufferSource} ctx2 - key context 2
  * @returns {Promise<CryptoKey?>}
  */
 async function aesclientkey(sk, ctx1, ctx2) {
-  ctxhex = ctxhex || "";
   if (!bin.emptyBuf(sk) && !bin.emptyBuf(ctx1) && !bin.emptyBuf(ctx2)) {
     try {
       if (sk.length < hkdfalgkeysz) {
@@ -135,7 +133,7 @@ async function aesclientkey(sk, ctx1, ctx2) {
       // info must always of a fixed size for ALL KDF calls
       const info512 = await sha512(bin.cat(ctx1, ctx2));
       // exportable: crypto.subtle.exportKey("raw", key);
-      return hkdfaes(secret, info);
+      return hkdfaes(sk256, info512);
     } catch (ignore) {
       log.d("keygen: err", ignore);
     }
