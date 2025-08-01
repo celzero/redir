@@ -38,16 +38,18 @@ export async function certfile(env, req) {
   if (env == null || req == null) {
     return r400t("args missing");
   }
-  const crt = env.FLY_TLS_CERTKEY;
-  if (crt == null) {
-    return r400t("cert not found");
+  const part0 = env.FLY_TLS_CERTKEY0;
+  const part1 = env.FLY_TLS_CERTKEY1;
+  if (bin.emptyString(part0) || bin.emptyString(part1)) {
+    return r400t("cert parts not found");
   }
   try {
-    const enccrt = await encryptText(env, crt);
-    if (enccrt == null) {
+    const crt = part0 + part1;
+    const enccrthex = await encryptText(env, crt);
+    if (bin.emptyString(enccrthex)) {
       return r500t("could not encrypt cert");
     }
-    return new Response(enccrt, {
+    return new Response(enccrthex, {
       headers: {
         "Content-Type": "text/plain",
         "Cache-Control": "no-cache, no-store, must-revalidate",

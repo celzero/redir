@@ -220,7 +220,7 @@ const wslocpath = "serverlist/mob-v2/";
 function allowlisted(u) {
   if (u == null) return false; // no url
 
-  const p = u.pathname;
+  let p = u.pathname;
   if (emptyString(p)) return false; // no pathname
 
   p = p.toLowerCase(); // normalize to lowercase
