@@ -68,24 +68,34 @@ export async function certfile(env, req) {
  * @returns {Promise<string|null>} - Encrypted hex string with iv (96 bits) prepended and tag appended; or null on failure
  */
 export async function encryptText(env, plaintext) {
+  const now = new Date();
+  // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
+  const aadstr =
+    now.getUTCDay() + "/" + now.getUTCMonth() + "/" + now.getUTCFullYear();
   const iv = crand(aesivsz);
   const enckey = await key(env);
   if (!enckey || !iv) {
     log.e("encrypt: key/iv missing");
     return null;
   }
+
   try {
     const pt = bin.str2byte(plaintext);
-    const now = new Date();
-    // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
-    const aad = now.getDay() + "/" + now.getMonth() + "/" + now.getFullYear();
-    const taggedcipher = await encryptAesGcm(enckey, iv, pt, bin.str2byte(aad));
+    const aad = bin.str2byte(aadstr);
+    const taggedcipher = await encryptAesGcm(enckey, iv, pt, aad);
     const ivciphertaghex = bin.buf2hex(iv) + bin.buf2hex(taggedcipher);
 
-    log.d("decrypt: ivciphertag", ivciphertaghex.length);
-    log.d("decrypt: iv", iv.length);
-    log.d("decrypt: ciphertag", taggedcipher.length);
-    log.d("decrypt: aad", aad, aad.length);
+    log.d(
+      "decrypt: ivciphertag",
+      ivciphertaghex.length,
+      "iv",
+      iv.length,
+      "ciphertag",
+      taggedcipher.length,
+      "aad",
+      aadstr,
+      aad.length
+    );
     return ivciphertaghex;
   } catch (err) {
     log.e("encrypt: failed", err);
@@ -126,8 +136,10 @@ async function key(env) {
     const sk256 = sk.slice(0, hkdfalgkeysz);
     // info must always of a fixed size for ALL KDF calls
     const info512 = await sha512(ctx);
+    // key fingerprint
+    // const f = await sha512(bin.cat(sk, info512));
     // exportable: crypto.subtle.exportKey("raw", key);
-    log.d("key", bin.buf2hex(await sha512(sk)), bin.buf2hex(info512));
+    // log.d("generating key... fingerprint:", bin.buf2hex(f));
     return hkdfaes(sk256, info512);
   } catch (ignore) {
     log.d("keygen: err", ignore);
