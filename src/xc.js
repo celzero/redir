@@ -80,7 +80,13 @@ export async function encryptText(env, plaintext) {
     // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
     const aad = now.getDay() + "/" + now.getMonth() + "/" + now.getFullYear();
     const taggedcipher = await encryptAesGcm(enckey, iv, pt, bin.str2byte(aad));
-    return bin.buf2hex(iv) + bin.buf2hex(taggedcipher);
+    const ivciphertaghex = bin.buf2hex(iv) + bin.buf2hex(taggedcipher);
+
+    log.d("decrypt: ivciphertag", ivciphertaghex.length);
+    log.d("decrypt: iv", iv.length);
+    log.d("decrypt: ciphertag", taggedcipher.length);
+    log.d("decrypt: aad", aad, aad.length);
+    return ivciphertaghex;
   } catch (err) {
     log.e("encrypt: failed", err);
     return null;
