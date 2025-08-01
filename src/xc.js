@@ -74,7 +74,10 @@ export async function encryptText(env, plaintext) {
   }
   try {
     const pt = bin.str2byte(plaintext);
-    const taggedcipher = await encryptAesGcm(enckey, iv, pt);
+    const now = new Date();
+    // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
+    const aad = now.getDay() + "/" + now.getMonth() + "/" + now.getFullYear();
+    const taggedcipher = await encryptAesGcm(enckey, iv, pt, bin.str2byte(aad));
     return bin.buf2hex(bin.cat(iv, taggedcipher));
   } catch (err) {
     log.e("encrypt: failed", err);
