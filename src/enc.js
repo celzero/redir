@@ -30,7 +30,7 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
     const fullcipher = bin.hex2buf(ivtaggedciphertext);
     const iv = fullcipher.slice(0, aesivsz);
     const cipher = fullcipher.slice(aesivsz);
-    const plaintext = await decryptAesGcm(enckey, iv, null, cipher);
+    const plaintext = await decryptAesGcm(enckey, iv, cipher);
     return bin.buf2hex(plaintext);
   } catch (err) {
     log.e("decrypt: failed", err);

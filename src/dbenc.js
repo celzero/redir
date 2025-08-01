@@ -35,7 +35,7 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
   try {
     const cipher = bin.hex2buf(taggedciphertext);
     const aad = bin.hex2buf(aadhex);
-    const plaintext = await decryptAesGcm(enckey, iv, aad, cipher);
+    const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
     return bin.buf2hex(plaintext);
   } catch (err) {
     log.e("decrypt: failed", err);
@@ -84,7 +84,7 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
   try {
     const pt = bin.hex2buf(plaintext);
     const aad = bin.hex2buf(aadhex);
-    const taggedciphertext = await encryptAesGcm(enckey, iv, aad, pt);
+    const taggedciphertext = await encryptAesGcm(enckey, iv, pt, aad);
     return bin.buf2hex(taggedciphertext);
   } catch (err) {
     log.e("encrypt: failed", err);
