@@ -80,7 +80,7 @@ export async function encryptText(env, plaintext) {
     // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
     const aad = now.getDay() + "/" + now.getMonth() + "/" + now.getFullYear();
     const taggedcipher = await encryptAesGcm(enckey, iv, pt, bin.str2byte(aad));
-    return bin.buf2hex(bin.cat(iv, taggedcipher));
+    return bin.buf2hex(iv) + bin.buf2hex(taggedcipher);
   } catch (err) {
     log.e("encrypt: failed", err);
     return null;
@@ -121,6 +121,7 @@ async function key(env) {
     // info must always of a fixed size for ALL KDF calls
     const info512 = await sha512(ctx);
     // exportable: crypto.subtle.exportKey("raw", key);
+    log.d("key", bin.buf2hex(await sha512(sk)), bin.buf2hex(info512));
     return hkdfaes(sk256, info512);
   } catch (ignore) {
     log.d("keygen: err", ignore);
