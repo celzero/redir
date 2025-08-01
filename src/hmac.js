@@ -92,7 +92,7 @@ export async function hkdf(sk) {
 }
 
 export function hmac256opts() {
-  return { name: "HMAC", hash: "SHA-256" };
+  return { name: "HMAC", hash: "SHA-256" }; // length: 512 (in bits; default)
 }
 
 export function hmac512opts() {
