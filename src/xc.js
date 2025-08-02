@@ -35,7 +35,7 @@ function r500t(u) {
  * @returns {Promise<Response>} - Response with encrypted cert
  */
 export async function certfile(env, req) {
-  if (env == null || req == null) {
+  if (env == null || req == null || req.method != "GET") {
     return r400t("args missing");
   }
   const part0 = env.FLY_TLS_CERTKEY0;
@@ -45,7 +45,7 @@ export async function certfile(env, req) {
   }
   try {
     const crt = part0 + part1;
-    const enccrthex = await encryptText(env, crt);
+    const enccrthex = await encryptText(env, req, crt);
     if (bin.emptyString(enccrthex)) {
       return r500t("could not encrypt cert");
     }
@@ -62,16 +62,29 @@ export async function certfile(env, req) {
 }
 
 /**
- *
  * @param {any} env - Worker environment
+ * @param {Request} req - Cross service request object
  * @param {string} plaintext - The plaintext to encrypt (utf8)
  * @returns {Promise<string|null>} - Encrypted hex string with iv (96 bits) prepended and tag appended; or null on failure
  */
-export async function encryptText(env, plaintext) {
+async function encryptText(env, req, plaintext) {
   const now = new Date();
+  const u = new URL(req.url);
+
   // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
   const aadstr =
-    now.getUTCDay() + "/" + now.getUTCMonth() + "/" + now.getUTCFullYear();
+    now.getUTCDay() +
+    "/" +
+    now.getUTCMonth() +
+    "/" +
+    now.getUTCFullYear() +
+    "/" +
+    u.hostname +
+    "/" +
+    u.pathname +
+    "/" +
+    req.method;
+
   const iv = crand(aesivsz);
   const enckey = await key(env);
   if (!enckey || !iv) {

@@ -107,7 +107,7 @@ database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 # KDF key for cross-service calls (from max, for example)
 # KDF_XSVC = "64-chars-hex..."
 # Emergency alternative TLS cert
-# FLY_TLS_CERTKEY = file(KEY=$B64NOWRAP_KEY\nCRT=$B64NOWRAP_CERT\n)
+# FLY_TLS_CERTKEY[0|1] = file(KEY=$B64NOWRAP_KEY\nCRT=$B64NOWRAP_CERT\n)
 # WS api keys
 # WS_WL_ID = "string"
 # WS_WL_TOKEN = "string"
