@@ -72,7 +72,7 @@ export async function hkdfaescbc(skmac, usectx, salt = bin.ZEROBUF) {
   );
 }
 
-async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
+export async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
   const dk = await hkdf(skmac);
   return await crypto.subtle.deriveKey(
     hkdf256(salt, usectx),

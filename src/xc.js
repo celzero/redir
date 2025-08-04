@@ -5,7 +5,6 @@ import * as bin from "./buf.js";
 import { workersEnv } from "./d.js";
 import {
   aesivsz,
-  encryptAesGcm,
   hkdfaescbc,
   hkdfalgkeysz,
   hkdfhmac,
@@ -13,7 +12,7 @@ import {
   sha512,
 } from "./hmac.js";
 import * as glog from "./log.js";
-import { crand } from "./webcrypto.js";
+import { crand, encryptAesGcm } from "./webcrypto.js";
 
 const encctx = bin.str2byte("encryptcrossservice");
 const macctx = bin.str2byte("authorizecrossservice");
