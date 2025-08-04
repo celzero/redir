@@ -86,16 +86,23 @@ async function encryptText(env, req, plaintext) {
 
   const authtimestr = p[3];
   const authzhex = req.headers.get("x-rethinkdns-xsvc-authz");
-  if (bin.emptyString(authzhex) || bin.emptyString(authtimestr)) {
+  // authtimestr must contain numbers only and be of at least 13 chars
+  if (
+    bin.emptyString(authzhex) ||
+    bin.emptyString(authtimestr) ||
+    authtimestr.length < 13 ||
+    !/^\d+$/.test(authtimestr)
+  ) {
     log.e("encryptText: auth params missing");
     return null;
   }
 
   const oneMinMillis = 60 * 1000; // 1m in milliseconds
-  const authtime = new Date(authtimestr);
-  const nowmillis = now.getTime();
-  if (authtime.getTime() < nowmillis - oneMinMillis) {
-    log.e("encryptText: auth time expired", authtime, nowmillis);
+  const authtime = parseInt(authtimestr, 10); // may be NaN
+  const maxtime = now.getTime() + oneMinMillis;
+  const mintime = now.getTime() - oneMinMillis;
+  if (isNaN(authtime) || authtime < mintime || authtime > maxtime) {
+    log.e("encryptText: check time", mintime, "<", authtime, ">", maxtime);
     return null;
   }
 
@@ -146,7 +153,13 @@ async function encryptText(env, req, plaintext) {
       taggedcipher.length,
       "aad",
       aadstr,
-      aad.length
+      aad.length,
+      "clocks",
+      mintime,
+      "<",
+      authtime,
+      ">",
+      maxtime
     );
     return ivciphertaghex;
   } catch (err) {
