@@ -5,7 +5,7 @@ import * as bin from "./buf.js";
 import { workersEnv } from "./d.js";
 import {
   aesivsz,
-  hkdfaescbc,
+  hkdfaes,
   hkdfalgkeysz,
   hkdfhmac,
   hmacverify,
@@ -85,14 +85,14 @@ async function encryptText(env, req, plaintext) {
 
   const authtimestr = p[3];
   const authzhex = req.headers.get("x-rethinkdns-xsvc-authz");
-  // authtimestr must contain numbers only and be of at least 13 chars
-  if (
-    bin.emptyString(authzhex) ||
+
+  const authzNotOK = bin.emptyString(authzhex);
+  const timeNotOK = // authtimestr must contain numbers only and be of at least 13 chars
     bin.emptyString(authtimestr) ||
     authtimestr.length < 13 ||
-    !/^\d+$/.test(authtimestr)
-  ) {
-    log.e("encryptText: auth params missing");
+    !/^\d+$/.test(authtimestr);
+  if (authzNotOK || timeNotOK) {
+    log.e("encryptText: auth params missing", authzNotOK, timeNotOK);
     return null;
   }
 
@@ -149,7 +149,7 @@ async function encryptText(env, req, plaintext) {
       "iv",
       iv.length,
       "ciphertag",
-      taggedcipher.length,
+      ciphertag.length,
       "aad",
       aadstr,
       aad.length,
@@ -206,9 +206,9 @@ async function keys(env) {
     // const f = await sha512(bin.cat(sk, info512));
     // exportable: crypto.subtle.exportKey("raw", key);
     // log.d("generating key... fingerprint:", bin.buf2hex(f));
-    const aescbckey = await hkdfaescbc(sk256, info512aes);
+    const aeskey = await hkdfaes(sk256, info512aes);
     const hmackey = await hkdfhmac(sk256, info512mac);
-    return [aescbckey, hmackey];
+    return [aeskey, hmackey];
   } catch (ignore) {
     log.d("keygen: err", ignore);
   }
