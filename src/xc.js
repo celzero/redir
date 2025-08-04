@@ -85,14 +85,16 @@ async function encryptText(env, req, plaintext) {
 
   const authtimestr = p[3];
   const authzhex = req.headers.get("x-rethinkdns-xsvc-authz");
+  const authn = req.headers.get("x-rethinkdns-xsvc-who");
 
   const authzNotOK = bin.emptyString(authzhex);
   const timeNotOK = // authtimestr must contain numbers only and be of at least 13 chars
     bin.emptyString(authtimestr) ||
     authtimestr.length < 13 ||
     !/^\d+$/.test(authtimestr);
-  if (authzNotOK || timeNotOK) {
-    log.e("encryptText: auth params missing", authzNotOK, timeNotOK);
+  const authnNotOK = bin.emptyString(authn) || authn.length < 6;
+  if (authzNotOK || timeNotOK || authnNotOK) {
+    log.e("encryptText: auth missing", authzNotOK, timeNotOK, authnNotOK);
     return null;
   }
 
@@ -108,6 +110,8 @@ async function encryptText(env, req, plaintext) {
   // crypto.junod.info/posts/recursive-hash/#data-serialization
   // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
   const aadstr =
+    authn +
+    "/" +
     now.getUTCDay() +
     "/" +
     now.getUTCMonth() +
