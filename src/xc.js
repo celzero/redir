@@ -3,11 +3,20 @@
 
 import * as bin from "./buf.js";
 import { workersEnv } from "./d.js";
-import { aesivsz, hkdfaes, hkdfalgkeysz, sha512 } from "./hmac.js";
+import {
+  aesivsz,
+  encryptAesGcm,
+  hkdfaescbc,
+  hkdfalgkeysz,
+  hkdfhmac,
+  hmacverify,
+  sha512,
+} from "./hmac.js";
 import * as glog from "./log.js";
-import { crand, encryptAesGcm } from "./webcrypto.js";
+import { crand } from "./webcrypto.js";
 
-const ctx = bin.str2byte("encryptcrossservice");
+const encctx = bin.str2byte("encryptcrossservice");
+const macctx = bin.str2byte("authorizecrossservice");
 const log = new glog.Log("xc");
 
 /**
@@ -71,6 +80,26 @@ async function encryptText(env, req, plaintext) {
   const now = new Date();
   const u = new URL(req.url);
 
+  // expected: x/crt/epochmillis
+  const p = u.pathname.split("/");
+  if (p.length < 4) return null; // path must contain req time
+
+  const authtimestr = p[3];
+  const authzhex = req.headers.get("x-rethinkdns-xsvc-authz");
+  if (bin.emptyString(authzhex) || bin.emptyString(authtimestr)) {
+    log.e("encryptText: auth params missing");
+    return null;
+  }
+
+  const oneMinMillis = 60 * 1000; // 1m in milliseconds
+  const authtime = new Date(authtimestr);
+  const nowmillis = now.getTime();
+  if (authtime.getTime() < nowmillis - oneMinMillis) {
+    log.e("encryptText: auth time expired", authtime, nowmillis);
+    return null;
+  }
+
+  // crypto.junod.info/posts/recursive-hash/#data-serialization
   // 1 Aug 2025 => "5/7/2025" => Friday, 7th month (0-indexed), 2025
   const aadstr =
     now.getUTCDay() +
@@ -86,20 +115,30 @@ async function encryptText(env, req, plaintext) {
     req.method;
 
   const iv = crand(aesivsz);
-  const enckey = await key(env);
-  if (!enckey || !iv) {
+  const [enckey, mackey] = await keys(env);
+  if (!enckey || !mackey || !iv) {
     log.e("encrypt: key/iv missing");
+    return null;
+  }
+
+  const authz = bin.hex2buf(authzhex);
+  const msg = bin.str2byte(u.pathname); // contains epoch millis
+  const ok = await hmacverify(mackey, authz, msg);
+
+  if (!ok) {
+    log.e("encrypt: not authorized");
     return null;
   }
 
   try {
     const pt = bin.str2byte(plaintext);
     const aad = bin.str2byte(aadstr);
-    const taggedcipher = await encryptAesGcm(enckey, iv, pt, aad);
-    const ivciphertaghex = bin.buf2hex(iv) + bin.buf2hex(taggedcipher);
+    const ciphertag = await encryptAesGcm(enckey, iv, pt, aad);
+    const ivciphertag = bin.cat(iv, ciphertag);
+    const ivciphertaghex = bin.buf2hex(ivciphertag);
 
     log.d(
-      "decrypt: ivciphertag",
+      "encrypt: ivciphertag",
       ivciphertaghex.length,
       "iv",
       iv.length,
@@ -119,43 +158,47 @@ async function encryptText(env, req, plaintext) {
 /**
  *
  * @param {any} env - Worker environment
- * @returns {Promise<CryptoKey|null>} - Returns a CryptoKey or null if the key is missing or invalid
+ * @returns {Promise<[CryptoKey|null]>} - Returns a CryptoKey or null if the key is missing or invalid
  */
-async function key(env) {
-  if (bin.emptyBuf(ctx)) {
-    log.e("key: ctx missing");
-    return null;
+async function keys(env) {
+  const nokeys = [null, null];
+  if (bin.emptyBuf(encctx) || bin.emptyBuf(macctx)) {
+    log.e("key: ctxs missing");
+    return nokeys;
   }
 
   env = !env ? workersEnv() : env;
   const seed = env.KDF_XSVC;
   if (!seed) {
     log.e("key: KDF_XSVC missing");
-    return null;
+    return nokeys;
   }
 
   const sk = bin.hex2buf(seed);
   if (bin.emptyBuf(sk)) {
     log.e("key: kdf seed conv empty");
-    return null;
+    return nokeys;
   }
 
   if (sk.length < hkdfalgkeysz) {
     log.e("keygen: seed too short", sk.length, hkdfalgkeysz);
-    return null;
+    return nokeys;
   }
 
   try {
     const sk256 = sk.slice(0, hkdfalgkeysz);
     // info must always of a fixed size for ALL KDF calls
-    const info512 = await sha512(ctx);
+    const info512aes = await sha512(encctx);
+    const info512mac = await sha512(macctx);
     // key fingerprint
     // const f = await sha512(bin.cat(sk, info512));
     // exportable: crypto.subtle.exportKey("raw", key);
     // log.d("generating key... fingerprint:", bin.buf2hex(f));
-    return hkdfaes(sk256, info512);
+    const aescbckey = await hkdfaescbc(sk256, info512aes);
+    const hmackey = await hkdfhmac(sk256, info512mac);
+    return [aescbckey, hmackey];
   } catch (ignore) {
     log.d("keygen: err", ignore);
   }
-  return null;
+  return nokeys;
 }
