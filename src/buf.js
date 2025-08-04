@@ -75,10 +75,12 @@ export function buf2b64url(buffer) {
  */
 export function cat(...args) {
   if (args.length === 0) return ZEROBUF;
+  if (args.length === 1) return byt(args[0]);
   const totalLength = args.reduce((sum, arg) => sum + arg.byteLength, 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;
   for (const arg of args) {
+    if (emptyBuf(arg)) continue; // skip empty buffers
     const view = byt(arg);
     result.set(view, offset);
     offset += view.byteLength;
