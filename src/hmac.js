@@ -61,6 +61,28 @@ export async function hkdfaes(skmac, usectx, salt = bin.ZEROBUF) {
   );
 }
 
+export async function hkdfaescbc(skmac, usectx, salt = bin.ZEROBUF) {
+  const dk = await hkdf(skmac);
+  return crypto.subtle.deriveKey(
+    hkdf256(salt, usectx),
+    dk,
+    aescbc256opts(),
+    true, // extractable? can be true for sign, verify
+    ["encrypt", "decrypt"] // usage
+  );
+}
+
+async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
+  const dk = await hkdf(skmac);
+  return await crypto.subtle.deriveKey(
+    hkdf256(salt, usectx),
+    dk,
+    hmac256opts(),
+    true, // extractable? can be true for sign, verify
+    ["sign", "verify"] // usage
+  );
+}
+
 export async function hmackey(sk) {
   return crypto.subtle.importKey(
     "raw",
@@ -106,6 +128,17 @@ export function hmac512opts() {
 export function aesgcm256opts() {
   return {
     name: "AES-GCM",
+    length: 256,
+  };
+}
+
+/**
+ * https://developer.mozilla.org/en-US/docs/Web/API/AesKeyGenParams
+ * @returns {AesKeyGenParams}
+ */
+export function aescbc256opts() {
+  return {
+    name: "AES-CBC",
     length: 256,
   };
 }

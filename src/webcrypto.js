@@ -6,7 +6,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b642buf, buf2hex, byt, emptyBuf, hex2buf, str2ab } from "./buf.js";
+import {
+  b642buf,
+  buf2hex,
+  byt,
+  cat,
+  emptyBuf,
+  hex2buf,
+  str2ab,
+} from "./buf.js";
 
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
@@ -58,6 +66,30 @@ export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
     plaintext
   );
   return byt(taggedciphertext);
+}
+
+/**
+ * @param {BufferSource} aeskey - The AES-CBC key
+ * @param {BufferSource} hmackey - The HMAC key
+ * @param {BufferSource} iv - The initialization vector (12 byte)
+ * @param {BufferSource} plaintext - The data to encrypt
+ * @param {BufferSource?} aad - Additional authenticated data (AAD)
+ * @returns {Promise<[Uint8Array]>} - The encrypted data with authentication tag
+ */
+export async function encryptAesCbcHmac(aeskey, hmackey, iv, plaintext, aad) {
+  if (!aad || emptyBuf(aad)) {
+    aad = undefined; // ZEROBUF is not the same as null?
+  }
+  /** @type {AesCbcParams} */
+  const params = {
+    name: "AES-CBC",
+    iv: iv, // 96 bit (12 byte) nonce
+  };
+
+  const ciphertext = await crypto.subtle.encrypt(params, aeskey, plaintext);
+  const mac = await hmacsign(hmackey, cat(ciphertext, aad)); // 32 bytes
+
+  return [ciphertext, mac];
 }
 
 /**
