@@ -46,7 +46,7 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
  */
 export async function decryptText(env, cid, ivtaggedciphertext) {
   const plainhex = decrypt(env, cid, ivtaggedciphertext);
-  if (emptyString(plainhex)) {
+  if (bin.emptyString(plainhex)) {
     return plainhex;
   }
   try {
