@@ -1208,19 +1208,22 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         ? item.autoRenewingPlan.autoRenewEnabled
         : false;
       logi(
-        `expire/cancel sub ${cid} ${productId} at ${expiry} (renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
+        `process expire/cancel sub ${cid} ${productId} at ${expiry} (now: ${now}) (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
       );
       if ((revoked && !replaced) || unpaid) {
-        // TODO: validate if productId being revoked/unpaid may have granted a WSEntitlement
+        // TODO: validate if productId being revoked/unpaid even grants a WSEntitlement
         await deleteWsEntitlement(env, cid);
       } else if (!autorenew && !deferring && expiry.getTime() < now) {
         // TODO: check if WSUser expiry is far into the future (a lot of grace period
         // even though sub has expired), if so, delete it or let the user use it?
         // await deleteWsEntitlement(env, cid);
         // needed? await revokeSubscription(env, cid, productId, purchasetoken);
+        logw(
+          `skip revoke1 for ${cid} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`
+        );
       } else {
         loge(
-          `skip revoke ${cid} ${productId} ${expiry}; renews ${autorenew} / rep ${replaced}`
+          `skip revoke2 for ${cid} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
         );
       }
     }
