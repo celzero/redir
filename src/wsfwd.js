@@ -63,7 +63,7 @@ export async function forwardToWs(env, r) {
   tryAddAuthHeader(cloned, token);
   removeCmds(u);
 
-  log.d(u.pathname, u.hostname, u.search, typ);
+  log.d(u.pathname, u.hostname, u.search, typ, "s/e:", sensitive, mustEncrypt);
 
   if (!sensitive) {
     // pipe non-sensitive as-is
@@ -79,8 +79,10 @@ export async function forwardToWs(env, r) {
     // j = { data: { ... }, metadata: { ... } }
     const j = await r.json();
     const wsuser = new WSUser(j.data);
+    const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
 
-    if (mustEncrypt && !emptyString(wsuser.sessionAuthHash)) {
+    log.d(`forwardToWs: enc/sensitive? ${mustEncrypt} ${hasSensitiveData}`);
+    if (mustEncrypt && hasSensitiveData) {
       const enctokenhex = await encryptText(env, cid, wsuser.sessionAuthHash);
       if (emptyString(enctokenhex)) {
         throw new Error("encrypt auth payload empty");
