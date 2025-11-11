@@ -33,7 +33,7 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
     const plaintext = await decryptAesGcm(enckey, iv, cipher);
     return bin.buf2hex(plaintext);
   } catch (err) {
-    log.e("decrypt: failed", err);
+    log.e("decrypt: failed for " + ivtaggedciphertext, err);
     return null;
   }
 }
@@ -45,14 +45,14 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
  * @returns {Promise<string|null>} - decrypted plaintext (utf8) or null
  */
 export async function decryptText(env, cid, ivtaggedciphertext) {
-  const plainhex = decrypt(env, cid, ivtaggedciphertext);
+  const plainhex = await decrypt(env, cid, ivtaggedciphertext);
   if (bin.emptyString(plainhex)) {
     return plainhex;
   }
   try {
     return bin.hex2byt2str(plainhex);
   } catch (err) {
-    log.e("decryptText: failed to decode hex to string", err);
+    log.e("decryptText: failed decode hex2str " + ivtaggedciphertext, err);
   }
   return null;
 }
