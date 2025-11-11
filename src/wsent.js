@@ -348,10 +348,12 @@ export async function deleteWsEntitlement(env, cid) {
     // TODO: tombstone db record?
     throw new Error(`ws: could not delete creds for ${cid}`);
   }
+  log.d(`ws: deleted remote win creds for ${cid}; deleting from db...`);
   const out = await dbx.deleteCreds(db, cid);
   if (!out || !out.success) {
     throw new Error(`ws: db delete err for ${cid} ${c.status}`);
   }
+  log.i(`ws: deleted both remote and local creds for ${cid}`);
   return; // Successfully deleted the entitlement
 }
 
