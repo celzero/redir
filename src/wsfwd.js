@@ -57,7 +57,7 @@ export async function forwardToWs(env, r) {
     if (mustEncrypt && emptyString(cid)) return r401("needs cid or auth");
   }
 
-  const [typ, sensitive] = reqType(u);
+  const [typ, sensitive, test] = reqType(u);
   const cloned = new Request(r);
 
   withWsHostname(u, typ);
@@ -167,8 +167,8 @@ function forwardToWsWithAuth(url) {
 /**
  * @param {any} env - Worker environment
  * @param {Request} req - The request object
- * @returns {Promise<[string|null, string|null, string, boolean, boolean]>} - [cid, token, enctoken, needsAuth, mustDecrypt]
- *          or [null, null, needsAuth, mustDecrypt] if not available
+ * @returns {Promise<[string|null, string|null, string|null, boolean, boolean]>} - [cid, token, enctoken, needsAuth, mustDecrypt]
+ *          or [null, null, encToken|null, needsAuth, mustDecrypt] if not available
  */
 async function bearerAndCidForWs(env, req) {
   const url = new URL(req.url);
@@ -181,12 +181,12 @@ async function bearerAndCidForWs(env, req) {
   if (!validcid) cid = null; // ensure cid is null if invalid
 
   if (!needsAuth) {
-    return [null, null, /*needsAuth*/ false, /*mustEncrypt*/ false];
+    return [null, null, null, /*needsAuth*/ false, /*mustEncrypt*/ false];
   }
 
   if (authVals.length < 2 || authVals[0] !== "Bearer") {
     log.d("bearerAndCidForWs: no auth header", authHeader, "or vals", authVals);
-    return [cid, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
+    return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
 
   /** @type {string} - of type "id:typ:epoch:sig1:sig2" */
@@ -195,12 +195,12 @@ async function bearerAndCidForWs(env, req) {
   if (toks.length > 4) {
     log.d("bearerAndCidForWs: already decrypted", toks[0]);
     // already decrypted (or was left unencrypted)
-    return [cid, enctoken, /*needsAuth*/ true, /*mustEncrypt*/ false];
+    return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
 
   if (!validcid || emptyString(enctoken)) {
     log.d("bearerAndCidForWs: no cid", cid, "or token", emptyString(enctoken));
-    return [cid, null, /*needsAuth*/ true, /*mustEncrypt*/ false]; // no cid or token
+    return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false]; // no cid or token
   }
 
   const dectok = await decryptText(env, cid, enctoken);
@@ -209,19 +209,20 @@ async function bearerAndCidForWs(env, req) {
 
 /**
  * @param {URL} u
- * @returns {[string, boolean]} - request type and sensitive flag
+ * @returns {[string, boolean, boolean]} - request type, sensitive flag, test flag
  */
 function reqType(u) {
   const s = u.searchParams;
   const p = u.pathname;
   if (s.has("rpn")) {
     const typ = s.get("rpn");
+    const test = !emptyString(typ) && typ.endsWith("test");
     // /Session contains SessionAuthHash in its output
     // which must be re-encrypted
     const sensitive = p.indexOf("/Session") >= 0;
-    return [typ, sensitive];
+    return [typ, sensitive, test];
   }
-  return ["", false];
+  return ["", false, false];
 }
 
 const wswginitpath = "/wgconfigs/init";
