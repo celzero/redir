@@ -1146,6 +1146,10 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
   const obstoken = obsToken();
 
+  logd(
+    `process sub ${cid} ${obstoken}: ${typ} / ${state} (active? ${active} / cancelled? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / replaced? ${replaced} / ackd? ${ackd} / obsoleted? ${obsoleted}) test? ${test}`
+  );
+
   // Play Billing deletes a purchaseToken after 60d from expiry
   await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
 
@@ -1222,7 +1226,9 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
           `skip revoke1 for ${cid} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`
         );
       } else {
-        loge(
+        // on expiry, we retain the entitlement for grace period
+        const note = expired ? logi : loge;
+        note(
           `skip revoke2 for ${cid} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
         );
       }
