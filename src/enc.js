@@ -22,8 +22,8 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
     return null;
   }
   const enckey = await clientkey(env, bin.hex2buf(cid), ctx2);
-  if (!enckey || !iv) {
-    log.e("decrypt: key/iv missing");
+  if (!enckey || !ivtaggedciphertext) {
+    log.e("decrypt: key/ivtaggedciphertext missing");
     return null;
   }
   try {
