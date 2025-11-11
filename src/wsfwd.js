@@ -64,7 +64,11 @@ export async function forwardToWs(env, r) {
   tryAddAuthHeader(cloned, token);
   removeCmds(u);
 
-  log.d(u.href, typ, token, enctoken, "s/e:", sensitive, mustEncrypt);
+  if (test) {
+    log.d(u.href, typ, token, enctoken, "s/e:", sensitive, mustEncrypt);
+  } else {
+    log.d(u.href, typ, enctoken, "s/e:", sensitive, mustEncrypt);
+  }
 
   if (!sensitive) {
     // pipe non-sensitive as-is
