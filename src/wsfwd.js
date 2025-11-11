@@ -50,7 +50,8 @@ export async function forwardToWs(env, r) {
     return r421t("lost");
   }
 
-  const [cid, token, needsAuth, mustEncrypt] = await bearerAndCidForWs(env, r);
+  const [cid, token, enctoken, needsAuth, mustEncrypt] =
+    await bearerAndCidForWs(env, r);
   if (needsAuth) {
     if (emptyString(token)) return r401("needs cid or auth");
     if (mustEncrypt && emptyString(cid)) return r401("needs cid or auth");
@@ -63,7 +64,7 @@ export async function forwardToWs(env, r) {
   tryAddAuthHeader(cloned, token);
   removeCmds(u);
 
-  log.d(u.href, typ, token, "s/e:", sensitive, mustEncrypt);
+  log.d(u.href, typ, token, enctoken, "s/e:", sensitive, mustEncrypt);
 
   if (!sensitive) {
     // pipe non-sensitive as-is
@@ -79,18 +80,25 @@ export async function forwardToWs(env, r) {
     // j = { data: { ... }, metadata: { ... } }
     const j = await r.json();
     const wsuser = new WSUser(j.data);
-    token = wsuser.sessionAuthHash || token;
-    const hasSensitiveData = !emptyString(token);
+    const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
+    const newSensitiveData =
+      hasSensitiveData && wsuser.sessionAuthHash != token;
 
     log.d(
-      `forwardToWs: ${wsuser.sessionAuthHash} enc/sen? ${mustEncrypt} ${hasSensitiveData}`
+      `forwardToWs: enc/sen/diff? ${mustEncrypt} ${hasSensitiveData} ${newSensitiveData}`
     );
-    if (mustEncrypt && hasSensitiveData) {
-      const enctokenhex = await encryptText(env, cid, wsuser.sessionAuthHash);
-      if (emptyString(enctokenhex)) {
-        throw new Error("encrypt auth payload empty");
+    if (mustEncrypt && hasSensitiveData && newSensitiveData) {
+      const newenctokenhex = await encryptText(
+        env,
+        cid,
+        wsuser.sessionAuthHash
+      );
+      if (emptyString(newenctokenhex)) {
+        throw new Error("encrypted new auth is empty");
       }
-      wsuser.sessionAuthHash = enctokenhex;
+      wsuser.sessionAuthHash = newenctokenhex;
+    } else {
+      wsuser.sessionAuthHash = enctoken; // retain original token
     }
 
     return new Response(
@@ -155,7 +163,7 @@ function forwardToWsWithAuth(url) {
 /**
  * @param {any} env - Worker environment
  * @param {Request} req - The request object
- * @returns {Promise<[string|null, string|null, boolean, boolean]>} - [cid, token, needsAuth, mustDecrypt]
+ * @returns {Promise<[string|null, string|null, string, boolean, boolean]>} - [cid, token, enctoken, needsAuth, mustDecrypt]
  *          or [null, null, needsAuth, mustDecrypt] if not available
  */
 async function bearerAndCidForWs(env, req) {
@@ -192,7 +200,7 @@ async function bearerAndCidForWs(env, req) {
   }
 
   const dectok = await decryptText(env, cid, enctoken);
-  return [cid, dectok, needsAuth, /*mustEncrypt*/ true];
+  return [cid, dectok, enctoken, needsAuth, /*mustEncrypt*/ true];
 }
 
 /**
