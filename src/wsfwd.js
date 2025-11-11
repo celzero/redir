@@ -63,7 +63,7 @@ export async function forwardToWs(env, r) {
   tryAddAuthHeader(cloned, token);
   removeCmds(u);
 
-  log.d(u.pathname, u.hostname, u.search, typ, "s/e:", sensitive, mustEncrypt);
+  log.d(u.href, typ, token, "s/e:", sensitive, mustEncrypt);
 
   if (!sensitive) {
     // pipe non-sensitive as-is
@@ -79,9 +79,12 @@ export async function forwardToWs(env, r) {
     // j = { data: { ... }, metadata: { ... } }
     const j = await r.json();
     const wsuser = new WSUser(j.data);
-    const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
+    token = wsuser.sessionAuthHash || token;
+    const hasSensitiveData = !emptyString(token);
 
-    log.d(`forwardToWs: enc/sensitive? ${mustEncrypt} ${hasSensitiveData}`);
+    log.d(
+      `forwardToWs: ${wsuser.sessionAuthHash} enc/sen? ${mustEncrypt} ${hasSensitiveData}`
+    );
     if (mustEncrypt && hasSensitiveData) {
       const enctokenhex = await encryptText(env, cid, wsuser.sessionAuthHash);
       if (emptyString(enctokenhex)) {
