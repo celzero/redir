@@ -1355,7 +1355,8 @@ export async function cancelSubscription(env, req) {
       // If the subscription has expired, we cannot cancel it.
       loge(`sub ${obstoken} already canceled or expired`);
       return r200j({
-        error: "cannot revoke, subscription canceled or expired",
+        success: false,
+        message: "cannot revoke, subscription canceled or expired",
         expired: expired,
         canceled: canceled,
         cancelCtx: sub.canceledStateContext,
@@ -1394,6 +1395,7 @@ export async function cancelSubscription(env, req) {
     } else {
       logi(`cancel sub for ${obstoken}`);
       return r200j({
+        success: true,
         message: "canceled subscription",
         purchaseId: obstoken,
       });
@@ -1455,7 +1457,8 @@ export async function revokeSubscription(env, req) {
       // If the subscription is canceled, we cannot revoke it.
       loge(`Subscription ${obstoken} is canceled, cannot revoke`);
       return r200j({
-        error: "cannot revoke, subscription canceled or expired",
+        success: false,
+        message: "cannot revoke, subscription canceled or expired",
         expired: expired,
         canceled: canceled,
         cancelCtx: sub.canceledStateContext,
@@ -1523,6 +1526,7 @@ export async function revokeSubscription(env, req) {
     } else {
       logi(`revoke sub for ${obstoken}`);
       return r200j({
+        success: true,
         message: "revoked subscription",
         purchaseId: obstoken,
       });
@@ -1916,6 +1920,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           await ackSubscriptionWithoutEntitlement(env, purchasetoken);
         }
         return r200j({
+          success: true,
           message: "Subscription acknowledged without entitlement",
           cid: cid,
           productId: productId,
@@ -1959,6 +1964,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       }
 
       return r200j({
+        success: true,
         message: "Subscription acknowledged",
         cid: cid,
         productId: productId,
@@ -2140,4 +2146,8 @@ async function obfuscate(str) {
   const hex = str2byt2hex(str);
   const hash = await sha256hex(hex);
   return hash;
+}
+
+async function sleep(sec) {
+  return new Promise((resolve) => setTimeout(resolve, sec * 1000));
 }

@@ -293,6 +293,7 @@ export async function deleteCreds(db, cid) {
  * @returns {Promise<D1Out>} - D1Out object
  */
 async function run(tx, sql = "") {
+  // TODO: retries?
   const out = D1Out.fromJson(await tx.run());
   log.d(
     `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
