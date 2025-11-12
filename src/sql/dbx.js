@@ -142,10 +142,10 @@ export function db(env, cfg = null) {
 }
 
 /**
- *
+ * Insert client data into the clients table if not already present.
  * @param {any} d1 - D1 binding
  * @param {string} cid - client identifier
- * @param {object} clientinfo - raw json
+ * @param {object?} clientinfo - raw json
  * @param {number} kind - 0 for playclient, 1 for playserver, 2 for stripe
  * @returns {Promise<D1Out>} - D1Out object
  * @throws {Error} - if env or cid is null

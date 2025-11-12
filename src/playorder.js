@@ -1984,8 +1984,13 @@ export async function googlePlayGetEntitlements(env, req) {
       return r400j({ error: "missing/invalid client id" });
     }
 
-    // TODO: acknowledge any outstanding subs?
-    // TODO: only allow credentialless clients to access this endpoint
+    // only allow test CIDs as no check for purchase token is done here; if not test,
+    // anyone with just a CID will be able to retrieve the entitlement
+    if (!test) {
+      return r400j({ error: "test api", cid: cid });
+    }
+
+    // TODO: only allow credential-less clients to access this endpoint
     logd(`get entitlements for ${cid}; test? ${test}`);
 
     return await als.run(new ExecCtx(env, test), async () => {
