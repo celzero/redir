@@ -1147,7 +1147,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   const obstoken = obsToken();
 
   logd(
-    `process sub ${cid} ${obstoken}: ${typ} / ${state} (active? ${active} / cancelled? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / replaced? ${replaced} / ackd? ${ackd} / obsoleted? ${obsoleted}) test? ${test}`
+    `process sub ${cid} ${obstoken}: ${state} (active? ${active} / cancelled? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / replaced? ${replaced} / ackd? ${ackd} / obsoleted? ${obsoleted}) test? ${test}`
   );
 
   // Play Billing deletes a purchaseToken after 60d from expiry
@@ -1223,20 +1223,20 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         // await deleteWsEntitlement(env, cid);
         // needed? await revokeSubscription(env, cid, productId, purchasetoken);
         logw(
-          `skip revoke1 for ${cid} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`
+          `skip revoke1 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`
         );
       } else {
         // on expiry, we retain the entitlement for grace period
         const note = expired ? logi : loge;
         note(
-          `skip revoke2 for ${cid} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
+          `skip revoke2 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
         );
       }
     }
   } else {
     // SUBSCRIPTION_CANCELED, SUBSCRIPTION_ON_HOLD, SUBSCRIPTION_IN_GRACE_PERIOD, SUBSCRIPTION_PAUSED
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
-    logi(`sub notif: ${cid} ${typ} / ${state}, no-op`);
+    logi(`sub notif: ${cid} / ${state}, no-op`);
     return; // No action needed for these states
   }
 }
@@ -1985,6 +1985,7 @@ export async function googlePlayGetEntitlements(env, req) {
       return r400j({ error: "missing/invalid client id" });
     }
 
+    // TODO: acknowledge any outstanding subs?
     // TODO: only allow credentialless clients to access this endpoint
     logd(`get entitlements for ${cid}; test? ${test}`);
 
