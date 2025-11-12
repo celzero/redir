@@ -1824,7 +1824,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       url.searchParams.get("purchaseToken") ||
       url.searchParams.get("purchasetoken");
     const cid = url.searchParams.get("cid");
-    const force = url.searchParam.get("force");
+    const force = url.searchParams.get("force");
 
     if (!purchasetoken) {
       return r400j({ error: "purchaseToken is required" });
@@ -1846,7 +1846,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     if (!active && !canceled) {
       loge(`ack sub err inactive subscription: ${cid}, state: ${state}`);
       return r400j({
-        error: "subscription not active",
+        error: `subscription either not active ${active} or cancelled ${canceled}`,
         purchaseId: obstoken,
         state: state,
       });
@@ -1959,7 +1959,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     return r500j({
       error: "acknowledge failed",
       details: err.message,
-      purchaseId: obsToken(),
     });
   }
 }
