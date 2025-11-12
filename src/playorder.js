@@ -1120,7 +1120,7 @@ async function handleSubscriptionNotification(env, notif) {
  * @param {SubscriptionPurchaseV2} sub - Subscription purchase.
  * @param {string} purchasetoken - Purchase token.
  * @param {boolean} revoked - Whether the subscription was revoked.
- * @returns
+ * @returns {Promise<boolean>}
  */
 async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   const test = sub.testPurchase != null;
@@ -1158,11 +1158,8 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     if (!ackd) {
       await ackSubscriptionWithoutEntitlement(env, purchasetoken);
     }
-    return r200j({
-      message: "Subscription acknowledged without entitlement",
-      cid: cid,
-      purchaseId: obstoken,
-    });
+    // Subscription acknowledged without entitlement
+    return true;
   }
 
   // developer.android.com/google/play/billing/subscriptions#pending
@@ -1184,11 +1181,11 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
     if (ackd) {
       logi(`Subscription already acknowledged: ${cid} test? ${test}`);
-      return;
+      return true;
     }
     if (ent.status === "banned") {
       loge(`Subscription ${ent.status} ${cid} test? ${test}`);
-      return; // never ack but report success
+      return true; // never ack but report success
     }
     if (ent.status === "expired") {
       // TODO: retry?
@@ -1196,8 +1193,10 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     }
     // developer.android.com/google/play/billing/integrate#process
     // developer.android.com/google/play/billing/subscriptions#handle-subscription
-    return await ackSubscription(env, purchasetoken, ent);
+    await ackSubscription(env, purchasetoken, ent);
+    return true; // successfully acknowledged
   } else if (cancelled || expired || revoked || unpaid) {
+    const allok = true;
     // on revoke / unpaid, delete entitlement
     const now = Date.now();
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
@@ -1215,9 +1214,20 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         `process expire/cancel sub ${cid} ${productId} at ${expiry} (now: ${now}) (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
       );
       if ((revoked && !replaced) || unpaid) {
-        // TODO: validate if productId being revoked/unpaid even grants a WSEntitlement
-        await deleteWsEntitlement(env, cid);
+        for (const tries of [1, 10]) {
+          await sleep(tries); // Wait 1s, 10s
+          try {
+            // TODO: validate if productId being revoked/unpaid even grants a WSEntitlement
+            await deleteWsEntitlement(env, cid);
+            logi(`revoked/unpaid sub entitlement for ${cid} ${productId}`);
+            break;
+          } catch (e) {
+            // TODO: set allok to false?
+            loge(`err revoking creds for ${cid} ${productId}: ${e.message}`);
+          }
+        }
       } else if (!autorenew && !deferring && expiry.getTime() < now) {
+        // TODO: set allok to false?
         // TODO: check if WSUser expiry is far into the future (a lot of grace period
         // even though sub has expired), if so, delete it or let the user use it?
         // await deleteWsEntitlement(env, cid);
@@ -1233,11 +1243,12 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         );
       }
     }
+    return allok;
   } else {
     // SUBSCRIPTION_CANCELED, SUBSCRIPTION_ON_HOLD, SUBSCRIPTION_IN_GRACE_PERIOD, SUBSCRIPTION_PAUSED
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
     logi(`sub notif: ${cid} / ${state}, no-op`);
-    return; // No action needed for these states
+    return true; // No action needed for these states
   }
 }
 
