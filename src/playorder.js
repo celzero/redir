@@ -1609,6 +1609,12 @@ async function getCidThenPersist(env, sub) {
   return getOrGenAndPersistCid(env, sub, !gen, persist);
 }
 
+async function getCid(env, sub) {
+  const gen = true;
+  const persist = true;
+  return getOrGenAndPersistCid(env, sub, !gen, !persist);
+}
+
 /**
  * @param {any} env
  * @param {SubscriptionPurchaseV2} sub
@@ -1852,16 +1858,17 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
     const canceled = state === "SUBSCRIPTION_STATE_CANCELED";
+    const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
     const obstoken = await obfuscate(purchasetoken);
 
     logi(`ack sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
     // canceled subs could be expiring in the future
-    if (!active && !canceled) {
+    if ((!active && !canceled) || expired) {
       loge(`ack sub err inactive subscription: ${cid}, state: ${state}`);
       return r400j({
-        error: `subscription either not active ${active} or cancelled ${canceled}`,
+        error: "subscription not active",
         purchaseId: obstoken,
         state: state,
       });
