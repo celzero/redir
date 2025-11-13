@@ -229,7 +229,7 @@ const wswginitpath = "/wgconfigs/init";
 const wswgconnectpath = "/wgconfigs/connect";
 const wssessionpath = "/session";
 const wsportpath = "/portmap";
-const wslocpath = "serverlist/mob-v2/";
+const wslocpath = "/serverlist/mob-v2/";
 
 /**
  * @param {URL} u - URL to check
