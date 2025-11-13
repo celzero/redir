@@ -13,6 +13,18 @@ const wsAssetsTest = "assets-staging.windscribe.com";
 const wsApiProd = "api.windscribe.com";
 const wsAssetsProd = "assets.windscribe.com";
 
+const wswginitpath = "/wgconfigs/init";
+const wswgconnectpath = "/wgconfigs/connect";
+const wssessionpath = "/session";
+const wsportpath = "/portmap";
+const wslocpath = "/serverlist/mob-v2/";
+
+const wsprodquery = "ws";
+const wstestquery = "wstest";
+const wsassetsquery = "wsassets";
+const wsassetstestquery1 = "wsassetstest";
+const wsassetstestquery2 = "wstestassets";
+
 /**
  * unauthorized
  * @param {string} u
@@ -128,10 +140,11 @@ export async function forwardToWs(env, r) {
  * @returns {URL} - modified URL with the correct hostname
  */
 function withWsHostname(u, typ) {
-  if (typ == "ws") u.hostname = wsApiProd;
-  if (typ == "wstest") u.hostname = wsApiTest;
-  if (typ == "wsassets") u.hostname = wsAssetsProd;
-  if (typ == "wsassetstest") u.hostname = wsAssetsTest;
+  if (typ == wsprodquery) u.hostname = wsApiProd;
+  if (typ == wstestquery) u.hostname = wsApiTest;
+  if (typ == wsassetsquery) u.hostname = wsAssetsProd;
+  if (typ == wsassetstestquery1) u.hostname = wsAssetsTest;
+  if (typ == wsassetstestquery2) u.hostname = wsAssetsTest;
   return u;
 }
 
@@ -216,7 +229,8 @@ function reqType(u) {
   const p = u.pathname;
   if (s.has("rpn")) {
     const typ = s.get("rpn");
-    const test = !emptyString(typ) && typ.endsWith("test");
+    // wsassetstest or wstestassets are both test environments
+    const test = !emptyString(typ) && typ.indexOf("test") >= 0;
     // /Session contains SessionAuthHash in its output
     // which must be re-encrypted
     const sensitive = p.indexOf("/Session") >= 0;
@@ -224,12 +238,6 @@ function reqType(u) {
   }
   return ["", false, false];
 }
-
-const wswginitpath = "/wgconfigs/init";
-const wswgconnectpath = "/wgconfigs/connect";
-const wssessionpath = "/session";
-const wsportpath = "/portmap";
-const wslocpath = "/serverlist/mob-v2/";
 
 /**
  * @param {URL} u - URL to check
