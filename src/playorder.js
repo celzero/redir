@@ -1320,6 +1320,7 @@ export async function cancelSubscription(env, req) {
     url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
   const obstoken = await obfuscate(purchaseToken);
+  // TODO: use vcode = url.searchParams.get("vcode") to accept or reject cancellation
 
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400j({ error: "missing/invalid client id" });
@@ -1422,6 +1423,7 @@ export async function revokeSubscription(env, req) {
     url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
   const obstoken = await obfuscate(purchaseToken);
+  // TODO: only supported vcode = url.searchParams.get("vcode") can revoke purchase
 
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400j({ error: "missing/invalid client id" });
@@ -1846,6 +1848,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       url.searchParams.get("purchasetoken");
     const cid = url.searchParams.get("cid");
     const force = url.searchParams.get("force");
+    // TODO: use vcode = url.searchParams.get("vcode") to accept or reject purchases
 
     if (!purchasetoken) {
       return r400j({ error: "purchaseToken is required" });
@@ -2004,6 +2007,7 @@ export async function googlePlayGetEntitlements(env, req) {
     const url = new URL(req.url);
     let cid = url.searchParams.get("cid");
     const test = url.searchParams.has("test");
+    // TODO: use vcode = url.searchParams.get("vcode") to accept or reject purchases
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
       return r400j({ error: "missing/invalid client id" });
     }

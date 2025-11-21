@@ -222,6 +222,7 @@ export class WSEntitlement {
    * @throws {Error} - If there is an error encrypting the session token
    */
   async toClientEntitlement(env) {
+    // TODO: check if sessiontoken is already encrypted (would not contain ":")
     return new WSEntitlement(
       this.cid,
       await enc.encryptText(env, this.cid, this.sessiontoken),

@@ -93,24 +93,36 @@ async function handle(r, env, ctx) {
       if (!p2 || p2.length === 0) {
         return r400("g: missing resource");
       }
+
       if (p2 === "rtdn") {
         return googlePlayNotification(env, r);
-      } else if (p2 === "ack") {
+      }
+
+      const vcode = url.searchParams.get("vcode");
+      if (vcode) {
+        const minVCodeNeeded = minvcode(env, "paid-features");
+        const cansell = greaterThanEqCmp(vcode, minVCodeNeeded);
+        if (!cansell) {
+          return r503(`g: app ${vcode} outdated`);
+        }
+      }
+
+      if (p2 === "ack") {
         // TODO: must be a POST request
-        // g/ack?cid&purchaseToken[&force]
+        // g/ack?cid&purchaseToken&vcode[&force]
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
-        // g/entitlements?cid&test
+        // g/entitlements?cid&test&vcode
         return googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // TODO: must be a POST request
-        // g/stop?cid&purchaseToken&test
+        // g/stop?cid&purchaseToken&test&vcode
         return cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // TODO: must be a POST request
-        // g/refund?cid&purchaseToken&test
+        // g/refund?cid&purchaseToken&test&vcode
         return revokeSubscription(env, r);
       }
       return r400("g: unknown resource " + p2);
@@ -213,8 +225,8 @@ function svcstatus(env) {
 
 function minvcode(env, why = "unknown") {
   if (why === "paid-features") {
-    // paid features have a minimum vcode of 46
-    return env.MIN_VCODE_PAID_FEATURES || "46";
+    // paid features have a minimum vcode of 52
+    return env.MIN_VCODE_PAID_FEATURES || "52";
   }
   return env.MIN_VCODE || "30";
 }
@@ -377,6 +389,7 @@ async function clientaddrs(apikey, req) {
     });
 }
 
+// Returns true if str1 >= str2 in numeric comparison
 function greaterThanEqCmp(str1, str2) {
   const n1 = parseInt(str1, 10);
   const n2 = parseInt(str2, 10);
