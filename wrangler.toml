@@ -23,6 +23,10 @@ STATUS = "ok"
 # command = "npx webpack"
 # cwd = "."
 
+[observability.logs]
+enabled = true
+invocation_logs = true
+
 # developers.cloudflare.com/d1/configuration/environments
 [[d1_databases]]
 binding = "REDIRDBTEST"
