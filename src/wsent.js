@@ -559,12 +559,12 @@ async function newCreds(env, expiry, requestedPlan) {
   const [plan, execCount] = expiry2plan(expiry, testing);
 
   log.i(
-    `new creds until ${expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
+    `new creds (test? ${testing}) until ${expiry}; asked: ${requestedPlan}, got: ${plan}; c: ${execCount}`
   );
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot create entitlement; subscription expiring imminently`
+      `cannot create (test? ${testing}) entitlement; subscription expiring imminently`
     );
   }
 
@@ -578,26 +578,29 @@ async function newCreds(env, expiry, requestedPlan) {
   if (!r.ok) {
     const err = await r.json();
     const errstr = JSON.stringify(err);
-    log.w(`new creds: ${r.status} forbidden: ${errstr}`);
+    log.w(
+      `new creds: ${url}, ${r.status}; test? ${testing}, forbidden: ${errstr}`
+    );
     throw new Error(`could not create new creds: ${r.status} ${errstr}`);
   }
   // data = { data: { ... }, metadata: { ... } }
   const data = await r.json();
   if (!data || typeof data !== "object") {
-    throw new Error("invalid response from WS server");
+    throw new Error(`invalid response from WS (url: ${url}, test? ${testing})`);
   }
   const meta = new WSMetaResponse(data.metadata);
   const wsuser = new WSUser(data.data);
   if (!wsuser.userId || !wsuser.sessionAuthHash) {
     throw new Error(
-      `new creds: missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
+      `new creds: (test? ${testing}) missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
     );
   }
   return wsuser; // Return the new credentials
 }
 
 /**
- *
+ * credsStatus checks the status of the given session token.
+ * @param {any} env - Worker environment
  * @param {string} sessiontoken - id:type:timestamp:sig1:sig2
  * @return {Promise<["valid"|"invalid"|"banned"|"expired"|"unknown", WSUser]>} statuses:
  * - "valid" if the session token is ok,
