@@ -362,7 +362,7 @@ export async function deleteWsEntitlement(env, cid) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} op - Reason for getting credentials (default: "get")
- * @returns {Promise<WSEntitlement|null>} - [userid, sessiontoken] or null if no existing credentials
+ * @returns {Promise<WSEntitlement|null>} - [userid, unencrypted sessiontoken] or null if no existing credentials
  * @throws {Error} - If there is an error decrypting credentials
  */
 export async function creds(env, cid, op = "get") {
@@ -414,17 +414,22 @@ export async function creds(env, cid, op = "get") {
 
 /**
  * @param {any} env - Worker environment
- * @param {WSEntitlement} c - Existing entitlement
+ * @param {WSEntitlement} c - Existing (unencrypted) entitlement
  * @param {Date} subExpiry - Expiry date of the subscription
  * @param {"month"|"year"} requestedPlan - Requested plan
  * @returns {Promise<WSEntitlement>} - Returns updated WSEntitlement object
  * @throws {Error} - If there is an error updating the entitlement
  */
 async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
+  const testing = testmode();
+
   // google play enforces a 1-day grace period after expiry
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-  if (c.expiry.getTime() >= subExpiry.getTime() - oneDayMs) {
-    log.d(`updateCreds: no-op; ent > sub: ${c.expiry} > ${subExpiry}`);
+  const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
+  if (c.expiry.getTime() >= subExpiryNoGraceMs) {
+    log.d(
+      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiryNoGraceMs}`
+    );
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
   /*
@@ -434,12 +439,10 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     --header 'Authorization: Bearer ...' \
    */
 
-  const testing = testmode();
-
   const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
 
   log.i(
-    `update creds until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
+    `updateCreds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
   );
 
   if (plan == "unknown" || execCount <= 0) {
@@ -756,7 +759,9 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
   if (totalMonths <= 0) {
     if (totalDays < 0) {
       // in the past
-      throw new Error(`ws: plan expired ${expiry}, cannot create creds`);
+      throw new Error(
+        `ws: plan expired ${expiry} (current end: ${since}), cannot create creds`
+      );
     }
     if (totalDays >= 10) {
       plan = "month";
