@@ -1174,7 +1174,7 @@ async function handleOneTimeProductNotification(env, notif) {
 
   if (emptyString(sku) || planYears <= 0) {
     loge(
-      `onetime: unknown sku ${sku} for ${obstoken}; got yrs: ${planYears}, expected: ${twoYearlyBasePlanId}/${fiveYearlyBasePlanId}`,
+      `onetime: state? ${onetimeState}; unknown sku ${sku} for ${obstoken}; got yrs: ${planYears}, expected: ${twoYearlyBasePlanId}/${fiveYearlyBasePlanId}`,
     );
     return;
   }
