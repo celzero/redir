@@ -1966,7 +1966,7 @@ async function getOrGenAndPersistCidFromProduct(
   insert = true,
 ) {
   let kind = 0; // 0 play client, 1 generated, 2 stripe
-  const cid = purchase.obfuscatedExternalAccountId;
+  let cid = purchase.obfuscatedExternalAccountId;
 
   if (!cid || cid.length < mincidlength) {
     cid = crandHex(64);
