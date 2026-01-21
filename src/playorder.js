@@ -29,6 +29,11 @@ const packageName = "com.celzero.bravedns";
 // but: github.com/googleapis/google-api-go-client/blob/971a6f113/androidpublisher/v3/androidpublisher-gen.go#L19539
 const iap1 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
 const iap2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
+// ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get
+// const iap3 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/productsv2/tokens/`;
+// ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
+const iap4 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/`;
+const tokpath = "/tokens/";
 const acksuffix = ":acknowledge";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/revoke
 // and: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2/revoke
@@ -41,8 +46,11 @@ const monthlyProxyProductId = "proxy_monthly_subscription_test";
 const annualProxyProductId = "proxy_annual_subscription_test";
 const stdProductId = "standard.tier";
 const proProductId = "pro.tier";
+const onetimeProductId = "onetime.tier";
 const monthlyBasePlanId = "proxy-monthly";
 const yearlyBasePlanId = "proxy-yearly";
+const twoYearlyBasePlanId = "proxy-yearly-two";
+const fiveYearlyBasePlanId = "proxy-yearly-five";
 
 const log = new glog.Log("playorder");
 
@@ -122,11 +130,11 @@ class GEntitlement {
 
 knownBasePlans.set(
   monthlyBasePlanId,
-  new GEntitlement(stdProductId, monthlyBasePlanId)
+  new GEntitlement(stdProductId, monthlyBasePlanId),
 );
 knownBasePlans.set(
   yearlyBasePlanId,
-  new GEntitlement(stdProductId, yearlyBasePlanId)
+  new GEntitlement(stdProductId, yearlyBasePlanId),
 );
 
 /*
@@ -484,17 +492,90 @@ class SubscriptionPurchaseV2 {
 }
 
 /*
+  ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get
 {
-  "autoResumeTime": string
+  "kind": "androidpublisher#productPurchase",
+  "purchaseTimeMillis": "1700000000000",
+  "purchaseState": 0,
+  "consumptionState": 0,
+  "developerPayload": "string",
+  "orderId": "GPA.1234-5678-9012-34567",
+  "purchaseType": 0,
+  "acknowledgementState": 1,
+  "productId": "sku",
+  "purchaseToken": "token",
+  "quantity": 1,
+  "refundableQuantity": 1,
+  "regionCode": "US",
+  "obfuscatedExternalAccountId": "string",
+  "obfuscatedExternalProfileId": "string"
 }
 */
-class PausedStateContext {
+class ProductPurchaseV1 {
   constructor(json) {
     json = json || {};
     /**
-     * @type {string} - The time at which the subscription will automatically resume, in RFC3339 format.
+     * @type {string} - The kind of resource this is, in this case androidpublisher#productPurchase.
      */
-    this.autoResumeTime = json.autoResumeTime || "";
+    this.kind = json.kind || "";
+    /**
+     * @type {number} - Purchase time in milliseconds since epoch.
+     */
+    this.purchaseTimeMillis = json.purchaseTimeMillis
+      ? Number(json.purchaseTimeMillis)
+      : -1;
+    /**
+     * @type {number} - Purchase state: 0 Purchased, 1 Canceled, 2 Pending.
+     */
+    this.purchaseState = json.purchaseState ?? -1;
+    /**
+     * @type {number} - Consumption state: 0 Yet to be consumed, 1 Consumed.
+     */
+    this.consumptionState = json.consumptionState ?? -1;
+    /**
+     * @type {string} - Developer payload, if any.
+     */
+    this.developerPayload = json.developerPayload || "";
+    /**
+     * @type {string} - Order ID, if any.
+     */
+    this.orderId = json.orderId || "";
+    /**
+     * @type {number} - Purchase type, if any (may not be set); 0 Test, 1 Promo, 2 Rewarded.
+     */
+    this.purchaseType = json.purchaseType ?? -1;
+    /**
+     * @type {number} - Acknowledgement state; 0 Yet to be acknowledged, 1 Acknowledged.
+     */
+    this.acknowledgementState = json.acknowledgementState ?? -1;
+    /**
+     * @type {string} - Product ID (may not be present)
+     */
+    this.purchaseToken = json.purchaseToken || "";
+    /**
+     * @type {string} - Product type (sku).
+     */
+    this.productId = json.productId || "";
+    /**
+     * @type {number} - Default from Google RTDN is 1 (may be 0).
+     */
+    this.quantity = json.quantity ?? 0;
+    /**
+     * @type {string} - Obfuscated external account ID, if any.
+     */
+    this.obfuscatedExternalAccountId = json.obfuscatedExternalAccountId || "";
+    /**
+     * @type {string} - Obfuscated external profile ID, if any.
+     */
+    this.obfuscatedExternalProfileId = json.obfuscatedExternalProfileId || "";
+    /**
+     * @type {string} - Region code, if any.
+     */
+    this.regionCode = json.regionCode || "";
+    /**
+     * @type {number} - Quantity that hasn't been refunded, if any.
+     */
+    this.refundableQuantity = json.refundableQuantity ?? 0;
   }
 }
 
@@ -1070,7 +1151,7 @@ async function processGooglePlayNotification(env, notif) {
     await handleTestNotification(notif.test);
   }
   logi(
-    `processed: ${notif.version}, ${notif.packageName}, ${notif.eventTimeMillis}`
+    `notif: processed ${notif.version}, ${notif.packageName}, ${notif.eventTimeMillis}`,
   );
 }
 
@@ -1080,9 +1161,106 @@ async function processGooglePlayNotification(env, notif) {
  * @param {OneTimeProductNotification} notif
  */
 async function handleOneTimeProductNotification(env, notif) {
-  logi(
-    `One-time: ${notif.notificationType}, ${notif.purchaseToken}, ${notif.sku}`
+  if (notif == null || notif.purchaseToken == null) {
+    throw new Error("onetime: invalid notif: " + notif);
+  }
+
+  const purchasetoken = notif.purchaseToken;
+  const sku = notif.sku || "";
+  const obstoken = await obfuscate(purchasetoken);
+  const planYears = onetimePlanYears(sku);
+  const notifType = onetimeNotificationTypeStr(notif);
+  const onetimeState = onetimePurchaseStateStr(notif);
+
+  if (emptyString(sku) || planYears <= 0) {
+    loge(
+      `onetime: unknown sku ${sku} for ${obstoken}; got yrs: ${planYears}, expected: ${twoYearlyBasePlanId}/${fiveYearlyBasePlanId}`,
+    );
+    return;
+  }
+
+  // allow error to propagate, so google rtdn will retry
+  const purchase = await getOnetimeProduct(
+    env,
+    onetimeProductId,
+    purchasetoken,
   );
+  const test = isOnetimeTest(purchase);
+  const ackd = isOnetimeAck(purchase);
+  const paid = isOnetimePaid(purchase);
+  const canceled = isOnetimeCanceled(notif, purchase);
+  const pending = isOnetimeUnpaid(purchase);
+
+  return als.run(new ExecCtx(env, test, obstoken), async () => {
+    logi(
+      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / years=${planYears}`,
+    );
+
+    const cid = await getCidThenPersistProduct(env, purchase);
+    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase);
+
+    if (pending) {
+      logi(
+        `onetime: purchase pending ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
+      );
+      return;
+    }
+
+    if (canceled) {
+      logi(
+        `onetime: canceled ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
+      );
+      for (const tries of [1, 10]) {
+        await sleep(tries); // wait 1s, then 10s
+        try {
+          await deleteWsEntitlement(env, cid);
+          logi(
+            `onetime: revoked ent for ${cid} for ${obstoken} ${sku}; test? ${test}`,
+          );
+          break;
+        } catch (e) {
+          loge(
+            `onetime: err revoking ent for ${cid} for ${obstoken} ${sku}: ${e.message}; test? ${test}`,
+          );
+        }
+      }
+      return;
+    }
+
+    if (!paid || pending) {
+      logw(
+        `onetime: unpaid ${onetimeState} ${cid} for ${obstoken} sku=${sku}; test? ${test}`,
+      );
+      return;
+    }
+
+    const expiry = determineOnetimeExpiry(purchase, planYears);
+    const ent = await getOrGenWsEntitlement(env, cid, expiry, "year");
+    if (ackd) {
+      logi(
+        `onetime: already ack: ${cid} for ${obstoken} sku=${sku}; test? ${test}`,
+      );
+      return;
+    }
+    if (ent == null) {
+      throw new Error(
+        `onetime: no ent for ${cid} but onetime active; sku=${sku}`,
+      );
+    }
+    if (ent.status === "banned") {
+      loge(`onetime: ${ent.status} ${cid} sku=${sku}; test? ${test}`);
+      return; // never ack but report success
+    }
+    if (ent.status === "expired") {
+      // TODO: reissue entitlement?
+      throw new Error(
+        `onetime: ent expired ${cid} but onetime active; sku=${sku}`,
+      );
+    }
+
+    await ackOnetimePurchase(env, onetimeProductId, purchasetoken, ent);
+    return;
+  });
 }
 
 /**
@@ -1105,7 +1283,7 @@ async function handleSubscriptionNotification(env, notif) {
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
-    logi(`Subscription: ${typ} for ${purchasetoken} test? ${test}`);
+    logi(`sub: ${typ} for ${purchasetoken} test? ${test}`);
 
     const cid = await getCidThenPersist(env, sub);
 
@@ -1147,14 +1325,14 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   const obstoken = obsToken();
 
   logd(
-    `process sub ${cid} ${obstoken}: ${state} (active? ${active} / cancelled? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / replaced? ${replaced} / ackd? ${ackd} / obsoleted? ${obsoleted}) test? ${test}`
+    `sub: new ${cid} ${obstoken}: ${state} (active? ${active} / cancelled? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / replaced? ${replaced} / ackd? ${ackd} / obsoleted? ${obsoleted}) test? ${test}`,
   );
 
   // Play Billing deletes a purchaseToken after 60d from expiry
   await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
 
   if (obsoleted) {
-    logi(`Purchase token ${obstoken} is obsoleted, cannot ack`);
+    logi(`sub: token ${obstoken} is obsoleted, cannot ack`);
     if (!ackd) {
       await ackSubscriptionWithoutEntitlement(env, purchasetoken);
     }
@@ -1167,7 +1345,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
     const gprod = productInfo(sub);
     if (gprod == null) {
-      loge(`skip ack sub ${cid} test? ${test}; no product info`);
+      loge(`sub: skip ack sub ${cid} test? ${test}; no product info`);
       return;
     }
     const expiry = gprod.expiry;
@@ -1180,16 +1358,19 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
     // TODO: handle entitlement for multiple product ids
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
     if (ackd) {
-      logi(`Subscription already acknowledged: ${cid} test? ${test}`);
+      logi(`sub: already acknowledged: ${cid} test? ${test}`);
       return true;
     }
+    if (ent == null) {
+      throw new Error(`sub: no ent for ${cid} but sub active; test? ${test}`);
+    }
     if (ent.status === "banned") {
-      loge(`Subscription ${ent.status} ${cid} test? ${test}`);
+      loge(`sub: ${ent.status} ${cid} test? ${test}`);
       return true; // never ack but report success
     }
     if (ent.status === "expired") {
       // TODO: retry?
-      throw new Error(`ent expired ${cid} but sub active; test? ${test}`);
+      throw new Error(`sub: ent expired ${cid} but sub active; test? ${test}`);
     }
     // developer.android.com/google/play/billing/integrate#process
     // developer.android.com/google/play/billing/subscriptions#handle-subscription
@@ -1211,7 +1392,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         ? item.autoRenewingPlan.autoRenewEnabled
         : false;
       logi(
-        `process expire/cancel sub ${cid} ${productId} at ${expiry} (now: ${now}) (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
+        `sub: expire/cancel sub ${cid} ${productId} at ${expiry} (now: ${now}) (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`,
       );
       if ((revoked && !replaced) || unpaid) {
         for (const tries of [1, 10]) {
@@ -1219,11 +1400,11 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
           try {
             // TODO: validate if productId being revoked/unpaid even grants a WSEntitlement
             await deleteWsEntitlement(env, cid);
-            logi(`revoked/unpaid sub entitlement for ${cid} ${productId}`);
+            logi(`sub: revoked/unpaid sub ent for ${cid} ${productId}`);
             break;
           } catch (e) {
             // TODO: set allok to false?
-            loge(`err revoking creds for ${cid} ${productId}: ${e.message}`);
+            loge(`sub: err revoking ent for ${cid} ${productId}: ${e.message}`);
           }
         }
       } else if (!autorenew && !deferring && expiry.getTime() < now) {
@@ -1233,13 +1414,13 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         // await deleteWsEntitlement(env, cid);
         // needed? await revokeSubscription(env, cid, productId, purchasetoken);
         logw(
-          `skip revoke1 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`
+          `sub: skip revoke1 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); user may have grace period or paused state`,
         );
       } else {
         // on expiry, we retain the entitlement for grace period
         const note = expired ? logi : loge;
         note(
-          `skip revoke2 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`
+          `sub: skip revoke2 for ${cid} / ${state} ${productId} at ${expiry} (now: ${now}); (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`,
         );
       }
     }
@@ -1247,7 +1428,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   } else {
     // SUBSCRIPTION_CANCELED, SUBSCRIPTION_ON_HOLD, SUBSCRIPTION_IN_GRACE_PERIOD, SUBSCRIPTION_PAUSED
     // developer.android.com/google/play/billing/subscriptions#cancel-refund-revoke
-    logi(`sub notif: ${cid} / ${state}, no-op`);
+    logi(`sub: notif ${cid} / ${state}, no-op`);
     return true; // No action needed for these states
   }
 }
@@ -1258,7 +1439,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
  */
 async function handleVoidedPurchaseNotification(env, notif) {
   logi(
-    `Voided purchase: ${notif.purchaseToken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}`
+    `void: purchase ${notif.purchaseToken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}`,
   );
   // TODO: revoke if active
 }
@@ -1267,7 +1448,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
  * @param {TestNotification} notif
  */
 async function handleTestNotification(notif) {
-  logi(`Test: ${notif.version}`);
+  logi(`test: ${notif.version}`);
 }
 
 /**
@@ -1302,6 +1483,39 @@ async function getSubscription(env, purchaseToken) {
 }
 
 /**
+ * TODO: move to v2; doesn't require productId to get information on a purchaseToken
+ * @param {any} env
+ * @param {string} productId
+ * @param {string} purchaseToken
+ * @returns {Promise<ProductPurchaseV1>}
+ * @throws {Error} - If the response is not as expected.
+ */
+async function getOnetimeProduct(env, productId, purchaseToken) {
+  // GET
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/products/{productId}/tokens/{purchaseToken}'
+  // -H 'Accept: application/json' \
+  // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
+  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const url = `${iap4}${productId}${tokpath}${purchaseToken}`;
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${bearer}`,
+  };
+  log.d(`onetime: get product ${productId} ${url}`);
+  const r = await fetch(url, { headers });
+  if (!r.ok) {
+    const gmsg = await gerror(r);
+    throw new Error(`oneetime: get err: ${r.status} ${gmsg}`);
+  }
+  const json = await r.json();
+  if (json != null && !emptyString(json.kind)) {
+    return new ProductPurchaseV1(json);
+  } else {
+    throw new Error(`onetime: json err ${r.status}: ${JSON.stringify(json)}`);
+  }
+}
+
+/**
  * developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
  * @param {any} env - Workers environment.
  * @param {Request} req - HTTP request.
@@ -1326,12 +1540,12 @@ export async function cancelSubscription(env, req) {
     return r400j({ error: "missing/invalid client id" });
   }
 
-  logd(`cancel sub for ${cid}; test? ${test} for ${obstoken}`);
+  logd(`sub: cancel for ${cid}; test? ${test} for ${obstoken}`);
 
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
-      loge(`revoke sub: not found for ${obstoken}`);
+      loge(`sub: revoke not found for ${obstoken}`);
       return r400j({
         error: "subscription not found",
         purchaseId: obstoken,
@@ -1341,7 +1555,7 @@ export async function cancelSubscription(env, req) {
     const storedcid = entry.cid;
     // TODO: only allow credentialless clients to access this endpoint
     if (storedcid !== cid) {
-      loge(`cancel sub cid mismatch: ${cid} != ${storedcid}`);
+      loge(`sub: cancel cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot cancel, cid mismatch",
         purchaseId: obstoken,
@@ -1354,7 +1568,7 @@ export async function cancelSubscription(env, req) {
 
     if (canceled || expired) {
       // If the subscription has expired, we cannot cancel it.
-      loge(`sub ${obstoken} already canceled or expired`);
+      loge(`sub: ${obstoken} already canceled or expired`);
       return r200j({
         success: false,
         message: "cannot revoke, subscription canceled or expired",
@@ -1388,13 +1602,13 @@ export async function cancelSubscription(env, req) {
 
     if (!r.ok) {
       const gerr = await gerror(r);
-      loge(`cancel sub err: ${r.status} ${gerr}`);
+      loge(`sub: cancel err: ${r.status} ${gerr}`);
       return r400j({
         error: `Failed to cancel subscription: ${r.status} ${gerr}`,
         purchaseId: obstoken,
       });
     } else {
-      logi(`cancel sub for ${obstoken}`);
+      logi(`sub: cancel for ${obstoken}`);
       return r200j({
         success: true,
         message: "canceled subscription",
@@ -1430,12 +1644,12 @@ export async function revokeSubscription(env, req) {
   }
 
   // TODO: only allow credentialless clients to access this endpoint
-  logd(`revoke sub for ${cid}; test? ${test} for ${obstoken}`);
+  logd(`sub: revoke for ${cid}; test? ${test} for ${obstoken}`);
 
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
-      loge(`revoke sub: not found for ${obstoken}`);
+      loge(`sub: revoke not found for ${obstoken}`);
       return r400j({
         error: "subscription not found",
         purchaseId: obstoken,
@@ -1444,7 +1658,7 @@ export async function revokeSubscription(env, req) {
     const entry = dbres.results[0];
     const storedcid = entry.cid;
     if (storedcid !== cid) {
-      loge(`revoke sub cid mismatch: ${cid} != ${storedcid}`);
+      loge(`sub: revoke cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot revoke, cid mismatch",
         purchaseId: obstoken,
@@ -1457,7 +1671,7 @@ export async function revokeSubscription(env, req) {
 
     if (canceled || expired) {
       // If the subscription is canceled, we cannot revoke it.
-      loge(`Subscription ${obstoken} is canceled, cannot revoke`);
+      loge(`sub: ${obstoken} is canceled, cannot revoke`);
       return r200j({
         success: false,
         message: "cannot revoke, subscription canceled or expired",
@@ -1472,7 +1686,7 @@ export async function revokeSubscription(env, req) {
     const start = sub.startTime ? new Date(sub.startTime) : new Date(0);
     if (thres > start.getTime()) {
       // If sub is not within threshold millis ago, do not revoke it.
-      loge(`revoke sub ${obstoken} started too long ago, cannot revoke`);
+      loge(`sub: revoke ${obstoken} started too long ago, cannot revoke`);
       return r400j({
         error: "cannot revoke, sub too old, email hello@celzero.com",
         when: start.toISOString(),
@@ -1519,14 +1733,14 @@ export async function revokeSubscription(env, req) {
 
     if (!r.ok) {
       const gerr = await gerror(r);
-      loge(`revoke sub err: ${r.status} ${gerr}`);
+      loge(`sub: revoke err: ${r.status} ${gerr}`);
       // TODO: retry for 3 days with pipeline?
       return r400j({
         error: `Failed to revoke subscription: ${r.status} ${gerr}`,
         purchaseId: obstoken,
       });
     } else {
-      logi(`revoke sub for ${obstoken}`);
+      logi(`sub: revoke for ${obstoken}`);
       return r200j({
         success: true,
         message: "revoked subscription",
@@ -1544,6 +1758,66 @@ export async function revokeSubscription(env, req) {
  */
 async function ackSubscriptionWithoutEntitlement(env, tok) {
   return ackSubscription(env, tok, null, true);
+}
+
+/**
+ * @param {any} env
+ * @param {string} productId
+ * @param {string} tok - Google Play purchase token.
+ * @param {WSEntitlement} ent - Windscribe entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge payments without an entitlement.
+ * @returns {Promise<void>}
+ * @throws {Error} - If the acknowledgment fails.
+ */
+async function ackOnetimePurchase(
+  env,
+  productId,
+  tok,
+  ent,
+  ackWithoutEntitlement = false,
+) {
+  // POST
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/products/{productId}/tokens/{token}:acknowledge' \
+  // -H 'Accept: application/json' \
+  // -H 'Content-Type: application/json' \
+  // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
+  // -d '{"developerPayload": <string> "{\"ws\": \"entitlement\"}"}'
+  const ackurl = `${iap4}${productId}${tokpath}${tok}${acksuffix}`;
+  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const obs = obsToken();
+  const headers = {
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    Authorization: `Bearer ${bearer}`,
+  };
+  if (ent != null) {
+    const body = JSON.stringify({
+      developerPayload: JSON.stringify({
+        ws: await ent.toClientEntitlement(env),
+      }),
+    });
+    const r = await fetch(ackurl, {
+      method: "POST",
+      headers: headers,
+      body: body,
+    });
+    if (!r.ok) {
+      // TODO: retry for 3 days with pipeline?
+      throw new Error(`onetime: err ack ${obs}: ${r.status} for ${ent.cid}`);
+    }
+  } else {
+    if (!ackWithoutEntitlement) {
+      throw new Error(`onetime: for ${obs}, cannot ack product`);
+    }
+    const r = await fetch(ackurl, { method: "POST", headers });
+    if (!r.ok) {
+      const gmsg = await gerror(r);
+      // TODO: retry for 3 days with pipeline?
+      throw new Error(
+        `onetime: unexpected err ack ${obs}: ${r.status} ${gmsg}`,
+      );
+    }
+  }
 }
 
 /**
@@ -1583,18 +1857,18 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`Failed to ack sub ${obs}: ${r.status} for ${ent.cid}`);
+      throw new Error(`sub: err ack for ${obs}: ${r.status} for ${ent.cid}`);
     }
   } else {
     if (!ackWithoutEntitlement) {
-      throw new Error(`No entitlement for ${obs}, cannot ack sub`);
+      throw new Error(`sub: no entitlement for ${obs}, cannot ack sub`);
     }
     // no entitlement, but ack anyway
     const r = await fetch(ackurl, { method: "POST", headers });
     if (!r.ok) {
       const gmsg = await gerror(r);
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`Err ack sub for ${obs}: ${r.status} ${gmsg}`);
+      throw new Error(`sub: err ack for ${obs}: ${r.status} ${gmsg}`);
     }
   }
 }
@@ -1619,6 +1893,28 @@ async function getCid(env, sub) {
 
 /**
  * @param {any} env
+ * @param {ProductPurchaseV1} purchase
+ * @returns {Promise<string|null>}
+ */
+async function getCidThenPersistProduct(env, purchase) {
+  const gen = true;
+  const persist = true;
+  return getOrGenAndPersistCidFromProduct(env, purchase, !gen, persist);
+}
+
+/**
+ * @param {any} env
+ * @param {ProductPurchaseV1} purchase
+ * @returns {Promise<string|null>}
+ */
+async function getCidProduct(env, purchase) {
+  const gen = true;
+  const persist = true;
+  return getOrGenAndPersistCidFromProduct(env, purchase, !gen, !persist);
+}
+
+/**
+ * @param {any} env
  * @param {SubscriptionPurchaseV2} sub
  * @param {boolean} gen - Whether to generate a new CID if it cannot be retrieved.
  * That is, if gen is true, client must refuse to acknowledge subs with missing
@@ -1637,20 +1933,52 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
   } catch (e) {
     msg = e.message;
     // If we can't get the CID, generate a new one
-    logi(`Failed to get CID: ${msg}, generating new CID`);
+    logi(`sub: no cid: ${msg}, may be gen new...`);
   }
   if (!cid || cid.length < mincidlength) {
     cid = crandHex(64);
     kind = 1; // generated
   }
   if (kind == 1 && !gen) {
-    throw new Error("cid missing for purchase token: err? " + msg);
+    throw new Error("sub: missing for purchase token: err? " + msg);
   }
   if (insert) {
     const clientinfo = sub.subscribeWithGoogleInfo;
     const out = await dbx.insertClient(db, cid, clientinfo, kind);
     if (out == null || !out.success) {
-      throw new Error(`cid: failed to get or insert ${cid}`);
+      throw new Error(`sub: failed to get or insert ${cid}`);
+    }
+  }
+  return cid; // all okay
+}
+
+/**
+ * @param {any} env
+ * @param {ProductPurchaseV1} purchase
+ * @param {boolean} gen
+ * @param {boolean} insert
+ * @returns {Promise<string|null>}
+ */
+async function getOrGenAndPersistCidFromProduct(
+  env,
+  purchase,
+  gen = true,
+  insert = true,
+) {
+  let kind = 0; // 0 play client, 1 generated, 2 stripe
+  const cid = purchase.obfuscatedExternalAccountId;
+
+  if (!cid || cid.length < mincidlength) {
+    cid = crandHex(64);
+    kind = 1; // generated
+  }
+  if (kind == 1 && !gen) {
+    throw new Error("onetime: cid missing; discarding purchase");
+  }
+  if (insert) {
+    const out = await dbx.insertClient(dbx.db(env), cid, null, kind);
+    if (out == null || !out.success) {
+      throw new Error(`onetime: db err; purchase by ${cid} failed`);
     }
   }
   return cid; // all okay
@@ -1666,6 +1994,20 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
 async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
   // TODO: cid must match with existing db entry, if any
   return dbx.upsertPlaySub(dbx.db(env), cid, pt, sub.linkedPurchaseToken, sub);
+}
+
+/**
+ * @param {any} env
+ * @param {string} cid
+ * @param {string} pt
+ * @param {string} sku
+ * @param {ProductPurchaseV1} purchase
+ * @returns {Promise<dbx.D1Out>}
+ */
+async function registerOrUpdateOnetimePurchase(env, cid, pt, purchase) {
+  // TODO: cid must match with existing db entry, if any
+  const nolinkedtok = null;
+  return dbx.upsertPlaySub(dbx.db(env), cid, pt, nolinkedtok, purchase);
 }
 
 /**
@@ -1688,11 +2030,11 @@ async function recursivelyGetCid(env, sub, n = 1) {
     return await recursivelyGetCid(
       env,
       await getSubscription(env, sub.linkedPurchaseToken),
-      n + 1
+      n + 1,
     );
   }
   throw new Error(
-    `Cid ${cid} (${cidlen} ${n}) missing or invalid for profile ${sub.subscribeWithGoogleInfo.profileId}, ${sub.regionCode}, ${sub.startTime}`
+    `Cid ${cid} (${cidlen} ${n}) missing or invalid for profile ${sub.subscribeWithGoogleInfo.profileId}, ${sub.regionCode}, ${sub.startTime}`,
   );
 }
 
@@ -1747,6 +2089,34 @@ function planInfo(item) {
 }
 
 /**
+ * @param {string} sku
+ * @returns {number} - 2 or 5 if valid sku; else 0.
+ */
+function onetimePlanYears(sku) {
+  // TODO: return GEntitlement instead like planInfo
+  if (sku === twoYearlyBasePlanId) return 2;
+  if (sku === fiveYearlyBasePlanId) return 5;
+  return 0;
+}
+
+/**
+ * @param {ProductPurchaseV1} purchase
+ * @param {number} years
+ * @returns {Date}
+ */
+function determineOnetimeExpiry(purchase, years) {
+  let start = Date.now();
+  if (purchase && Number.isFinite(purchase.purchaseTimeMillis)) {
+    if (purchase.purchaseTimeMillis > 0) {
+      start = purchase.purchaseTimeMillis;
+    }
+  }
+  const exp = new Date(start);
+  exp.setUTCFullYear(exp.getUTCFullYear() + years);
+  return exp;
+}
+
+/**
  * ryan-schachte.com/blog/oauth_cloudflare_workers / archive.vn/B3FYC
  * @param {string} creds - principal
  * @returns {Promise<string>} - The Google OAuth access token.
@@ -1764,23 +2134,23 @@ async function gtoken(creds) {
   // Check if we have a valid cached token
   const cached = gtokenCache.get(cacheKey);
   if (cached && cached.token && cached.expiry > Date.now() + safetyMarginMs) {
-    logd(`cached gtoken; expires ${new Date(cached.expiry)}`);
+    logd(`gtoken: cached; expires ${new Date(cached.expiry)}`);
     return cached.token;
   }
 
   const g = await getGoogleAuthToken(
     key.client_email,
     key.private_key || null,
-    androidscope
+    androidscope,
   );
 
   if (g != null && g.token) {
     gtokenCache.set(cacheKey, g);
-    logd(`cached new gtoken; expires at ${new Date(g.expiry)}`);
+    logd(`gtoken: new; expires at ${new Date(g.expiry)}`);
     return g.token;
   }
 
-  throw new Error("Could not get or generate gtoken");
+  throw new Error("gtoken: could not generate");
 }
 
 /**
@@ -1825,6 +2195,81 @@ function notificationTypeStr(notif) {
 }
 
 /**
+ * @param {OneTimeProductNotification} notif
+ */
+function onetimeNotificationTypeStr(notif) {
+  const no = notif.notificationType;
+  switch (no) {
+    case 1:
+      return "PURCHASED";
+    case 2:
+      return "CANCELED";
+    default:
+      return "UNKNOWN_" + no;
+  }
+}
+
+/**
+ * @param {ProductPurchaseV1} purchase
+ * @returns {boolean}
+ */
+function isOnetimeAck(purchase) {
+  return purchase.acknowledgementState === 1;
+}
+
+/**
+ * @param {ProductPurchaseV1} purchase
+ * @returns {boolean}
+ */
+function isOnetimePaid(purchase) {
+  return purchase.purchaseState === 0;
+}
+
+/**
+ * @param {ProductPurchaseV1} purchase
+ * @returns {boolean}
+ */
+function isOnetimeUnpaid(purchase) {
+  return purchase.purchaseState === 2;
+}
+
+/**
+ * @param {OneTimeProductNotification} notif
+ * @param {ProductPurchaseV1} purchase
+ * @returns {boolean}
+ */
+function isOnetimeCanceled(notif, purchase) {
+  return notif.notificationType === 2 || purchase.purchaseState === 1;
+}
+
+/**
+ * @param {ProductPurchaseV1} purchase
+ * @returns {boolean}
+ */
+function isOnetimeTest(purchase) {
+  return purchase.purchaseType === 0;
+}
+
+/**
+ *
+ * @param {ProductPurchaseV1} purchase
+ * @returns {"PURCHASED"|"CANCELED"|"PENDING"|string}
+ */
+function onetimePurchaseStateStr(purchase) {
+  const ps = purchase.purchaseState || -2;
+  switch (ps) {
+    case 0:
+      return "PURCHASED";
+    case 1:
+      return "CANCELED";
+    case 2:
+      return "PENDING";
+    default:
+      return "UNKNOWN_" + ps;
+  }
+}
+
+/**
  * Acknowledges a Google Play purchase if all conditions are met.
  * The conditions are based on the logic in handleSubscriptionNotification:
  * - Subscription must be active (SUBSCRIPTION_STATE_ACTIVE)
@@ -1865,11 +2310,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
     const obstoken = await obfuscate(purchasetoken);
 
-    logi(`ack sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
+    logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
     // canceled subs could be expiring in the future
     if ((!active && !canceled) || expired) {
-      loge(`ack sub err inactive subscription: ${cid}, state: ${state}`);
+      loge(`ack: err inactive: ${cid}, state: ${state}`);
       return r400j({
         error: "subscription not active",
         purchaseId: obstoken,
@@ -1879,7 +2324,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
     const gprod = productInfo(sub);
     if (gprod == null) {
-      loge(`ack sub err invalid product for ${obstoken}`);
+      loge(`ack: sub err invalid product for ${obstoken}`);
       return r400j({
         error: "not a valid product",
         purchaseId: obstoken,
@@ -1908,14 +2353,14 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         // credentialed accounts can have different cids
         const existingCid = await getCidThenPersist(env, sub);
         if (existingCid !== cid) {
-          loge(`CID (us!=them) ${existingCid} != ${cid} for ${obstoken}`);
+          loge(`ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`);
           return r400j({
             purchaseId: obstoken,
             error: `cid ${cid} not registered with purchase token`,
           });
         }
       } catch (e) {
-        loge(`Err validating CID for purchase (sent: ${cid}): ${e.message}`);
+        loge(`ack: err validating cid (${cid}): ${e.message}`);
         return r400j({
           purchaseId: obstoken,
           error: "cid validation failed",
@@ -1925,7 +2370,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
       const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
       if (obsoleted) {
-        logi(`Purchase token ${obstoken} is obsoleted, cannot ack`);
+        logi(`ack: token ${obstoken} is obsoleted, cannot ack`);
         if (!ackd) {
           await ackSubscriptionWithoutEntitlement(env, purchasetoken);
         }
@@ -1939,7 +2384,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         });
       }
 
-      logi(`ack sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
+      logi(`ack: sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
 
       // TODO: check if productId grants a WSEntitlement
       const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
@@ -2019,7 +2464,7 @@ export async function googlePlayGetEntitlements(env, req) {
     }
 
     // TODO: only allow credential-less clients to access this endpoint
-    logd(`get entitlements for ${cid}; test? ${test}`);
+    logd(`ack: get ent for ${cid}; test? ${test}`);
 
     return await als.run(new ExecCtx(env, test), async () => {
       const ent = await creds(env, cid);
@@ -2059,7 +2504,7 @@ async function isPurchaseTokenLinked(env, t) {
   if (out.results == null || out.results.length === 0) {
     return false; // no linked purchase token found
   }
-  logi(`is linked purchase token ${t}: ${JSON.stringify(out.results)}`);
+  logi(`tok: is linked? ${t}: ${JSON.stringify(out.results)}`);
   return out.results.length > 0;
 }
 
