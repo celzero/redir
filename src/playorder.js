@@ -7,7 +7,7 @@
  */
 
 import { emptyString, str2byt2hex } from "./buf.js";
-import { als, ExecCtx, obsToken } from "./d.js";
+import { als, ExecCtx, obsToken, testmode } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
@@ -29,8 +29,8 @@ const packageName = "com.celzero.bravedns";
 // but: github.com/googleapis/google-api-go-client/blob/971a6f113/androidpublisher/v3/androidpublisher-gen.go#L19539
 const iap1 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptions/tokens/`;
 const iap2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/subscriptionsv2/tokens/`;
-// ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get
-// const iap3 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/productsv2/tokens/`;
+// ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/get
+const iap3 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/productsv2/tokens/`;
 // ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
 const iap4 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/`;
 const tokpath = "/tokens/";
@@ -135,6 +135,14 @@ knownBasePlans.set(
 knownBasePlans.set(
   yearlyBasePlanId,
   new GEntitlement(stdProductId, yearlyBasePlanId),
+);
+knownBasePlans.set(
+  twoYearlyBasePlanId,
+  new GEntitlement(onetimeProductId, twoYearlyBasePlanId),
+);
+knownBasePlans.set(
+  fiveYearlyBasePlanId,
+  new GEntitlement(onetimeProductId, fiveYearlyBasePlanId),
 );
 
 /*
@@ -1283,7 +1291,7 @@ async function handleSubscriptionNotification(env, notif) {
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
-    logi(`sub: ${typ} for ${purchasetoken} test? ${test}`);
+    logi(`sub: ${typ} for ${obstoken} test? ${test}`);
 
     const cid = await getCidThenPersist(env, sub);
 
@@ -1438,8 +1446,9 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
  * @param {VoidedPurchaseNotification} notif
  */
 async function handleVoidedPurchaseNotification(env, notif) {
+  const obstoken = await obfuscate(notif.purchaseToken || "");
   logi(
-    `void: purchase ${notif.purchaseToken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}`,
+    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}`,
   );
   // TODO: revoke if active
 }
@@ -1501,7 +1510,7 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  log.d(`onetime: get product ${productId} ${url}`);
+  log.d(`onetime: get product ${productId}`);
   const r = await fetch(url, { headers });
   if (!r.ok) {
     const gmsg = await gerror(r);
@@ -1513,6 +1522,155 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
   } else {
     throw new Error(`onetime: json err ${r.status}: ${JSON.stringify(json)}`);
   }
+}
+
+/**
+ * ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/get
+ * @param {any} env
+ * @param {string} purchaseToken
+ * @returns {Promise<ProductPurchaseV2>}
+ * @throws {Error} - If the response is not as expected.
+ */
+async function getOnetimeProductV2(env, purchaseToken) {
+  // GET
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/productsv2/tokens/{purchaseToken}'
+  // -H 'Accept: application/json' \
+  // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
+  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const url = `${iap3}${purchaseToken}`;
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${bearer}`,
+  };
+  log.d("onetime: get product v2");
+  const r = await fetch(url, { headers });
+  if (!r.ok) {
+    const gmsg = await gerror(r);
+    throw new Error(`onetime: get v2 err: ${r.status} ${gmsg}`);
+  }
+  const json = await r.json();
+  if (json != null && !emptyString(json.kind)) {
+    return new ProductPurchaseV2(json);
+  } else {
+    throw new Error(`onetime: v2 json err ${r.status}: ${JSON.stringify(json)}`);
+  }
+}
+
+/**
+ * @param {any} env
+ * @param {string} orderId
+ * @returns {Promise<void>}
+ */
+async function refundOrder(env, orderId) {
+  // POST
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/orders/{orderId}:refund'
+  // -H 'Accept: application/json' \
+  // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
+  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/orders/${orderId}:refund?revoke=true`;
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${bearer}`,
+  };
+  const r = await fetch(url, { method: "POST", headers });
+  if (!r.ok) {
+    const gmsg = await gerror(r);
+    throw new Error(`onetime: refund err: ${r.status} ${gmsg}`);
+  }
+}
+
+/**
+ * @param {number} planYears
+ * @returns {number}
+ */
+function refundWindowDays(planYears) {
+  if (planYears === 2) return 14;
+  if (planYears === 5) return 28;
+  return 3;
+}
+
+/**
+ * @param {number} startMillis
+ * @param {number} windowDays
+ * @returns {boolean}
+ */
+function withinRefundWindow(startMillis, windowDays) {
+  if (!Number.isFinite(startMillis) || startMillis <= 0) return false;
+  if (!Number.isFinite(windowDays) || windowDays <= 0) return false;
+  const now = Date.now();
+  const windowMs = windowDays * 24 * 60 * 60 * 1000;
+  return now - startMillis <= windowMs;
+}
+
+/**
+ * @param {any} env
+ * @param {string} cid
+ * @param {string} purchaseToken
+ * @param {number} planYears
+ * @returns {Promise<Response>}
+ */
+async function refundOnetimePurchase(env, cid, purchaseToken, planYears) {
+  const obstoken = obsToken();
+  const test = testmode();
+  const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
+  // TODO: support forced refunds even when data is missing or mismatched in db
+  if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+    loge(`onetime: refund not found for ${obstoken}`);
+    return r400j({
+      error: "purchase not found",
+      purchaseId: obstoken,
+    });
+  }
+  const entry = dbres.results[0];
+  const storedcid = entry.cid;
+  if (storedcid !== cid) {
+    loge(`onetime: refund cid mismatch: ${cid} != ${storedcid}`);
+    return r400j({
+      error: "cannot refund, cid mismatch",
+      purchaseId: obstoken,
+    });
+  }
+
+  const purchase = await getOnetimeProduct(
+    env,
+    onetimeProductId,
+    purchaseToken,
+  );
+  const orderId = purchase.orderId || "";
+  if (emptyString(orderId)) {
+    return r400j({
+      error: "missing order id",
+      purchaseId: obstoken,
+    });
+  }
+
+  // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
+  const windowDays = refundWindowDays(planYears);
+  if (!withinRefundWindow(purchase.purchaseTimeMillis, windowDays)) {
+    return r400j({
+      error: "refund window exceeded",
+      purchaseId: obstoken,
+      orderId: orderId,
+      windowDays: windowDays,
+      startMs: purchase.purchaseTimeMillis,
+    });
+  }
+
+  await refundOrder(env, orderId);
+
+  // TODO: retry?
+  try {
+    await deleteWsEntitlement(env, cid);
+  } catch (e) {
+    loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
+  }
+
+  return r200j({
+    success: true,
+    message: "refunded onetime purchase",
+    purchaseId: obstoken,
+    orderId: orderId,
+  });
 }
 
 /**
@@ -1533,14 +1691,38 @@ export async function cancelSubscription(env, req) {
     url.searchParams.get("purchaseToken") ||
     url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
-  const obstoken = await obfuscate(purchaseToken);
+  const sku =
+    url.searchParams.get("sku") ||
+    url.searchParams.get("productId") ||
+    url.searchParams.get("productid") ||
+    stdProductId;
   // TODO: use vcode = url.searchParams.get("vcode") to accept or reject cancellation
 
+  if (emptyString(purchaseToken)) {
+    return r400j({ error: "missing purchase token" });
+  }
+  if (emptyString(sku)) {
+    return r400j({ error: "missing product id" });
+  }
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400j({ error: "missing/invalid client id" });
   }
 
-  logd(`sub: cancel for ${cid}; test? ${test} for ${obstoken}`);
+  const obstoken = await obfuscate(purchaseToken);
+
+  logd(`sub: cancel for ${cid}; test? ${test} ${sku} for ${obstoken}`);
+
+  const planYears = onetimePlanYears(sku);
+  if (planYears > 0) {
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
+      return await refundOnetimePurchase(env, cid, purchaseToken, planYears);
+    });
+  } else if (sku === onetimeProductId) {
+    return r400j({
+      error: "missing onetime plan id",
+      purchaseId: obstoken,
+    });
+  }
 
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
@@ -1636,15 +1818,39 @@ export async function revokeSubscription(env, req) {
     url.searchParams.get("purchaseToken") ||
     url.searchParams.get("purchasetoken");
   const test = url.searchParams.has("test");
-  const obstoken = await obfuscate(purchaseToken);
+  const sku =
+    url.searchParams.get("sku") ||
+    url.searchParams.get("productId") ||
+    url.searchParams.get("productid") ||
+    stdProductId;
   // TODO: only supported vcode = url.searchParams.get("vcode") can revoke purchase
 
+  if (emptyString(purchaseToken)) {
+    return r400j({ error: "missing purchase token" });
+  }
+  if (emptyString(sku)) {
+    return r400j({ error: "missing product id" });
+  }
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400j({ error: "missing/invalid client id" });
   }
 
+  const obstoken = await obfuscate(purchaseToken);
+
   // TODO: only allow credentialless clients to access this endpoint
-  logd(`sub: revoke for ${cid}; test? ${test} for ${obstoken}`);
+  logd(`sub: revoke for ${cid}; test? ${test} ${sku} for ${obstoken}`);
+
+  const planYears = onetimePlanYears(sku);
+  if (planYears > 0) {
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
+      return await refundOnetimePurchase(env, cid, purchaseToken, planYears);
+    });
+  } else if (sku === onetimeProductId) {
+    return r400j({
+      error: "missing onetime plan id",
+      purchaseId: obstoken,
+    });
+  }
 
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
@@ -2293,10 +2499,105 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       url.searchParams.get("purchasetoken");
     const cid = url.searchParams.get("cid");
     const force = url.searchParams.get("force");
+    const sku =
+      url.searchParams.get("sku") ||
+      url.searchParams.get("productId") ||
+      url.searchParams.get("productid") ||
+      stdProductId;
     // TODO: use vcode = url.searchParams.get("vcode") to accept or reject purchases
 
-    if (!purchasetoken) {
-      return r400j({ error: "purchaseToken is required" });
+    if (emptyString(purchasetoken)) {
+      return r400j({ error: "missing purchase token" });
+    }
+    if (emptyString(sku)) {
+      return r400j({ error: "missing product id" });
+    }
+    if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      return r400j({ error: "missing/invalid client id" });
+    }
+
+    const planYears = onetimePlanYears(sku);
+    if (planYears > 0 || sku === onetimeProductId) {
+      if (planYears <= 0) {
+        return r400j({ error: "missing onetime plan id" });
+      }
+      const purchase = await getOnetimeProduct(
+        env,
+        onetimeProductId,
+        purchasetoken,
+      );
+      const test = isOnetimeTest(purchase);
+      const ackd = isOnetimeAck(purchase);
+      const paid = isOnetimePaid(purchase);
+      const pending = isOnetimeUnpaid(purchase);
+      const obstoken = await obfuscate(purchasetoken);
+
+      return await als.run(new ExecCtx(env, test, obstoken), async () => {
+        const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
+        if (
+          dbres == null ||
+          dbres.results == null ||
+          dbres.results.length <= 0
+        ) {
+          return r400j({ error: "purchase not found", purchaseId: obstoken });
+        }
+        const entry = dbres.results[0];
+        const storedcid = entry.cid;
+        if (storedcid !== cid) {
+          return r400j({
+            error: "cid mismatch",
+            purchaseId: obstoken,
+          });
+        }
+
+        if (!paid || pending) {
+          return r400j({
+            error: "purchase not completed",
+            purchaseId: obstoken,
+          });
+        }
+
+        const expiry = determineOnetimeExpiry(purchase, planYears);
+        const ent = await getOrGenWsEntitlement(env, cid, expiry, "year");
+        if (!force && !ent) {
+          return r500j({ error: "failed to get entitlement", cid: cid });
+        }
+        if (ent.status === "banned" && !force) {
+          return r400j({
+            error: "user banned",
+            cid: cid,
+            purchaseId: obstoken,
+          });
+        }
+        if (ent.status === "expired" && !force) {
+          return r400j({
+            error: "entitlement expired",
+            cid: cid,
+            purchaseId: obstoken,
+          });
+        }
+        if (ent.status !== "valid" && !force) {
+          return r400j({
+            error: "invalid entitlement status",
+            status: ent.status,
+            cid: cid,
+            purchaseId: obstoken,
+          });
+        }
+
+        if (!ackd) {
+          await ackOnetimePurchase(env, sku, purchasetoken, ent);
+        }
+
+        return r200j({
+          success: true,
+          message: "Onetime purchase acknowledged",
+          cid: cid,
+          productId: sku,
+          purchaseId: obstoken,
+          expiry: expiry.toISOString(),
+        });
+      });
     }
 
     // get subscription details from google play
@@ -2504,7 +2805,7 @@ async function isPurchaseTokenLinked(env, t) {
   if (out.results == null || out.results.length === 0) {
     return false; // no linked purchase token found
   }
-  logi(`tok: is linked? ${t}: ${JSON.stringify(out.results)}`);
+  logi(`tok: is linked? ${obsToken()}: ${JSON.stringify(out.results)}`);
   return out.results.length > 0;
 }
 

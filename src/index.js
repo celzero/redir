@@ -109,24 +109,22 @@ async function handle(r, env, ctx) {
 
       if (p2 === "ack") {
         // TODO: must be a POST request
-        // TODO: ack onetime purchase too, if &sku=onetime.tier
-        // g/ack?cid&purchaseToken&vcode[&force]
+        // g/ack?cid&purchaseToken&vcode[&force&sku]
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
         // TODO: get entitlement for onetime purchase too, if &sku=onetime.tier
-        // g/entitlements?cid&test&vcode
+        // g/entitlements?cid&test&vcode[&sku]
         return googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // TODO: must be a POST request
-        // TODO: cancel onetime purchase too, if &sku=onetime.tier
-        // g/stop?cid&purchaseToken&test&vcode
+        // g/stop?cid&purchaseToken&test&vcode[&sku]
         return cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // TODO: must be a POST request
         // TODO: refund onetime purchase too, if &sku=onetime.tier
-        // g/refund?cid&purchaseToken&test&vcode
+        // g/refund?cid&purchaseToken&test&vcode[&sku]
         return revokeSubscription(env, r);
       }
       return r400("g: unknown resource " + p2);
