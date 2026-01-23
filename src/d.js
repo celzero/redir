@@ -60,6 +60,14 @@ export function testmode() {
   return cfg?.test || false;
 }
 
+/**
+ * @returns {boolean} Whether the code expects account identifier to never
+ * change between subscription renewals or onetime purchases.
+ */
+export function accountIdentifiersImmutable() {
+  return true;
+}
+
 export function wrap(env) {
   if (env == null) env = {};
 
@@ -83,9 +91,11 @@ export function wrap(env) {
   if (env.SVCDB == null) env.SVCDB = null;
   if (env.SVCDBTEST == null) env.SVCDBTEST = null;
 
-  if (env.REDIRDB == null) env.DB = env.SVCDB; // "rpn" d1 database
+  if (env.REDIRDB == null)
+    env.DB = env.SVCDB; // "rpn" d1 database
   else env.DB = env.REDIRDB; // "rpn"
-  if (env.REDIRDBTEST == null) env.DBTEST = env.SVCDBTEST; // "rpn-test"
+  if (env.REDIRDBTEST == null)
+    env.DBTEST = env.SVCDBTEST; // "rpn-test"
   else env.DBTEST = env.REDIRDBTEST; // "rpn-test"
 
   // secrets
