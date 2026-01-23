@@ -16,6 +16,7 @@ import * as dbx from "./sql/dbx.js";
 const resourceuser = "Users";
 const resourcesession = "Session";
 const creatuser = resourceuser + "?session_type_id=4&plan=";
+const updateuser = resourceuser + "?plan=";
 
 const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
 
@@ -228,7 +229,7 @@ export class WSEntitlement {
       await enc.encryptText(env, this.cid, this.sessiontoken),
       this.expiry,
       this.status,
-      this.test
+      this.test,
     );
   }
 }
@@ -258,12 +259,12 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       cid,
       wsuser.userId,
       aad,
-      wsuser.sessionAuthHash
+      wsuser.sessionAuthHash,
     );
     if (!enctok) {
       const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
       throw new Error(
-        `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`
+        `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`,
       );
     }
     // insert new creds in to the database
@@ -279,7 +280,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         // means this new wsuser was not inserted at all.
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
         log.e(
-          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`
+          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`,
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
@@ -289,7 +290,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         wsuser.sessionAuthHash,
         wsuser.expiry,
         wsStatus(wsuser),
-        testmode()
+        testmode(),
       );
     }
   }
@@ -299,7 +300,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   // if WSEntitlement has "expired", attempt to renew it
   if (c.status === "expired" || renew) {
     log.w(
-      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`
+      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`,
     );
     try {
       // No downgrade of the user is necessary if they stop paying
@@ -316,7 +317,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         // existing "c" has not expired ... use it
         log.e(
           `getOrGen: err renewing entitlement for ${c.cid} ${c.status}`,
-          err
+          err,
         );
       }
     }
@@ -387,7 +388,7 @@ export async function creds(env, cid, op = "get") {
     aadhex = bin.str2byt2hex(wstokaad);
   }
   log.d(
-    `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`
+    `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`,
   );
   const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tokhex)) {
@@ -428,26 +429,20 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
   if (c.expiry.getTime() >= subExpiryNoGraceMs) {
     log.d(
-      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiryNoGraceMs}`
+      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiryNoGraceMs}`,
     );
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
-  /*
-  curl --location --request PUT '.../Users?plan=month|year&delete_credentials=0|1' \
-    --header 'X-WS-WL-ID: ' \
-    --header 'X-WS-WL-Token: ' \
-    --header 'Authorization: Bearer ...' \
-   */
 
   const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
 
   log.i(
-    `updateCreds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`
+    `updateCreds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot update entitlement; subscription expiring soon: ${subExpiry.toISOString()}`
+      `cannot update entitlement; subscription expiring soon: ${subExpiry.toISOString()}`,
     );
   }
 
@@ -460,56 +455,111 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   // Issuing subsequent PUT requests would keep adding +1mo (or +1y)
   // to this date. If it's the last day of the month, the +1mo will
   // keep it the same (30th -> 31st -> 30th).
-  const url =
-    apiurl(env) + resourceuser + "?plan=" + plan + "&delete_credentials=0";
-  const headers = {
-    "X-WS-WL-ID": apiaccess(env),
-    "X-WS-WL-Token": apisecret(env),
-    Authorization: `Bearer ${c.sessiontoken}`,
-  };
-  const r = await fetch(url, { method: "PUT", headers });
-  if (!r.ok) {
-    const err = await r.json();
-    const errstr = JSON.stringify(err);
-    log.w(`update creds: ${r.status} forbidden: ${errstr}`);
-    throw new Error(`could not update creds: ${r.status} ${errstr}`);
-  }
-  // data = { data: { ... }, metadata: { ... } }
-  /*
-  {
-    "data": {
-        "success": 1
-    },
-    "metadata": {
-        "serviceRequestId": "string",
-        "hostName": "string",
-        "duration": "string",
-        "logStatus": "string",
-        "md5": "string"
+  let tries = 3;
+  let updates = 0;
+  const errors = [];
+  for (let i = 0; i < execCount && tries > 0; i++) {
+    try {
+      if (i > 0) {
+        await sleep(1);
+      }
+      /*
+      curl --location --request PUT '.../Users?plan=month|year&delete_credentials=0|1' \
+      --header 'X-WS-WL-ID: ' \
+      --header 'X-WS-WL-Token: ' \
+      --header 'Authorization: Bearer ...' \
+      */
+      const url = apiurl(env) + updateuser + plan + "&delete_credentials=0";
+      const headers = {
+        "X-WS-WL-ID": apiaccess(env),
+        "X-WS-WL-Token": apisecret(env),
+        Authorization: `Bearer ${c.sessiontoken}`,
+      };
+      const r = await fetch(url, { method: "PUT", headers });
+      if (!r.ok) {
+        const err = await r.json();
+        const errstr = JSON.stringify(err);
+        log.e(
+          `update creds: ${i}/${execCount}/${tries}; ${r.status} forbidden: ${errstr}`,
+        );
+        errors.push(errstr);
+        i -= 1; // retry
+        tries -= 1;
+        await sleep(3);
+        continue;
+      }
+      // data = { data: { ... }, metadata: { ... } }
+      /*
+      {
+        "data": {
+            "success": 1
+        },
+        "metadata": {
+            "serviceRequestId": "string",
+            "hostName": "string",
+            "duration": "string",
+            "logStatus": "string",
+            "md5": "string"
+        }
+      }
+    */
+      const data = await r.json();
+      if (!data || typeof data !== "object") {
+        log.e(
+          `update creds: ${i}/${execCount}/${tries}; invalid response from WS server`,
+        );
+        errors.push("ws: invalid response");
+        i -= 1; // retry
+        tries -= 1;
+        await sleep(3);
+        continue;
+      }
+      const meta = new WSMetaResponse(data.metadata);
+      const wsdone = new WSSuccessResponse(data.data);
+      if (!wsdone || wsdone.success !== 1) {
+        log.e(
+          `update creds: not successful for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}] (sub expiry: ${subExpiry}) by` +
+            ` ${meta.hostName}, ${meta.serviceRequestId}, ${meta.md5}`,
+        );
+        errors.push(`ws: not successful ${meta.serviceRequestId}`);
+        i -= 1; // retry
+        tries -= 1;
+        await sleep(3);
+        continue;
+      }
+      tries = 3; // reset tries on success
+      updates += 1;
+    } catch (ex) {
+      log.e(`update creds: #${tries}+${i} err updating ${c.cid}:`, ex);
+      errors.push(ex.message);
+      i -= 1; // retry
+      tries -= 1;
+      await sleep(3);
+      continue;
     }
   }
-  */
-  const data = await r.json();
-  if (!data || typeof data !== "object") {
-    throw new Error("invalid response from WS server");
-  }
-  const meta = new WSMetaResponse(data.metadata);
-  const wsdone = new WSSuccessResponse(data.data);
-  if (!wsdone || wsdone.success !== 1) {
+
+  if (updates <= 0) {
     throw new Error(
-      `upgrade not successful for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}] (sub expiry: ${subExpiry}) by` +
-        ` ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
+      `update creds: err for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}] (sub expiry: ${subExpiry}): ${errors.join("; ")}`,
     );
   }
-  // TODO: fetch the updated user data
+
+  const note = updates == execCount ? log.i : log.w;
+  // TODO: worker analytics on missed updates?
+  note(
+    `update creds: err for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}x${updates}] (sub expiry: ${subExpiry})`,
+  );
+
+  // TODO: change all fields in WSUser to be from the updated WSUser?
   const [wsstatus, wsuser] = await credsStatus(env, c.sessiontoken);
   // do not expect wsstatus to be "unknown" or "invalid" here
   return new WSEntitlement(
     c.cid,
-    c.sessiontoken,
+    c.sessiontoken, // TODO: check if wsuser.sessionAuthHash differs?
     wsuser?.expiry,
     wsstatus,
-    testmode()
+    testmode(),
   );
 }
 
@@ -562,16 +612,15 @@ async function newCreds(env, expiry, requestedPlan) {
   const [plan, execCount] = expiry2plan(expiry, testing);
 
   log.i(
-    `new creds (test? ${testing}) until ${expiry}; asked: ${requestedPlan}, got: ${plan}; c: ${execCount}`
+    `new creds (test? ${testing}) until ${expiry}; asked: ${requestedPlan}, got: ${plan}; c: ${execCount}`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot create (test? ${testing}) entitlement; subscription expiring imminently`
+      `cannot create (test? ${testing}) entitlement; subscription expiring imminently`,
     );
   }
 
-  // TODO: repeatedly call execCount times
   const url = apiurl(env) + creatuser + plan;
   const headers = {
     "X-WS-WL-ID": apiaccess(env),
@@ -582,7 +631,7 @@ async function newCreds(env, expiry, requestedPlan) {
     const err = await r.json();
     const errstr = JSON.stringify(err);
     log.w(
-      `new creds: ${url}, ${r.status}; test? ${testing}, forbidden: ${errstr}`
+      `new creds: ${url}, ${r.status}; test? ${testing}, forbidden: ${errstr}`,
     );
     throw new Error(`could not create new creds: ${r.status} ${errstr}`);
   }
@@ -592,11 +641,89 @@ async function newCreds(env, expiry, requestedPlan) {
     throw new Error(`invalid response from WS (url: ${url}, test? ${testing})`);
   }
   const meta = new WSMetaResponse(data.metadata);
-  const wsuser = new WSUser(data.data);
-  if (!wsuser.userId || !wsuser.sessionAuthHash) {
+  let wsuser = new WSUser(data.data);
+  if (
+    bin.emptyString(wsuser.userId) ||
+    bin.emptyString(wsuser.sessionAuthHash)
+  ) {
     throw new Error(
-      `new creds: (test? ${testing}) missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`
+      `new creds: (test? ${testing}) missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`,
     );
+  }
+
+  execCount -= 1; // already executed once above
+  let tries = 3;
+  for (let i = 0; i < execCount && tries > 0; i++) {
+    try {
+      if (i > 0) {
+        await sleep(1);
+      }
+      /*
+        curl --location --request PUT '.../Users?plan=month|year&delete_credentials=0|1' \
+        --header 'X-WS-WL-ID: ' \
+        --header 'X-WS-WL-Token: ' \
+        --header 'Authorization: Bearer ...' \
+      */
+      // see: maybeUpdateCreds for a primer on user plan updates
+      const url2 = apiurl(env) + updateuser + plan + "&delete_credentials=0";
+      const r2 = await fetch(url2, {
+        method: "PUT",
+        headers: {
+          ...headers,
+          Authorization: `Bearer ${wsuser.sessionAuthHash}`,
+        },
+      });
+
+      if (!r2.ok) {
+        const err = await r2.json();
+        const errstr = JSON.stringify(err);
+        log.e(
+          `new creds upgrade ${i}/${execCount}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
+        );
+        i -= 1; // retry
+        tries -= 1;
+        await sleep(3);
+        continue;
+      }
+      // data = { data: { ... }, metadata: { ... } }
+      const data2 = await r2.json();
+      if (!data2 || typeof data2 !== "object") {
+        log.e(
+          `new creds upgrade ${i}/${execCount}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
+        );
+        errors.push("ws: invalid response");
+        i -= 1; // retry
+        tries -= 1;
+        await sleep(3);
+        continue;
+      }
+
+      const meta2 = new WSMetaResponse(data2.metadata);
+      const wsdone = new WSSuccessResponse(data2.data);
+      if (!wsdone || wsdone.success !== 1) {
+        i -= 1; // retry
+        tries -= 1;
+        log.e(
+          `new creds upgrade ${i}/${execCount}/${tries} not successful for (test? ${testing}) ` +
+            `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.hostName}`,
+        );
+        await sleep(3);
+        continue;
+      }
+      log.i(
+        `new creds upgrade ${i}/${execCount}/${tries} successful for ${plan}`,
+      );
+      tries = 3; // reset tries on success
+    } catch (err) {
+      log.e(
+        `new creds: #${tries}+${i} err ${wsuser.userId} during upgrade:`,
+        err,
+      );
+      i -= 1; // retry
+      tries -= 1;
+      await sleep(3);
+      continue;
+    }
   }
   return wsuser; // Return the new credentials
 }
@@ -715,7 +842,7 @@ async function deleteCreds(env, sessiontoken) {
         return true; // Successfully deleted
       }
       log.w(
-        `deleteCreds: attempt ${tries} failed: ${r.status} ${r.statusText}`
+        `deleteCreds: attempt ${tries} failed: ${r.status} ${r.statusText}`,
       );
       /* 403 Forbidden
       {
@@ -760,7 +887,7 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
     if (totalDays < 0) {
       // in the past
       throw new Error(
-        `ws: plan expired ${expiry} (current end: ${since}), cannot create creds`
+        `ws: plan expired ${expiry} (current end: ${since}), cannot create creds`,
       );
     }
     if (totalDays >= 10) {
