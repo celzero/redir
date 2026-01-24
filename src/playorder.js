@@ -1373,36 +1373,30 @@ async function handleOneTimeProductNotification(env, notif) {
   const purchasetoken = notif.purchaseToken;
   const sku = notif.sku || "";
   const obstoken = await obfuscate(purchasetoken);
-  const planYears = onetimePlanYears(sku);
   const notifType = onetimeNotificationTypeStr(notif);
-  const onetimeState = onetimePurchaseStateStr(notif);
 
-  if (emptyString(sku) || planYears <= 0) {
-    loge(
-      `onetime: state? ${onetimeState}; unknown sku ${sku} for ${obstoken}; got yrs: ${planYears}, expected: ${twoYearlyBasePlanId}/${fiveYearlyBasePlanId}`,
-    );
+  if (emptyString(sku)) {
+    loge(`onetime: type? ${notifType}; unknown sku ${sku} for ${obstoken}`);
     return;
   }
 
   // allow error to propagate, so google rtdn will retry
-  const purchase = await getOnetimeProduct(
-    env,
-    onetimeProductId,
-    purchasetoken,
-  );
-  const test = isOnetimeTest(purchase);
-  const ackd = isOnetimeAck(purchase);
-  const paid = isOnetimePaid(purchase);
-  const canceled = isOnetimeCanceled(notif, purchase);
-  const pending = isOnetimeUnpaid(purchase);
+  const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+  const test = isOnetimeTest2(purchase2);
+  const ackd = isOnetimeAck2(purchase2);
+  const paid = isOnetimePaid2(purchase2);
+  const cancelled = isOnetimeCanceled2(notif, purchase2);
+  const pending = isOnetimeUnpaid2(purchase2);
+  const onetimeState = onetimePurchaseStateStr2(purchase2);
+  const plan = onetimePlan(purchase2);
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / years=${planYears}`,
+      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan}`,
     );
 
-    const cid = await getCidThenPersistProduct(env, purchase);
-    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase);
+    const cid = await getCidThenPersistProduct(env, purchase2);
+    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     if (pending) {
       logi(
@@ -1439,14 +1433,19 @@ async function handleOneTimeProductNotification(env, notif) {
       return;
     }
 
-    const expiry = determineOnetimeExpiry(purchase, planYears);
-    const ent = await getOrGenWsEntitlement(env, cid, expiry, "year");
+    if (plan == null) {
+      throw new Error(`onetime: missing plan info for ${obstoken} sku=${sku}`);
+    }
+
+    const expiry = plan.expiry;
+    const ent = await getOrGenWsEntitlement(env, cid, expiry, plan.plan);
     if (ackd) {
       logi(
         `onetime: already ack: ${cid} for ${obstoken} sku=${sku}; test? ${test}`,
       );
       return;
     }
+
     if (ent == null) {
       throw new Error(
         `onetime: no ent for ${cid} but onetime active; sku=${sku}`,
@@ -1698,7 +1697,7 @@ async function getSubscription(env, purchaseToken) {
 }
 
 /**
- * TODO: move to v2; doesn't require productId to get information on a purchaseToken
+ * @deprecated use getOnetimeProductV2; doesn't require productId to get information on a purchaseToken
  * @param {any} env
  * @param {string} productId
  * @param {string} purchaseToken
@@ -1758,7 +1757,9 @@ async function getOnetimeProductV2(env, purchaseToken) {
   if (json != null && !emptyString(json.kind)) {
     return new ProductPurchaseV2(json);
   } else {
-    throw new Error(`onetime: v2 json err ${r.status}: ${JSON.stringify(json)}`);
+    throw new Error(
+      `onetime: v2 json err ${r.status}: ${JSON.stringify(json)}`,
+    );
   }
 }
 
@@ -1786,79 +1787,45 @@ async function refundOrder(env, orderId) {
 }
 
 /**
- * @param {number} planYears
- * @returns {number}
- */
-function refundWindowDays(planYears) {
-  if (planYears === 2) return 14;
-  if (planYears === 5) return 28;
-  return 3;
-}
-
-/**
- * @param {number} startMillis
- * @param {number} windowDays
- * @returns {boolean}
- */
-function withinRefundWindow(startMillis, windowDays) {
-  if (!Number.isFinite(startMillis) || startMillis <= 0) return false;
-  if (!Number.isFinite(windowDays) || windowDays <= 0) return false;
-  const now = Date.now();
-  const windowMs = windowDays * 24 * 60 * 60 * 1000;
-  return now - startMillis <= windowMs;
-}
-
-/**
  * @param {any} env
  * @param {string} cid
  * @param {string} purchaseToken
- * @param {number} planYears
  * @returns {Promise<Response>}
  */
-async function refundOnetimePurchase(env, cid, purchaseToken, planYears) {
+async function refundOnetimePurchase(env, cid, purchaseToken) {
+  const purchase2 = await getOnetimeProductV2(env, purchaseToken);
+  const plan = onetimePlan(purchase2);
+  const orderId = purchase2.orderId;
   const obstoken = obsToken();
-  const test = testmode();
-  const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
-  // TODO: support forced refunds even when data is missing or mismatched in db
-  if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
-    loge(`onetime: refund not found for ${obstoken}`);
+
+  log.i(
+    `onetime: refund request for ${cid}; orderId=${orderId} / tok=${obstoken}`,
+  );
+
+  if (emptyString(orderId) || emptyString(purchaseToken)) {
     return r400j({
-      error: "purchase not found",
-      purchaseId: obstoken,
-    });
-  }
-  const entry = dbres.results[0];
-  const storedcid = entry.cid;
-  if (storedcid !== cid) {
-    loge(`onetime: refund cid mismatch: ${cid} != ${storedcid}`);
-    return r400j({
-      error: "cannot refund, cid mismatch",
+      error: "missing order information",
       purchaseId: obstoken,
     });
   }
 
-  const purchase = await getOnetimeProduct(
-    env,
-    onetimeProductId,
-    purchaseToken,
-  );
-  const orderId = purchase.orderId || "";
-  if (emptyString(orderId)) {
+  if (plan == null) {
     return r400j({
-      error: "missing order id",
+      error: "missing plan information",
       purchaseId: obstoken,
+      orderId: orderId,
     });
   }
 
   // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
-  const windowDays = refundWindowDays(planYears);
-  if (!withinRefundWindow(purchase.purchaseTimeMillis, windowDays)) {
+  if (!plan.withinRefundWindow) {
     return r400j({
       error: "refund window exceeded",
       purchaseId: obstoken,
       orderId: orderId,
-      windowDays: windowDays,
-      startMs: purchase.purchaseTimeMillis,
+      windowDays: plan.refundWindowDays,
+      start: plan.startDate,
+      expiry: plan.expiryDate,
     });
   }
 
@@ -1870,6 +1837,8 @@ async function refundOnetimePurchase(env, cid, purchaseToken, planYears) {
   } catch (e) {
     loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
   }
+
+  log.i(`onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken}`);
 
   return r200j({
     success: true,
@@ -1918,18 +1887,6 @@ export async function cancelSubscription(env, req) {
 
   logd(`sub: cancel for ${cid}; test? ${test} ${sku} for ${obstoken}`);
 
-  const planYears = onetimePlanYears(sku);
-  if (planYears > 0) {
-    return await als.run(new ExecCtx(env, test, obstoken), async () => {
-      return await refundOnetimePurchase(env, cid, purchaseToken, planYears);
-    });
-  } else if (sku === onetimeProductId) {
-    return r400j({
-      error: "missing onetime plan id",
-      purchaseId: obstoken,
-    });
-  }
-
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
@@ -1950,7 +1907,22 @@ export async function cancelSubscription(env, req) {
       });
     }
 
-    const sub = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    if (sku === onetimeProductId) {
+      return await refundOnetimePurchase(env, cid, purchaseToken);
+    }
+
+    const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    const sub = await getSubscription(env, purchaseToken);
+
+    if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
+      loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
+      return r400j({
+        error: "cannot cancel, subscription mismatch",
+        purchaseId: obstoken,
+      });
+    }
+
+    // TODO: compare sub with sub got from db
     const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
     const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
 
@@ -2046,18 +2018,6 @@ export async function revokeSubscription(env, req) {
   // TODO: only allow credentialless clients to access this endpoint
   logd(`sub: revoke for ${cid}; test? ${test} ${sku} for ${obstoken}`);
 
-  const planYears = onetimePlanYears(sku);
-  if (planYears > 0) {
-    return await als.run(new ExecCtx(env, test, obstoken), async () => {
-      return await refundOnetimePurchase(env, cid, purchaseToken, planYears);
-    });
-  } else if (sku === onetimeProductId) {
-    return r400j({
-      error: "missing onetime plan id",
-      purchaseId: obstoken,
-    });
-  }
-
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
@@ -2077,7 +2037,21 @@ export async function revokeSubscription(env, req) {
       });
     }
 
-    const sub = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    if (sku === onetimeProductId) {
+      return await refundOnetimePurchase(env, cid, purchaseToken);
+    }
+
+    const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+    const sub = await getSubscription(env, purchaseToken);
+    if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
+      loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
+      return r400j({
+        error: "cannot cancel, subscription mismatch",
+        purchaseId: obstoken,
+      });
+    }
+
+    // TODO: test against db entry?
     const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
     const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
 
@@ -2094,15 +2068,16 @@ export async function revokeSubscription(env, req) {
       });
     }
 
-    const thres = Date.now() - revokeThresholdMs;
-    const start = sub.startTime ? new Date(sub.startTime) : new Date(0);
-    if (thres > start.getTime()) {
+    const gprod = productInfo(sub);
+
+    if (!gprod.withinRefundWindow) {
       // If sub is not within threshold millis ago, do not revoke it.
       loge(`sub: revoke ${obstoken} started too long ago, cannot revoke`);
       return r400j({
         error: "cannot revoke, sub too old, email hello@celzero.com",
-        when: start.toISOString(),
-        threshold: new Date(thres).toISOString(),
+        windowDays: gprod.refundWindowDays,
+        start: gprod.startDate,
+        expiry: gprod.expiryDate,
         purchaseId: obstoken,
       });
     }
@@ -2305,7 +2280,7 @@ async function getCid(env, sub) {
 
 /**
  * @param {any} env
- * @param {ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @returns {Promise<string|null>}
  */
 async function getCidThenPersistProduct(env, purchase) {
@@ -2316,7 +2291,7 @@ async function getCidThenPersistProduct(env, purchase) {
 
 /**
  * @param {any} env
- * @param {ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @returns {Promise<string|null>}
  */
 async function getCidProduct(env, purchase) {
@@ -2366,7 +2341,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
 
 /**
  * @param {any} env
- * @param {ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @param {boolean} gen
  * @param {boolean} insert
  * @returns {Promise<string|null>}
@@ -2413,7 +2388,7 @@ async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
  * @param {string} cid
  * @param {string} pt
  * @param {string} sku
- * @param {ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @returns {Promise<dbx.D1Out>}
  */
 async function registerOrUpdateOnetimePurchase(env, cid, pt, purchase) {
@@ -2459,6 +2434,7 @@ function productInfo(sub) {
   if (!sub || !sub.lineItems || sub.lineItems.length === 0) {
     throw new Error("No sub line items");
   }
+  const start = sub.startTime ? new Date(sub.startTime) : null;
   for (const item of sub.lineItems) {
     // multiple line items for deferred upgrades/downgrades
     // developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement
@@ -2467,16 +2443,17 @@ function productInfo(sub) {
     const deferred = emptyString(item.expiryTime);
     if (deferred) continue; // no-op
     // TODO: match incoming purchasetoken with orderid?
-    return planInfo(item);
+    return subscriptionPlan(item, start);
   }
   return null; // no valid line items found
 }
 
 /**
  * @param {SubscriptionLineItem} item
+ * @param {Date|null} start
  * @return {GEntitlement|null} - The entitlement based on the product ID.
  */
-function planInfo(item) {
+function subscriptionPlan(item, start) {
   const productId = item.productId;
   if (!knownProducts.has(productId)) {
     return null; // unknown product
@@ -2485,9 +2462,9 @@ function planInfo(item) {
   // "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z", or "2014-10-02T15:01:23+05:30".
   const until = item.expiryTime ? new Date(item.expiryTime) : null;
   if (productId === monthlyProxyProductId) {
-    return GEntitlement.monthly(productId, until);
+    return GEntitlement.monthly(productId, start, until);
   } else if (productId === annualProxyProductId) {
-    return GEntitlement.yearly(productId, until);
+    return GEntitlement.yearly(productId, start, until);
   }
   if (!item.offerDetails || !item.offerDetails.basePlanId) {
     return null; // no base plan
@@ -2495,37 +2472,59 @@ function planInfo(item) {
   const baseplan = item.offerDetails.basePlanId;
   const ent = knownBasePlans.get(baseplan);
   if (ent != null) {
-    return GEntitlement.until(ent, until);
+    return GEntitlement.until(ent, start, until);
   }
   return null; // unknown base plan
 }
 
 /**
- * @param {string} sku
- * @returns {number} - 2 or 5 if valid sku; else 0.
+ * @param {ProductPurchaseV2} p
+ * @returns {GEntitlement?} - If valid, else null.
  */
-function onetimePlanYears(sku) {
-  // TODO: return GEntitlement instead like planInfo
-  if (sku === twoYearlyBasePlanId) return 2;
-  if (sku === fiveYearlyBasePlanId) return 5;
-  return 0;
-}
-
-/**
- * @param {ProductPurchaseV1} purchase
- * @param {number} years
- * @returns {Date}
- */
-function determineOnetimeExpiry(purchase, years) {
-  let start = Date.now();
-  if (purchase && Number.isFinite(purchase.purchaseTimeMillis)) {
-    if (purchase.purchaseTimeMillis > 0) {
-      start = purchase.purchaseTimeMillis;
-    }
+function onetimePlan(p) {
+  if (p == null) {
+    log.e(`onetime: invalid product purchase ${p}`);
+    return null;
   }
-  const exp = new Date(start);
-  exp.setUTCFullYear(exp.getUTCFullYear() + years);
-  return exp;
+
+  const test = isOnetimeTest2(p);
+  const products = p.productLineItem;
+  if (!Array.isArray(products) || products.length === 0) {
+    log.e(`onetime: no product line items ${p}; test? ${test}`);
+    return null;
+  }
+
+  for (const item of products) {
+    if (!knownProducts.has(item.productId)) {
+      log.e(`onetime: unknown product id ${item.productId}; test? ${test}`);
+      continue; // unknown product
+    }
+    // purchaseOptionId is the "baseplan" equivalent for onetime products
+    const baseplan = item.productOfferDetails?.purchaseOptionId;
+    const start = p.purchaseCompletionTime
+      ? new Date(p.purchaseCompletionTime)
+      : null;
+    if (baseplan == null || start == null) {
+      log.e(
+        `onetime: missing baseplan or start time; ${item.productId}; test? ${test}`,
+      );
+      continue; // no base plan or start time
+    }
+    let ent = knownBasePlans.get(baseplan);
+    if (ent == null) {
+      log.e(
+        `onetime: unknown baseplan ${baseplan} for ${item.productId}; test? ${test}`,
+      );
+      continue; // unknown base plan
+    }
+    ent = GEntitlement.since(ent, start);
+    log.d(
+      `onetime: found plan ${baseplan} for ${item.productId}; test? ${test}`,
+    );
+    return ent;
+  }
+
+  return null;
 }
 
 /**
@@ -2630,6 +2629,16 @@ function isOnetimeAck(purchase) {
 }
 
 /**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimeAck2(purchase2) {
+  return (
+    purchase2.acknowledgementState === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
+  );
+}
+
+/**
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
@@ -2638,11 +2647,28 @@ function isOnetimePaid(purchase) {
 }
 
 /**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimePaid2(purchase2) {
+  return purchase2.purchaseStateContext?.purchaseState === "PURCHASED";
+}
+
+/**
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
 function isOnetimeUnpaid(purchase) {
   return purchase.purchaseState === 2;
+}
+
+/**
+ *
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimeUnpaid2(purchase2) {
+  return purchase2.purchaseStateContext?.purchaseState === "PENDING";
 }
 
 /**
@@ -2655,6 +2681,18 @@ function isOnetimeCanceled(notif, purchase) {
 }
 
 /**
+ * @param {OneTimeProductNotification} notif
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimeCanceled2(notif, purchase2) {
+  return (
+    notif.notificationType === 2 ||
+    purchase2.purchaseStateContext?.purchaseState === "CANCELLED"
+  );
+}
+
+/**
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
@@ -2663,22 +2701,22 @@ function isOnetimeTest(purchase) {
 }
 
 /**
+ * @param {ProductPurchaseV2} purchase
+ * @returns {boolean}
+ */
+function isOnetimeTest2(purchase) {
+  return purchase.testPurchaseContext?.fopType === "TEST";
+}
+
+/**
  *
- * @param {ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2} purchase2
  * @returns {"PURCHASED"|"CANCELED"|"PENDING"|string}
  */
-function onetimePurchaseStateStr(purchase) {
-  const ps = purchase.purchaseState || -2;
-  switch (ps) {
-    case 0:
-      return "PURCHASED";
-    case 1:
-      return "CANCELED";
-    case 2:
-      return "PENDING";
-    default:
-      return "UNKNOWN_" + ps;
-  }
+function onetimePurchaseStateStr2(purchase2) {
+  const ack = purchase2.acknowledgementState;
+  const ps = purchase2.purchaseStateContext?.purchaseState;
+  return `${ps}|${ack}`;
 }
 
 /**
@@ -2722,20 +2760,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       return r400j({ error: "missing/invalid client id" });
     }
 
-    const planYears = onetimePlanYears(sku);
-    if (planYears > 0 || sku === onetimeProductId) {
-      if (planYears <= 0) {
-        return r400j({ error: "missing onetime plan id" });
-      }
-      const purchase = await getOnetimeProduct(
-        env,
-        onetimeProductId,
-        purchasetoken,
-      );
-      const test = isOnetimeTest(purchase);
-      const ackd = isOnetimeAck(purchase);
-      const paid = isOnetimePaid(purchase);
-      const pending = isOnetimeUnpaid(purchase);
+    if (sku === onetimeProductId) {
+      const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+      const test = isOnetimeTest2(purchase2);
+      const ackd = isOnetimeAck2(purchase2);
+      const paid = isOnetimePaid2(purchase2);
+      const pending = isOnetimeUnpaid2(purchase2);
       const obstoken = await obfuscate(purchasetoken);
 
       return await als.run(new ExecCtx(env, test, obstoken), async () => {
@@ -2764,9 +2794,16 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
-        const expiry = determineOnetimeExpiry(purchase, planYears);
-        const ent = await getOrGenWsEntitlement(env, cid, expiry, "year");
-        if (!force && !ent) {
+        const gent = onetimePlan(purchase2);
+        if (gent == null) {
+          return r400j({
+            error: "missing plan info",
+            purchaseId: obstoken,
+          });
+        }
+        const expiry = gent.expiry;
+        const ent = await getOrGenWsEntitlement(env, cid, expiry, gent.plan);
+        if (!force && ent == null) {
           return r500j({ error: "failed to get entitlement", cid: cid });
         }
         if (ent.status === "banned" && !force) {
@@ -2793,8 +2830,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         }
 
         if (!ackd) {
-          await ackOnetimePurchase(env, sku, purchasetoken, ent);
+          await ackOnetimePurchase(env, onetimeProductId, purchasetoken, ent);
         }
+
+        // TODO: sendPayload if ent.userId has changed from previous entitlement
+        const sendPayload = ent != null;
 
         return r200j({
           success: true,
@@ -2803,6 +2843,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           productId: sku,
           purchaseId: obstoken,
           expiry: expiry.toISOString(),
+          developerPayload: sendPayload
+            ? JSON.stringify({
+                ws: await ent.toClientEntitlement(env),
+              })
+            : undefined,
         });
       });
     }
@@ -2922,6 +2967,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         });
       }
 
+      // TODO: sendPayload if ent.userId has changed from previous entitlement
+      const sendPayload = ent != null;
+
       if (!ackd) {
         await ackSubscription(env, purchasetoken, ent);
       }
@@ -2933,6 +2981,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         productId: productId,
         purchaseId: obstoken,
         expiry: expiry.toISOString(),
+        developerPayload: sendPayload
+          ? JSON.stringify({
+              ws: await ent.toClientEntitlement(env),
+            })
+          : undefined,
       });
     });
   } catch (err) {
@@ -2987,6 +3040,7 @@ export async function googlePlayGetEntitlements(env, req) {
         // renew creds
       }
 
+      // always send payload (test only)
       return r200j({
         success: true,
         cid: cid,
