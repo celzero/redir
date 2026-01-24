@@ -1640,13 +1640,20 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
 /**
  * @param {any} env
  * @param {VoidedPurchaseNotification} notif
+ * @param {boolean} test
+ * @returns {Promise<void>}
  */
-async function handleVoidedPurchaseNotification(env, notif) {
+async function handleVoidedPurchaseNotification(env, notif, test) {
   const obstoken = await obfuscate(notif.purchaseToken || "");
-  logi(
-    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}`,
+  const note = notif.refundType === 1 ? logi : loge;
+  // the purchase has been refunded already;
+  // if the purchaseToken exists in the database, then
+  // retrieve the corresponding entitlements
+  // (like from ws table) and delete them.
+  // TODO: worker analytics
+  note(
+    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; test? ${test}`,
   );
-  // TODO: revoke if active
 }
 
 /**
