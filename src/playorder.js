@@ -33,6 +33,7 @@ const iap2 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applic
 const iap3 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/productsv2/tokens/`;
 // ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/acknowledge
 const iap4 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/purchases/products/`;
+const iap5 = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/orders/`;
 const tokpath = "/tokens/";
 const acksuffix = ":acknowledge";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/revoke
@@ -41,6 +42,8 @@ const acksuffix = ":acknowledge";
 const revokesuffix = ":revoke";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
 const cancelsuffix = ":cancel";
+const refundsuffix = ":refund";
+const revokeparam = "revoke=true";
 
 const monthlyProxyProductId = "proxy_monthly_subscription_test";
 const annualProxyProductId = "proxy_annual_subscription_test";
@@ -1770,7 +1773,7 @@ async function refundOrder(env, orderId) {
   // -H 'Accept: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const url = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${packageName}/orders/${orderId}:refund?revoke=true`;
+  const url = `${iap5}${orderId}${refundsuffix}?${revokeparam}`;
   const headers = {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
