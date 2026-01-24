@@ -114,16 +114,17 @@ async function handle(r, env, ctx) {
       } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
-        // TODO: get entitlement for onetime purchase too, if &sku=onetime.tier
+        // will get entitlement for onetime purchase too, if &sku=onetime.tier
         // g/entitlements?cid&test&vcode[&sku]
         return googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // TODO: must be a POST request
+        // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop?cid&purchaseToken&test&vcode[&sku]
         return cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // TODO: must be a POST request
-        // TODO: refund onetime purchase too, if &sku=onetime.tier
+        // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund?cid&purchaseToken&test&vcode[&sku]
         return revokeSubscription(env, r);
       }
