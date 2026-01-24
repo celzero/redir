@@ -1411,9 +1411,9 @@ async function handleOneTimeProductNotification(env, notif) {
       return;
     }
 
-    if (canceled) {
+    if (cancelled) {
       logi(
-        `onetime: canceled ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
+        `onetime: cancelled ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
       );
       for (const tries of [1, 10]) {
         await sleep(tries); // wait 1s, then 10s
@@ -1981,7 +1981,7 @@ export async function cancelSubscription(env, req) {
       // user_requested_stop_renewals can be restored later.
       cancellationType: "USER_REQUESTED_STOP_RENEWALS",
     });
-    // May have been canceled already or expired or invalid
+    // May have been cancelled already or expired or invalid
     const r = await fetch(cancelurl, {
       method: "POST",
       headers: headers,
@@ -1999,7 +1999,7 @@ export async function cancelSubscription(env, req) {
       logi(`sub: cancel for ${obstoken}`);
       return r200j({
         success: true,
-        message: "canceled subscription",
+        message: "cancelled subscription",
         purchaseId: obstoken,
       });
     }
@@ -2079,16 +2079,16 @@ export async function revokeSubscription(env, req) {
 
     const sub = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
     const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
-    const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
 
-    if (canceled || expired) {
-      // If the subscription is canceled, we cannot revoke it.
-      loge(`sub: ${obstoken} is canceled, cannot revoke`);
+    if (cancelled || expired) {
+      // If the subscription is cancelled, we cannot revoke it.
+      loge(`sub: ${obstoken} is cancelled, cannot revoke`);
       return r200j({
         success: false,
-        message: "cannot revoke, subscription canceled or expired",
+        message: "cannot revoke, subscription cancelled or expired",
         expired: expired,
-        canceled: canceled,
+        cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
         purchaseId: obstoken,
       });
@@ -2749,7 +2749,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         }
         const entry = dbres.results[0];
         const storedcid = entry.cid;
-        if (storedcid !== cid) {
+        // identifiers must be immutable for onetime purchases
+        if (accountIdentifiersImmutable() && storedcid !== cid) {
           return r400j({
             error: "cid mismatch",
             purchaseId: obstoken,
