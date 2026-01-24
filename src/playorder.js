@@ -71,9 +71,6 @@ const knownBasePlans = new Map();
 
 const mincidlength = 32; // ideally 64 hex chars
 
-// 3 days in milliseconds
-const revokeThresholdMs = 3 * 24 * 60 * 60 * 1000;
-
 /**
  * Memoization cache for Google tokens.
  * @type {Map<string, GCreds>}
@@ -269,17 +266,20 @@ class Rtdn {
   }
 }
 
-/*
-{
-  "version": string,
-  "packageName": string,
-  "eventTimeMillis": long,
-  "oneTimeProductNotification": OneTimeProductNotification,
-  "subscriptionNotification": SubscriptionNotification,
-  "voidedPurchaseNotification": VoidedPurchaseNotification,
-  "testNotification": TestNotification
-}
-*/
+/**
+ * @see https://developer.android.com/google/play/billing/rtdn-reference
+ * ```
+ * {
+ *   "version": string,
+ *   "packageName": string,
+ *   "eventTimeMillis": long,
+ *   "oneTimeProductNotification": OneTimeProductNotification,
+ *   "subscriptionNotification": SubscriptionNotification,
+ *   "voidedPurchaseNotification": VoidedPurchaseNotification,
+ *   "testNotification": TestNotification
+ * }
+ * ```
+ */
 class DeveloperNotification {
   constructor(json) {
     json = json || {};
@@ -321,14 +321,17 @@ class DeveloperNotification {
   }
 }
 
-/*
-{
-  "version": string,
-  "notificationType": int,
-  "purchaseToken": string,
-  "sku": string
-}
-*/
+/**
+ * @see https://developer.android.com/google/play/billing/rtdn-reference#one-time
+ * ```
+ * {
+ *   "version": string,
+ *   "notificationType": int,
+ *   "purchaseToken": string,
+ *   "sku": string
+ * }
+ * ```
+ */
 class OneTimeProductNotification {
   constructor(json) {
     json = json || {};
@@ -354,13 +357,16 @@ class OneTimeProductNotification {
   }
 }
 
-/*
-{
-  "version": string,
-  "notificationType": int,
-  "purchaseToken": string
-}
-*/
+/**
+ * @see https://developer.android.com/google/play/billing/rtdn-reference#sub
+ * ```
+ * {
+ *   "version": string,
+ *   "notificationType": int,
+ *   "purchaseToken": string
+ * }
+ * ```
+ */
 class SubscriptionNotification {
   constructor(json) {
     json = json || {};
@@ -376,14 +382,14 @@ class SubscriptionNotification {
      * (4) SUBSCRIPTION_PURCHASED - A new subscription was purchased.
      * (5) SUBSCRIPTION_ON_HOLD - A subscription has entered account hold (if enabled).
      * (6) SUBSCRIPTION_IN_GRACE_PERIOD - A subscription has entered grace period (if enabled).
-     * (7) SUBSCRIPTION_RESTARTED - User has restored their subscription from Play > Account > Subscriptions. The subscription was canceled but had not expired yet when the user restores. For more information, see Restorations.
+     * (7) SUBSCRIPTION_RESTARTED - User has restored their subscription from Play > Account > Subscriptions. The subscription was cancelled but had not expired yet when the user restores. For more information, see Restorations.
      * (8) SUBSCRIPTION_PRICE_CHANGE_CONFIRMED (DEPRECATED) - A subscription price change has successfully been confirmed by the user.
      * (9) SUBSCRIPTION_DEFERRED - A subscription's recurrence time has been extended.
      * (10) SUBSCRIPTION_PAUSED - A subscription has been paused.
      * (11) SUBSCRIPTION_PAUSE_SCHEDULE_CHANGED - A subscription pause schedule has been changed.
      * (12) SUBSCRIPTION_REVOKED - A subscription has been revoked from the user before the expiration time.
      * (13) SUBSCRIPTION_EXPIRED - A subscription has expired.
-     * (20) SUBSCRIPTION_PENDING_PURCHASE_CANCELED - A pending transaction of a subscription has been canceled.
+     * (20) SUBSCRIPTION_PENDING_PURCHASE_CANCELED - A pending transaction of a subscription has been cancelled.
      * (19) SUBSCRIPTION_PRICE_CHANGE_UPDATED - A subscription item's price change details are updated.
      * @see https://developer.android.com/google/play/billing/rtdn-reference#notification_type
      */
@@ -395,14 +401,18 @@ class SubscriptionNotification {
   }
 }
 
-/*
-  {
-    "purchaseToken":"PURCHASE_TOKEN",
-    "orderId":"GS.0000-0000-0000",
-    "productType":1
-    "refundType":1
-  }
-*/
+/**
+ * @see https://developer.android.com/google/play/billing/rtdn-reference#voided-purchase
+ *
+ * ```
+ *   {
+ *     "purchaseToken":"PURCHASE_TOKEN",
+ *     "orderId":"GS.0000-0000-0000",
+ *     "productType":1,
+ *     "refundType":1
+ *   }
+ * ```
+ */
 class VoidedPurchaseNotification {
   constructor(json) {
     json = json || {};
@@ -429,11 +439,14 @@ class VoidedPurchaseNotification {
   }
 }
 
-/*
-{
-  "version": string
-}
-*/
+/**
+ * @see https://developer.android.com/google/play/billing/rtdn-reference#test
+ * ```
+ * {
+ *  "version": string
+ * }
+ * ```
+ */
 class TestNotification {
   constructor(json) {
     json = json || {};
@@ -444,8 +457,10 @@ class TestNotification {
   }
 }
 
-/*
-{
+/**
+ * @see https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
+ * ```
+ * {
   "kind": "androidpublisher#subscriptionPurchaseV2",
   "regionCode": "US",
   "startTime": "2024-01-15T10:00:00Z",
@@ -495,8 +510,9 @@ class TestNotification {
       "signupPromotion": null
     }
   ]
-}
-*/
+ }
+ * ```
+ */
 class SubscriptionPurchaseV2 {
   constructor(json) {
     json = json || {};
@@ -542,7 +558,7 @@ class SubscriptionPurchaseV2 {
       ? new PausedStateContext(json.pausedStateContext)
       : null;
     /**
-     * @type {CanceledStateContext} - Canceled state context, if any.
+     * @type {CanceledStateContext} - Cancelled state context, if any.
      */
     this.canceledStateContext = json.canceledStateContext
       ? new CanceledStateContext(json.canceledStateContext)
@@ -579,26 +595,28 @@ class SubscriptionPurchaseV2 {
   }
 }
 
-/*
-  ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get
-{
-  "kind": "androidpublisher#productPurchase",
-  "purchaseTimeMillis": "1700000000000",
-  "purchaseState": 0,
-  "consumptionState": 0,
-  "developerPayload": "string",
-  "orderId": "GPA.1234-5678-9012-34567",
-  "purchaseType": 0,
-  "acknowledgementState": 1,
-  "productId": "sku",
-  "purchaseToken": "token",
-  "quantity": 1,
-  "refundableQuantity": 1,
-  "regionCode": "US",
-  "obfuscatedExternalAccountId": "string",
-  "obfuscatedExternalProfileId": "string"
-}
-*/
+/**
+ * @see https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/get
+ * ```
+    {
+      "kind": "androidpublisher#productPurchase",
+      "purchaseTimeMillis": "1700000000000",
+      "purchaseState": 0,
+      "consumptionState": 0,
+      "developerPayload": "string",
+      "orderId": "GPA.1234-5678-9012-34567",
+      "purchaseType": 0,
+      "acknowledgementState": 1,
+      "productId": "sku",
+      "purchaseToken": "token",
+      "quantity": 1,
+      "refundableQuantity": 1,
+      "regionCode": "US",
+      "obfuscatedExternalAccountId": "string",
+      "obfuscatedExternalProfileId": "string"
+    }
+ * ```
+ */
 class ProductPurchaseV1 {
   constructor(json) {
     json = json || {};
@@ -667,29 +685,31 @@ class ProductPurchaseV1 {
   }
 }
 
-/*
-  ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/getproductpurchasev2
-{
-  "productLineItem": [
+/**
+  * @see https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/getproductpurchasev2
+  * ```
     {
-      object (ProductLineItem)
+      "productLineItem": [
+        {
+          object (ProductLineItem)
+        }
+      ],
+      "kind": "androidpublisher#productPurchaseV2",
+      "purchaseStateContext": {
+        object (PurchaseStateContext)
+      },
+      "testPurchaseContext": {
+        object (TestPurchaseContext)
+      },
+      "orderId": "GPA.1234-5678-9012-34567",
+      "obfuscatedExternalAccountId": "string",
+      "obfuscatedExternalProfileId": "string",
+      "regionCode": "US",
+      "purchaseCompletionTime": "2024-01-15T10:00:00Z",
+      "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
     }
-  ],
-  "kind": "androidpublisher#productPurchaseV2",
-  "purchaseStateContext": {
-    object (PurchaseStateContext)
-  },
-  "testPurchaseContext": {
-    object (TestPurchaseContext)
-  },
-  "orderId": "GPA.1234-5678-9012-34567",
-  "obfuscatedExternalAccountId": "string",
-  "obfuscatedExternalProfileId": "string",
-  "regionCode": "US",
-  "purchaseCompletionTime": "2024-01-15T10:00:00Z",
-  "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
-}
-*/
+ * ```
+ */
 class ProductPurchaseV2 {
   constructor(json) {
     json = json || {};
@@ -784,40 +804,25 @@ class TestPurchaseContext {
   }
 }
 
-/*
-Union field cancellation_reason can be only one of the following:
-  {
-  "userInitiatedCancellation": {
-    object (UserInitiatedCancellation)
-  },
-  "systemInitiatedCancellation": {
-    object (SystemInitiatedCancellation)
-  },
-  "developerInitiatedCancellation": {
-    object (DeveloperInitiatedCancellation)
-  },
-  "replacementCancellation": {
-    object (ReplacementCancellation)
-  }
-}
-*/
-/*
-Union field cancellation_reason can be only one of the following:
-  {
-  "userInitiatedCancellation": {
-    object (UserInitiatedCancellation)
-  },
-  "systemInitiatedCancellation": {
-    object (SystemInitiatedCancellation)
-  },
-  "developerInitiatedCancellation": {
-    object (DeveloperInitiatedCancellation)
-  },
-  "replacementCancellation": {
-    object (ReplacementCancellation)
-  }
-}
-*/
+/**
+ * Union field cancellation_reason can be only one of the following:
+ * ```
+ *  {
+ *  "userInitiatedCancellation": {
+ *    object (UserInitiatedCancellation)
+ *  },
+ *  "systemInitiatedCancellation": {
+ *    object (SystemInitiatedCancellation)
+ *  },
+ *  "developerInitiatedCancellation": {
+ *    object (DeveloperInitiatedCancellation)
+ *  },
+ *  "replacementCancellation": {
+ *    object (ReplacementCancellation)
+ *  }
+ *  }
+ * ```
+ */
 class CanceledStateContext {
   constructor(json) {
     json = json || {};
@@ -848,14 +853,16 @@ class CanceledStateContext {
   }
 }
 
-/*
-{
-  "cancelSurveyResult": {
-    object (CancelSurveyResult)
-  },
-  "cancelTime": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "cancelSurveyResult": {
+ *     object (CancelSurveyResult)
+ *   },
+ *   "cancelTime": string
+ * }
+ * ```
+ */
 class UserInitiatedCancellation {
   constructor(json) {
     json = json || {};
@@ -872,12 +879,14 @@ class UserInitiatedCancellation {
   }
 }
 
-/*
-{
-  "reason": enum (CancelSurveyReason),
-  "reasonUserInput": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "reason": enum (CancelSurveyReason),
+ *   "reasonUserInput": string
+ * }
+ * ```
+ */
 class CancelSurveyResult {
   constructor(json) {
     json = json || {};
@@ -920,13 +929,15 @@ class TestPurchase {
   }
 }
 
-/*
-{
-  "externalAccountId": string,
-  "obfuscatedExternalAccountId": string,
-  "obfuscatedExternalProfileId": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "externalAccountId": string,
+ *   "obfuscatedExternalAccountId": string,
+ *   "obfuscatedExternalProfileId": string
+ * }
+ * ```
+ */
 class ExternalAccountIdentifiers {
   constructor(json) {
     json = json || {};
@@ -945,15 +956,17 @@ class ExternalAccountIdentifiers {
   }
 }
 
-/*
-{
-  "profileId": string,
-  "profileName": string,
-  "emailAddress": string,
-  "givenName": string,
-  "familyName": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "profileId": string,
+ *   "profileName": string,
+ *   "emailAddress": string,
+ *   "givenName": string,
+ *   "familyName": string
+ * }
+ * ```
+ */
 class SubscribeWithGoogleInfo {
   constructor(json) {
     json = json || {};
@@ -980,34 +993,36 @@ class SubscribeWithGoogleInfo {
   }
 }
 
-/*
-{
-  "productId": string,
-  "expiryTime": string,
-  "latestSuccessfulOrderId": string,
-
-  // Union field plan_type can be only one of the following:
-  "autoRenewingPlan": {
-    object (AutoRenewingPlan)
-  },
-  "prepaidPlan": {
-    object (PrepaidPlan)
-  }
-  // End of list of possible types for union field plan_type.
-  "offerDetails": {
-    object (OfferDetails)
-  },
-
-  // Union field deferred_item_change can be only one of the following:
-  "deferredItemReplacement": {
-    object (DeferredItemReplacement)
-  }
-  // End of list of possible types for union field deferred_item_change.
-  "signupPromotion": {
-    object (SignupPromotion)
-  }
-}
-*/
+/**
+ * ```js
+ * {
+ *   "productId": string,
+ *   "expiryTime": string,
+ *   "latestSuccessfulOrderId": string,
+ *
+ *   // Union field plan_type can be only one of the following:
+ * "autoRenewingPlan": {
+ *  object (AutoRenewingPlan)
+ * },
+ * "prepaidPlan": {
+ *   object (PrepaidPlan)
+ * }
+ * // End of list of possible types for union field plan_type.
+ * "offerDetails": {
+ *   object (OfferDetails)
+ * },
+ *
+ *  // Union field deferred_item_change can be only one of the following:
+ * "deferredItemReplacement": {
+ *   object (DeferredItemReplacement)
+ * }
+ * // End of list of possible types for union field deferred_item_change.
+ * "signupPromotion": {
+ *   object (SignupPromotion)
+ * }
+ *}
+ * ```
+ */
 class SubscriptionLineItem {
   constructor(json) {
     json = json || {};
@@ -1056,20 +1071,22 @@ class SubscriptionLineItem {
   }
 }
 
-/*
-{
-  "autoRenewEnabled": boolean,
-  "recurringPrice": {
-    object (Money)
-  },
-  "priceChangeDetails": {
-    object (SubscriptionItemPriceChangeDetails)
-  },
-  "installmentDetails": {
-    object (InstallmentPlan)
-  }
-}
-*/
+/**
+ * ```json
+ * {
+ *   "autoRenewEnabled": boolean,
+ *   "recurringPrice": {
+ *     object (Money)
+ *   },
+ *   "priceChangeDetails": {
+ *     object (SubscriptionItemPriceChangeDetails)
+ *   },
+ *   "installmentDetails": {
+ *     object (InstallmentPlan)
+ *   }
+ * }
+ * ```
+ */
 class AutoRenewingPlan {
   constructor(json) {
     json = json || {};
@@ -1098,16 +1115,18 @@ class AutoRenewingPlan {
   }
 }
 
-/*
-{
-  "newPrice": {
-    object (Money)
-  },
-  "priceChangeMode": enum (PriceChangeMode),
-  "priceChangeState": enum (PriceChangeState),
-  "expectedNewPriceChargeTime": string
-}
-*/
+/**
+ * ```json
+ * {
+ *  "newPrice": {
+ *    object (Money)
+ *  },
+ *  "priceChangeMode": enum (PriceChangeMode),
+ *  "priceChangeState": enum (PriceChangeState),
+ *  "expectedNewPriceChargeTime": string
+ * }
+ * ```
+ */
 class SubscriptionItemPriceChangeDetails {
   constructor(json) {
     json = json || {};
@@ -1142,13 +1161,15 @@ class SubscriptionItemPriceChangeDetails {
 }
 
 /**
-{
-  "currencyCode": string,
-  "units": string,
-  "nanos": integer
-}
-@see https://developers.google.com/android-publisher/api-ref/rest/v3/Money
-*/
+ * @see https://developers.google.com/android-publisher/api-ref/rest/v3/Money
+ * ```json
+ * {
+ * "currencyCode": string,
+ * "units": string,
+ *  "nanos": integer
+ * }
+ * ```
+ */
 class Money {
   constructor(json) {
     json = json || {};
@@ -1167,16 +1188,18 @@ class Money {
   }
 }
 
-/*
-{
-  "initialCommittedPaymentsCount": integer,
-  "subsequentCommittedPaymentsCount": integer,
-  "remainingCommittedPaymentsCount": integer,
-  "pendingCancellation": {
-    object (PendingCancellation)
-  }
-}
-*/
+/**
+ * ```json
+ * {
+ *   "initialCommittedPaymentsCount": integer,
+ *   "subsequentCommittedPaymentsCount": integer,
+ *   "remainingCommittedPaymentsCount": integer,
+ *   "pendingCancellation": {
+ *     object (PendingCancellation)
+ *   }
+ * }
+ * ```
+ */
 class InstallmentPlan {
   constructor(json) {
     json = json || {};
@@ -1210,11 +1233,13 @@ class PendingCancellation {
   }
 }
 
-/*
-{
-  "allowExtendAfterTime": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "allowExtendAfterTime": string
+ * }
+ * ```
+ */
 class PrepaidPlan {
   constructor(json) {
     json = json || {};
@@ -1225,15 +1250,17 @@ class PrepaidPlan {
   }
 }
 
-/*
-{
-  "offerTags": [
-    string
-  ],
-  "basePlanId": string,
-  "offerId": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "offerTags": [
+ *     string
+ *   ],
+ *   "basePlanId": string,
+ *   "offerId": string
+ * }
+ * ```
+ */
 class OfferDetails {
   constructor(json) {
     json = json || {};
@@ -1252,11 +1279,13 @@ class OfferDetails {
   }
 }
 
-/*
-{
-  "productId": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "productId": string
+ * }
+ * ```
+ */
 class DeferredItemReplacement {
   constructor(json) {
     json = json || {};
@@ -1267,18 +1296,20 @@ class DeferredItemReplacement {
   }
 }
 
-/*
-{
-  // Union field promotion_type can be only one of the following:
-  "oneTimeCode": {
-    object (OneTimeCode)
-  },
-  "vanityCode": {
-    object (VanityCode)
-  }
-  // End of list of possible types for union field promotion_type.
-}
-*/
+/**
+ * ```json
+ * {
+ * // Union field promotion_type can be only one of the following:
+ * "oneTimeCode": {
+ *   object (OneTimeCode)
+ * },
+ * "vanityCode": {
+ *   object (VanityCode)
+ * }
+ * // End of list of possible types for union field promotion_type.
+ * }
+ * ```
+ */
 class SignupPromotion {
   constructor(json) {
     json = json || {};
@@ -1301,11 +1332,13 @@ class OneTimeCode {
   }
 }
 
-/*
-{
-  "promotionCode": string
-}
-*/
+/**
+ * ```json
+ * {
+ *   "promotionCode": string
+ * }
+ * ```
+ */
 class VanityCode {
   constructor(json) {
     json = json || {};
@@ -1317,7 +1350,6 @@ class VanityCode {
 }
 
 /**
- *
  * @param {any} env
  * @param {Request} r
  * @returns {Promise<Response>}
@@ -1375,7 +1407,8 @@ async function handleOneTimeProductNotification(env, notif) {
   const obstoken = await obfuscate(purchasetoken);
   const notifType = onetimeNotificationTypeStr(notif);
 
-  if (emptyString(sku)) {
+  if (emptyString(sku) || !knownProducts.has(sku)) {
+    // TODO: worker analytics
     loge(`onetime: type? ${notifType}; unknown sku ${sku} for ${obstoken}`);
     return;
   }
@@ -1385,7 +1418,7 @@ async function handleOneTimeProductNotification(env, notif) {
   const test = isOnetimeTest2(purchase2);
   const ackd = isOnetimeAck2(purchase2);
   const paid = isOnetimePaid2(purchase2);
-  const cancelled = isOnetimeCanceled2(notif, purchase2);
+  const cancelled = isOnetimeCancelled2(notif, purchase2);
   const pending = isOnetimeUnpaid2(purchase2);
   const onetimeState = onetimePurchaseStateStr2(purchase2);
   const plan = onetimePlan(purchase2);
@@ -1395,6 +1428,8 @@ async function handleOneTimeProductNotification(env, notif) {
       `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan}`,
     );
 
+    // register purchase rightaway regardless of its veracity;
+    // so it can be later revoke/refunded, as needed.
     const cid = await getCidThenPersistProduct(env, purchase2);
     await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
@@ -1434,6 +1469,7 @@ async function handleOneTimeProductNotification(env, notif) {
     }
 
     if (plan == null) {
+      // TODO: auto refund?
       throw new Error(`onetime: missing plan info for ${obstoken} sku=${sku}`);
     }
 
@@ -1809,16 +1845,9 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
     });
   }
 
-  if (plan == null) {
-    return r400j({
-      error: "missing plan information",
-      purchaseId: obstoken,
-      orderId: orderId,
-    });
-  }
-
-  // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
-  if (!plan.withinRefundWindow) {
+  // let refunds go through if no such plan exists
+  if (plan != null && !plan.withinRefundWindow) {
+    // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
     return r400j({
       error: "refund window exceeded",
       purchaseId: obstoken,
@@ -1833,6 +1862,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
 
   // TODO: retry?
   try {
+    // if no entitlement exists there's nothing to revoke; that's okay
     await deleteWsEntitlement(env, cid);
   } catch (e) {
     loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
@@ -1843,6 +1873,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
   return r200j({
     success: true,
     message: "refunded onetime purchase",
+    hadEntitlement: plan != null,
     purchaseId: obstoken,
     orderId: orderId,
   });
@@ -1922,18 +1953,18 @@ export async function cancelSubscription(env, req) {
       });
     }
 
-    // TODO: compare sub with sub got from db
+    // TODO: compare sub with sub got from db if "plan" (gent) is valid
     const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
-    const canceled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
 
-    if (canceled || expired) {
+    if (cancelled || expired) {
       // If the subscription has expired, we cannot cancel it.
-      loge(`sub: ${obstoken} already canceled or expired`);
+      loge(`sub: ${obstoken} already cancelled or expired`);
       return r200j({
         success: false,
-        message: "cannot revoke, subscription canceled or expired",
+        message: "cannot revoke, subscription cancelled or expired",
         expired: expired,
-        canceled: canceled,
+        cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
         purchaseId: obstoken,
       });
@@ -1964,7 +1995,7 @@ export async function cancelSubscription(env, req) {
       const gerr = await gerror(r);
       loge(`sub: cancel err: ${r.status} ${gerr}`);
       return r400j({
-        error: `Failed to cancel subscription: ${r.status} ${gerr}`,
+        error: `failed to cancel subscription: ${r.status} ${gerr}`,
         purchaseId: obstoken,
       });
     } else {
@@ -2070,7 +2101,8 @@ export async function revokeSubscription(env, req) {
 
     const gprod = productInfo(sub);
 
-    if (!gprod.withinRefundWindow) {
+    // if gprod is null (no such plan), allow unconditional refunds
+    if (gprod != null && !gprod.withinRefundWindow) {
       // If sub is not within threshold millis ago, do not revoke it.
       loge(`sub: revoke ${obstoken} started too long ago, cannot revoke`);
       return r400j({
@@ -2130,6 +2162,7 @@ export async function revokeSubscription(env, req) {
       logi(`sub: revoke for ${obstoken}`);
       return r200j({
         success: true,
+        hadEntitlement: gprod != null,
         message: "revoked subscription",
         purchaseId: obstoken,
       });
@@ -2479,7 +2512,7 @@ function subscriptionPlan(item, start) {
 
 /**
  * @param {ProductPurchaseV2} p
- * @returns {GEntitlement?} - If valid, else null.
+ * @returns {GEntitlement?} - If p is valid, else null.
  */
 function onetimePlan(p) {
   if (p == null) {
@@ -2496,7 +2529,9 @@ function onetimePlan(p) {
 
   for (const item of products) {
     if (!knownProducts.has(item.productId)) {
-      log.e(`onetime: unknown product id ${item.productId}; test? ${test}`);
+      log.e(
+        `onetime: unknown sku / product id ${item.productId}; test? ${test}`,
+      );
       continue; // unknown product
     }
     // purchaseOptionId is the "baseplan" equivalent for onetime products
@@ -2504,7 +2539,7 @@ function onetimePlan(p) {
     const start = p.purchaseCompletionTime
       ? new Date(p.purchaseCompletionTime)
       : null;
-    if (baseplan == null || start == null) {
+    if (emptyString(baseplan) || emptyString(start)) {
       log.e(
         `onetime: missing baseplan or start time; ${item.productId}; test? ${test}`,
       );
@@ -2524,6 +2559,9 @@ function onetimePlan(p) {
     return ent;
   }
 
+  log.e(
+    `onetime: no valid items; ${p.orderId} ${p.obfuscatedExternalAccountId} test? ${test}`,
+  );
   return null;
 }
 
@@ -2676,7 +2714,7 @@ function isOnetimeUnpaid2(purchase2) {
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
-function isOnetimeCanceled(notif, purchase) {
+function isOnetimeCancelled(notif, purchase) {
   return notif.notificationType === 2 || purchase.purchaseState === 1;
 }
 
@@ -2685,7 +2723,7 @@ function isOnetimeCanceled(notif, purchase) {
  * @param {ProductPurchaseV2} purchase2
  * @returns {boolean}
  */
-function isOnetimeCanceled2(notif, purchase2) {
+function isOnetimeCancelled2(notif, purchase2) {
   return (
     notif.notificationType === 2 ||
     purchase2.purchaseStateContext?.purchaseState === "CANCELLED"
@@ -2858,7 +2896,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const state = sub.subscriptionState;
     const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
-    const canceled = state === "SUBSCRIPTION_STATE_CANCELED";
+    const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
     const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
     const obstoken = await obfuscate(purchasetoken);
@@ -2866,7 +2904,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
     // canceled subs could be expiring in the future
-    if ((!active && !canceled) || expired) {
+    if ((!active && !cancelled) || expired) {
       loge(`ack: err inactive: ${cid}, state: ${state}`);
       return r400j({
         error: "subscription not active",
