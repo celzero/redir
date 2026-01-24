@@ -60,6 +60,7 @@ const knownProducts = new Set([
   annualProxyProductId,
   stdProductId,
   proProductId,
+  onetimeProductId,
 ]);
 
 /** @type Map<string, GEntitlement> - basePlanId => Entitlement */
