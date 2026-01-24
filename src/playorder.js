@@ -1150,10 +1150,10 @@ async function processGooglePlayNotification(env, notif) {
     await handleOneTimeProductNotification(env, notif.onetime);
   }
   if (notif.sub) {
-    await handleSubscriptionNotification(env, notif.sub);
+    await handleSubscriptionNotification(env, notif.sub, notif.test != null);
   }
   if (notif.void) {
-    await handleVoidedPurchaseNotification(env, notif.void);
+    await handleVoidedPurchaseNotification(env, notif.void, notif.test != null);
   }
   if (notif.test) {
     await handleTestNotification(notif.test);
@@ -1274,8 +1274,11 @@ async function handleOneTimeProductNotification(env, notif) {
 /**
  * @param {any} env
  * @param {SubscriptionNotification} notif
+ * @param {boolean} test
+ * @returns {Promise<boolean>}
+ * @throws {Error} if notif cannot be processed for any reason whatsoever.
  */
-async function handleSubscriptionNotification(env, notif) {
+async function handleSubscriptionNotification(env, notif, test) {
   // developer.android.com/google/play/billing/lifecycle/subscriptions
   // developer.android.com/google/play/billing/security#verify
   if (notif == null || notif.purchaseToken == null) {
@@ -1285,7 +1288,6 @@ async function handleSubscriptionNotification(env, notif) {
   const purchasetoken = notif.purchaseToken;
   const typ = notificationTypeStr(notif);
   const sub = await getSubscription(env, purchasetoken);
-  const test = sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
   const obstoken = await obfuscate(purchasetoken);
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
