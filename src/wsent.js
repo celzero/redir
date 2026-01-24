@@ -651,9 +651,9 @@ async function newCreds(env, expiry, requestedPlan) {
     );
   }
 
-  execCount -= 1; // already executed once above
+  const remExec = execCount - 1; // already executed once above
   let tries = 3;
-  for (let i = 0; i < execCount && tries > 0; i++) {
+  for (let i = 0; i < remExec && tries > 0; i++) {
     try {
       if (i > 0) {
         await sleep(1);
@@ -678,7 +678,7 @@ async function newCreds(env, expiry, requestedPlan) {
         const err = await r2.json();
         const errstr = JSON.stringify(err);
         log.e(
-          `new creds upgrade ${i}/${execCount}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
+          `new creds upgrade ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
         );
         i -= 1; // retry
         tries -= 1;
@@ -689,7 +689,7 @@ async function newCreds(env, expiry, requestedPlan) {
       const data2 = await r2.json();
       if (!data2 || typeof data2 !== "object") {
         log.e(
-          `new creds upgrade ${i}/${execCount}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
+          `new creds upgrade ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
         );
         errors.push("ws: invalid response");
         i -= 1; // retry
@@ -704,14 +704,14 @@ async function newCreds(env, expiry, requestedPlan) {
         i -= 1; // retry
         tries -= 1;
         log.e(
-          `new creds upgrade ${i}/${execCount}/${tries} not successful for (test? ${testing}) ` +
-            `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.hostName}`,
+          `new creds upgrade ${i}/${remExec}/${tries} not successful for (test? ${testing}) ` +
+            `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.md5}`,
         );
         await sleep(3);
         continue;
       }
       log.i(
-        `new creds upgrade ${i}/${execCount}/${tries} successful for ${plan}`,
+        `new creds upgrade ${i}/${remExec}/${tries} successful for ${plan}`,
       );
       tries = 3; // reset tries on success
     } catch (err) {
