@@ -7,7 +7,7 @@
  */
 
 import { emptyString, str2byt2hex } from "./buf.js";
-import { als, ExecCtx, obsToken, testmode } from "./d.js";
+import { accountIdentifiersImmutable, als, ExecCtx, obsToken } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
@@ -1942,7 +1942,7 @@ export async function cancelSubscription(env, req) {
     const entry = dbres.results[0];
     const storedcid = entry.cid;
     // TODO: only allow credentialless clients to access this endpoint
-    if (storedcid !== cid) {
+    if (accountIdentifiersImmutable() && storedcid !== cid) {
       loge(`sub: cancel cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot cancel, cid mismatch",
@@ -2069,7 +2069,7 @@ export async function revokeSubscription(env, req) {
     }
     const entry = dbres.results[0];
     const storedcid = entry.cid;
-    if (storedcid !== cid) {
+    if (accountIdentifiersImmutable() && storedcid !== cid) {
       loge(`sub: revoke cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot revoke, cid mismatch",
@@ -3013,6 +3013,46 @@ async function isPurchaseTokenLinked(env, t) {
   }
   logi(`tok: is linked? ${obsToken()}: ${JSON.stringify(out.results)}`);
   return out.results.length > 0;
+}
+
+/**
+ * @param {SubscriptionPurchaseV2} sub1
+ * @param {SubscriptionPurchaseV2} sub2
+ * @param {boolean} strict - If set, also compares startTime, productId, orderId, regionCode.
+ * @returns {boolean} - Whether the purchase tokens are equal.
+ */
+function subscriptionsMoreOrLessEqual(sub1, sub2, strict = false) {
+  if (sub1 == null || sub2 == null) return false;
+  // check if sub1 and sub2 are equal in most ways
+  if (
+    accountIdentifiersImmutable() &&
+    sub1.externalAccountIdentifiers.obfuscatedExternalAccountId !==
+      sub2.externalAccountIdentifiers.obfuscatedExternalAccountId
+  ) {
+    return false;
+  }
+  if (sub1.testPurchase !== sub2.testPurchase) return false;
+
+  if (strict) {
+    if (sub1.startTime !== sub2.startTime) return false;
+    if (sub1.regionCode !== sub2.regionCode) return false;
+    for (const item1 of sub1.lineItems) {
+      let foundProduct = false;
+      let foundOrder = false;
+      for (const item2 of sub2.lineItems) {
+        if (item1.latestSuccessfulOrderId === item2.latestSuccessfulOrderId) {
+          foundOrder = true;
+          break;
+        }
+        if (item1.productId === item2.productId) {
+          foundProduct = true;
+          break;
+        }
+      }
+      if (!foundProduct || !foundOrder) return false;
+    }
+  }
+  return true;
 }
 
 /**
