@@ -665,6 +665,123 @@ class ProductPurchaseV1 {
 }
 
 /*
+  ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/getproductpurchasev2
+{
+  "productLineItem": [
+    {
+      object (ProductLineItem)
+    }
+  ],
+  "kind": "androidpublisher#productPurchaseV2",
+  "purchaseStateContext": {
+    object (PurchaseStateContext)
+  },
+  "testPurchaseContext": {
+    object (TestPurchaseContext)
+  },
+  "orderId": "GPA.1234-5678-9012-34567",
+  "obfuscatedExternalAccountId": "string",
+  "obfuscatedExternalProfileId": "string",
+  "regionCode": "US",
+  "purchaseCompletionTime": "2024-01-15T10:00:00Z",
+  "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
+}
+*/
+class ProductPurchaseV2 {
+  constructor(json) {
+    json = json || {};
+    /** @type {Array<ProductLineItem>} */
+    this.productLineItem = Array.isArray(json.productLineItem)
+      ? json.productLineItem.map((item) => new ProductLineItem(item))
+      : [];
+    /** @type {string} */
+    this.kind = json.kind || "";
+    /** @type {PurchaseStateContext|null} */
+    this.purchaseStateContext = json.purchaseStateContext
+      ? new PurchaseStateContext(json.purchaseStateContext)
+      : null;
+    /** @type {TestPurchaseContext|null} */
+    this.testPurchaseContext = json.testPurchaseContext
+      ? new TestPurchaseContext(json.testPurchaseContext)
+      : null;
+    /** @type {string} */
+    this.orderId = json.orderId || "";
+    /** @type {string} */
+    this.obfuscatedExternalAccountId = json.obfuscatedExternalAccountId || "";
+    /** @type {string} */
+    this.obfuscatedExternalProfileId = json.obfuscatedExternalProfileId || "";
+    /** @type {string} */
+    this.regionCode = json.regionCode || "";
+    /**
+     * @type {string} - Uses RFC3339, where generated output will always be Z-normalized and
+     * use 0, 3, 6 or 9 fractional digits. Offsets other than "Z" are also accepted.
+     * Examples: "2014-10-02T15:01:23Z", "2014-10-02T15:01:23.045123456Z" or "2014-10-02T15:01:23+05:30".
+     * The time when the purchase was successful. Not present until the payment is complete. */
+    this.purchaseCompletionTime = json.purchaseCompletionTime || "";
+    /** @type {"ACKNOWLEDGEMENT_STATE_UNSPECIFIED"|"ACKNOWLEDGEMENT_STATE_PENDING"|"ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"} */
+    this.acknowledgementState = json.acknowledgementState || "";
+  }
+}
+
+class ProductLineItem {
+  constructor(json) {
+    json = json || {};
+    /** @type {string} */
+    this.productId = json.productId || "";
+    /** @type {ProductOfferDetails|null} */
+    this.productOfferDetails = json.productOfferDetails
+      ? new ProductOfferDetails(json.productOfferDetails)
+      : null;
+  }
+}
+
+class ProductOfferDetails {
+  constructor(json) {
+    json = json || {};
+    /** @type {Array<string>} */
+    this.offerTags = Array.isArray(json.offerTags) ? json.offerTags : [];
+    /** @type {string} */
+    this.offerId = json.offerId || "";
+    /** @type {string} */
+    this.purchaseOptionId = json.purchaseOptionId || "";
+    /** @type {RentOfferDetails|null} */
+    this.rentOfferDetails = json.rentOfferDetails
+      ? new RentOfferDetails(json.rentOfferDetails)
+      : null;
+    /** @type {string} */
+    this.offerToken = json.offerToken || "";
+    /** @type {number} */
+    this.quantity = json.quantity ?? -1;
+    /** @type {number} */
+    this.refundableQuantity = json.refundableQuantity ?? -1;
+    /** @type {"CONSUMPTION_STATE_UNSPECIFIED" | "CONSUMPTION_STATE_CONSUMED" | "CONSUMPTION_STATE_YET_TO_BE_CONSUMED" } */
+    this.consumptionState = json.consumptionState || "";
+  }
+}
+
+class RentOfferDetails {
+  constructor(json) {
+    json = json || {};
+  }
+}
+
+class PurchaseStateContext {
+  constructor(json) {
+    json = json || {};
+    /** @type {"PURCHASE_STATE_UNSPECIFIED"|"PURCHASED"|"CANCELLED"|"PENDING"} */
+    this.purchaseState = json.purchaseState || "";
+  }
+}
+
+class TestPurchaseContext {
+  constructor(json) {
+    json = json || {};
+    /** @type {"FOP_TYPE_UNSPECIFIED"|"TEST"} */
+    this.fopType = json.fopType || "";
+  }
+}
+
+/*
 Union field cancellation_reason can be only one of the following:
   {
   "userInitiatedCancellation": {
