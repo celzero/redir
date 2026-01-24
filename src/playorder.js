@@ -78,43 +78,96 @@ const revokeThresholdMs = 3 * 24 * 60 * 60 * 1000;
 const gtokenCache = new Map();
 
 class GEntitlement {
-  constructor(prod, base, expiry = null) {
+  constructor(prod, base, start, expiry = null) {
     /** @type {string} */
     this.basePlanId = base || "";
     /** @type {string} */
     this.productId = prod || "";
+    /** @type {Date} */
     this.expiry = expiry || new Date(0); // default to epoch
-    this.deferred = false; // whether this is a deferred entitlement
-    if (expiry == null) {
-      this.deferred = true;
-    }
+    /** @type {Date} */
+    this.start = start || new Date(0);
+    /** @type {boolean} */
+    this.deferred = expiry == null;
+    /** @type {boolean} */
+    this.unset = start == null;
   }
-  static monthly(prod, expiry) {
-    if (prod == null || prod === "") {
+
+  static monthly(prod, start, expiry) {
+    if (emptyString(prod)) {
       throw new Error("GEntitlement: productId is required for monthly plan");
     }
-    return new GEntitlement(prod, monthlyBasePlanId, expiry);
+    return new GEntitlement(prod, monthlyBasePlanId, start, expiry);
   }
-  static yearly(prod, expiry) {
-    if (prod == null || prod === "") {
+
+  static yearly(prod, start, expiry) {
+    if (emptyString(prod)) {
       throw new Error("GEntitlement: productId is required for yearly plan");
     }
-    return new GEntitlement(prod, yearlyBasePlanId, expiry);
+    return new GEntitlement(prod, yearlyBasePlanId, start, expiry);
   }
+
+  static twoYearly(prod, start, expiry) {
+    if (emptyString(prod)) {
+      throw new Error(
+        "GEntitlement: productId is required for two-yearly plan",
+      );
+    }
+    return new GEntitlement(prod, twoYearlyBasePlanId, start, expiry);
+  }
+
+  static fiveYearly(prod, start, expiry) {
+    if (emptyString(prod)) {
+      throw new Error(
+        "GEntitlement: productId is required for five-yearly plan",
+      );
+    }
+    return new GEntitlement(prod, fiveYearlyBasePlanId, start, expiry);
+  }
+
   /**
    * @param {GEntitlement} o
+   * @param {Date|null} s
    * @param {Date|null} t
    * @returns {GEntitlement}
    */
-  static until(o, t) {
+  static until(o, s, t) {
     if (!(o instanceof GEntitlement)) {
       throw new TypeError("GEntitlement.until: o must be a GEntitlement");
     }
     if (!(t instanceof Date)) {
       throw new TypeError("GEntitlement.until: t must be a Date");
     }
-    return new GEntitlement(o.productId, o.basePlanId, t);
+    return new GEntitlement(o.productId, o.basePlanId, s, t);
   }
+
+  /**
+   * @param {GEntitlement} o
+   * @param {Date|null} s
+   * @returns {GEntitlement}
+   */
+  static since(o, s) {
+    if (!(o instanceof GEntitlement)) {
+      throw new TypeError("GEntitlement.since: o must be a GEntitlement");
+    }
+    if (!(s instanceof Date)) {
+      throw new TypeError("GEntitlement.since: s must be a Date");
+    }
+    const exp = new Date(s);
+    if (o.basePlanId === fiveYearlyBasePlanId) {
+      exp.setUTCFullYear(exp.getUTCFullYear() + 5);
+    } else if (o.basePlanId === twoYearlyBasePlanId) {
+      exp.setUTCFullYear(exp.getUTCFullYear() + 2);
+    } else if (o.basePlanId === yearlyBasePlanId) {
+      exp.setUTCFullYear(exp.getUTCFullYear() + 1);
+    } else if (o.basePlanId === monthlyBasePlanId) {
+      exp.setUTCMonth(exp.getUTCMonth() + 1);
+    } else {
+      throw new Error(`GEntitlement.since: unknown basePlanId ${o.basePlanId}`);
+    }
+    return new GEntitlement(o.productId, o.basePlanId, s, exp);
+  }
+
   /**
    * @returns {"month"|"year"|"deferred"|"unknown"} - The subscription period for this entitlement.
    */
@@ -126,6 +179,29 @@ class GEntitlement {
     if (this.productId.indexOf("year") >= 0) return "year";
     return "unknown";
     // TODO? throw new Error(`unknown plan ${this.basePlanId} for ${this.productId}`);
+  }
+
+  get refundWindowDays() {
+    if (this.basePlanId === monthlyBasePlanId) return 3;
+    if (this.basePlanId === yearlyBasePlanId) return 7;
+    if (this.basePlanId === twoYearlyBasePlanId) return 14;
+    if (this.basePlanId === fiveYearlyBasePlanId) return 28;
+    return 3;
+  }
+
+  get withinRefundWindow() {
+    const limitDays = this.refundWindowDays;
+    const diffMs = Date.now() - this.start.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= limitDays;
+  }
+
+  get startDate() {
+    return this.start.toISOString();
+  }
+
+  get expiryDate() {
+    return this.expiry.toISOString();
   }
 }
 
