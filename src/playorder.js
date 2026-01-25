@@ -1585,7 +1585,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   // developer.android.com/google/play/billing/subscriptions#pending
   if (active) {
     // SUBSCRIPTION_PURCHASED; Acknowledge
-    const gprod = productInfo(sub);
+    const gprod = subscriptionInfo(sub);
     if (gprod == null) {
       loge(`sub: skip ack sub ${cid} test? ${test}; no product info`);
       return;
@@ -2099,7 +2099,7 @@ export async function revokeSubscription(env, req) {
       });
     }
 
-    const gprod = productInfo(sub);
+    const gprod = subscriptionInfo(sub);
 
     // if gprod is null (no such plan), allow unconditional refunds
     if (gprod != null && !gprod.withinRefundWindow) {
@@ -2463,7 +2463,7 @@ async function recursivelyGetCid(env, sub, n = 1) {
  * @returns {GEntitlement|null} The expiry date and product ID of the subscription.
  * @throws {Error} - If the subscription line items are invalid.
  */
-function productInfo(sub) {
+function subscriptionInfo(sub) {
   if (!sub || !sub.lineItems || sub.lineItems.length === 0) {
     throw new Error("No sub line items");
   }
@@ -2476,7 +2476,9 @@ function productInfo(sub) {
     const deferred = emptyString(item.expiryTime);
     if (deferred) continue; // no-op
     // TODO: match incoming purchasetoken with orderid?
-    return subscriptionPlan(item, start);
+    const s = subscriptionItem2plan(item, start);
+    if (s != null) return s;
+    // else try next line item
   }
   return null; // no valid line items found
 }
@@ -2486,7 +2488,7 @@ function productInfo(sub) {
  * @param {Date|null} start
  * @return {GEntitlement|null} - The entitlement based on the product ID.
  */
-function subscriptionPlan(item, start) {
+function subscriptionItem2plan(item, start) {
   const productId = item.productId;
   if (!knownProducts.has(productId)) {
     return null; // unknown product
@@ -2499,15 +2501,15 @@ function subscriptionPlan(item, start) {
   } else if (productId === annualProxyProductId) {
     return GEntitlement.yearly(productId, start, until);
   }
-  if (!item.offerDetails || !item.offerDetails.basePlanId) {
+  if (item.offerDetails == null || !item.offerDetails.basePlanId) {
     return null; // no base plan
   }
   const baseplan = item.offerDetails.basePlanId;
   const ent = knownBasePlans.get(baseplan);
-  if (ent != null) {
-    return GEntitlement.until(ent, start, until);
+  if (ent == null) {
+    return null; // unknown base plan
   }
-  return null; // unknown base plan
+  return GEntitlement.until(ent, start, until);
 }
 
 /**
@@ -2913,7 +2915,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       });
     }
 
-    const gprod = productInfo(sub);
+    const gprod = subscriptionInfo(sub);
     if (gprod == null) {
       loge(`ack: sub err invalid product for ${obstoken}`);
       return r400j({
