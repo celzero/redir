@@ -30,6 +30,9 @@ export class Log {
   }
 
   i(...args) {
+    if (this instanceof Log === false) {
+      console.warn("NOINSTANCE", ...args);
+    }
     if (this.level > 1) return;
     if (this.trace) {
       args.unshift(ministack());
@@ -37,6 +40,9 @@ export class Log {
     console.info(this.tag, ...args);
   }
   w(...args) {
+    if (this instanceof Log === false) {
+      console.warn("NOINSTANCE", ...args);
+    }
     if (this.level > 2) return;
     if (this.trace) {
       args.unshift(ministack());
@@ -44,6 +50,9 @@ export class Log {
     console.warn(this.tag, ...args);
   }
   e(...args) {
+    if (this instanceof Log === false) {
+      console.warn("NOINSTANCE", ...args);
+    }
     if (this.level > 3) return;
     if (this.trace) {
       args.unshift(ministack());
@@ -51,6 +60,9 @@ export class Log {
     console.error(this.tag, ...args);
   }
   d(...args) {
+    if (this instanceof Log === false) {
+      console.warn("NOINSTANCE", ...args);
+    }
     if (this.level > 0) return;
     if (this.trace) {
       args.unshift(ministack());
@@ -58,6 +70,10 @@ export class Log {
     console.debug(this.tag, ...args);
   }
   o(obj) {
+    if (this instanceof Log === false) {
+      console.warn("NOINSTANCE object:");
+      console.dir(obj);
+    }
     this.i("object:");
     console.dir(obj);
   }
