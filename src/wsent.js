@@ -881,10 +881,36 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
   let plan = "unknown";
   const totalMonths = monthsUntil(expiry, since);
   const totalDays = daysUntil(expiry, since);
-  if (totalMonths > 9) {
+  if (totalMonths > 9 && totalMonths <= 12) {
     plan = "year";
-    execCount = 1; // 12 month plan
+    execCount = 1; // 1yr plan
+    return [plan, execCount];
+  } else if (totalMonths >= 21 && totalMonths <= 24) {
+    plan = "year";
+    execCount = 2; // 2yr plan
+    return [plan, execCount];
+  } else if (totalMonths >= 32 && totalMonths <= 36) {
+    plan = "year";
+    execCount = 3;
+    return [plan, execCount];
+  } else if (totalMonths >= 43 && totalMonths <= 48) {
+    plan = "year";
+    execCount = 4;
+    return [plan, execCount];
+  } else if (totalMonths >= 54 && totalMonths <= 60) {
+    plan = "year";
+    execCount = 5; // 5yr plan
+    return [plan, execCount];
+  } else if (totalMonths > 60) {
+    // TODO: worker analytics
+    plan = "year";
+    execCount = 5;
+    log.w(
+      `expiry2plan: capping at 5 years plan for expiry ${expiry} (since: ${since})`,
+    );
+    return [plan, execCount];
   }
+
   if (totalMonths <= 0) {
     if (totalDays < 0) {
       // in the past
