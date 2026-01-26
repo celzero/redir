@@ -1530,6 +1530,7 @@ async function handleSubscriptionNotification(env, notif, test) {
   const purchasetoken = notif.purchaseToken;
   const typ = notificationTypeStr(notif);
   const sub = await getSubscription(env, purchasetoken);
+  test = test || sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
   const obstoken = await obfuscate(purchasetoken);
   // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
@@ -1841,17 +1842,21 @@ async function refundOrder(env, orderId) {
 async function refundOnetimePurchase(env, cid, purchaseToken) {
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
   const plan = onetimePlan(purchase2);
+  const test = isOnetimeTest2(purchase2);
   const orderId = purchase2.orderId;
   const obstoken = obsToken();
 
   log.i(
-    `onetime: refund request for ${cid}; orderId=${orderId} / tok=${obstoken}`,
+    `onetime: refund request for ${cid}; orderId=${orderId} / tok=${obstoken} / test? ${test}`,
   );
 
   if (emptyString(orderId) || emptyString(purchaseToken)) {
     return r400j({
-      error: "missing order information",
-      purchaseId: obstoken,
+      error: "missing product order",
+      purchaseId: test ? purchaseToken : obstoken,
+      orderId: test ? orderId : undefined,
+      cid: cid,
+      test: test,
     });
   }
 
@@ -1860,11 +1865,13 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
     // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
     return r400j({
       error: "refund window exceeded",
-      purchaseId: obstoken,
-      orderId: orderId,
+      purchaseId: test ? purchaseToken : obstoken,
+      orderId: test ? orderId : undefined,
       windowDays: plan.refundWindowDays,
       start: plan.startDate,
       expiry: plan.expiryDate,
+      cid: cid,
+      test: test,
     });
   }
 
@@ -1884,8 +1891,10 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
     success: true,
     message: "refunded onetime purchase",
     hadEntitlement: plan != null,
-    purchaseId: obstoken,
-    orderId: orderId,
+    purchaseId: test ? purchaseToken : obstoken,
+    orderId: test ? orderId : undefined,
+    test: test,
+    cid: cid,
   });
 }
 
@@ -1906,7 +1915,7 @@ export async function cancelSubscription(env, req) {
   const purchaseToken =
     url.searchParams.get("purchaseToken") ||
     url.searchParams.get("purchasetoken");
-  const test = url.searchParams.has("test");
+  let test = url.searchParams.has("test");
   const sku =
     url.searchParams.get("sku") ||
     url.searchParams.get("productId") ||
@@ -1954,12 +1963,17 @@ export async function cancelSubscription(env, req) {
 
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
     const sub = await getSubscription(env, purchaseToken);
+    // grab test domain from fetched subscription
+    test = sub.testPurchase != null;
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
         error: "cannot cancel, subscription mismatch",
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
 
@@ -1976,7 +1990,9 @@ export async function cancelSubscription(env, req) {
         expired: expired,
         cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
       });
     }
     // curl -X POST \
@@ -2006,14 +2022,20 @@ export async function cancelSubscription(env, req) {
       loge(`sub: cancel err: ${r.status} ${gerr}`);
       return r400j({
         error: `failed to cancel subscription: ${r.status} ${gerr}`,
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     } else {
       logi(`sub: cancel for ${obstoken}`);
       return r200j({
         success: true,
         message: "cancelled subscription",
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
   });
@@ -2036,7 +2058,7 @@ export async function revokeSubscription(env, req) {
   const purchaseToken =
     url.searchParams.get("purchaseToken") ||
     url.searchParams.get("purchasetoken");
-  const test = url.searchParams.has("test");
+  let test = url.searchParams.has("test");
   const sku =
     url.searchParams.get("sku") ||
     url.searchParams.get("productId") ||
@@ -2084,11 +2106,17 @@ export async function revokeSubscription(env, req) {
 
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
     const sub = await getSubscription(env, purchaseToken);
+    // grab test domain from fetched subscription
+    test = sub.testPurchase != null;
+
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
         error: "cannot cancel, subscription mismatch",
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
 
@@ -2105,7 +2133,10 @@ export async function revokeSubscription(env, req) {
         expired: expired,
         cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
 
@@ -2120,7 +2151,10 @@ export async function revokeSubscription(env, req) {
         windowDays: gprod.refundWindowDays,
         start: gprod.startDate,
         expiry: gprod.expiryDate,
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
 
@@ -2165,8 +2199,11 @@ export async function revokeSubscription(env, req) {
       loge(`sub: revoke err: ${r.status} ${gerr}`);
       // TODO: retry for 3 days with pipeline?
       return r400j({
-        error: `Failed to revoke subscription: ${r.status} ${gerr}`,
-        purchaseId: obstoken,
+        error: `failed to revoke subscription: ${r.status} ${gerr}`,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     } else {
       logi(`sub: revoke for ${obstoken}`);
@@ -2174,7 +2211,10 @@ export async function revokeSubscription(env, req) {
         success: true,
         hadEntitlement: gprod != null,
         message: "revoked subscription",
-        purchaseId: obstoken,
+        purchaseId: test ? purchaseToken : obstoken,
+        test: test,
+        cid: cid,
+        sku: sku,
       });
     }
   });
@@ -2782,18 +2822,24 @@ function onetimePurchaseStateStr2(purchase2) {
  * @returns {Promise<Response>} - HTTP response indicating success or failure
  */
 export async function googlePlayAcknowledgePurchase(env, req) {
+  let test = false;
+  let purchasetoken = "";
+  let obstoken = "";
+  let cid = "";
+  let sku = "";
+
   try {
     if (req.method !== "POST") {
       return r400j({ error: "method not allowed" });
     }
     // Parse request body to get purchase token
     const url = new URL(req.url);
-    const purchasetoken =
+    const force = url.searchParams.get("force");
+    purchasetoken =
       url.searchParams.get("purchaseToken") ||
       url.searchParams.get("purchasetoken");
-    const cid = url.searchParams.get("cid");
-    const force = url.searchParams.get("force");
-    const sku =
+    cid = url.searchParams.get("cid");
+    sku =
       url.searchParams.get("sku") ||
       url.searchParams.get("productId") ||
       url.searchParams.get("productid") ||
@@ -2812,11 +2858,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
     if (sku === onetimeProductId) {
       const purchase2 = await getOnetimeProductV2(env, purchasetoken);
-      const test = isOnetimeTest2(purchase2);
+      test = isOnetimeTest2(purchase2);
       const ackd = isOnetimeAck2(purchase2);
       const paid = isOnetimePaid2(purchase2);
       const pending = isOnetimeUnpaid2(purchase2);
-      const obstoken = await obfuscate(purchasetoken);
+      obstoken = await obfuscate(purchasetoken);
 
       return await als.run(new ExecCtx(env, test, obstoken), async () => {
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
@@ -2833,14 +2879,20 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (accountIdentifiersImmutable() && storedcid !== cid) {
           return r400j({
             error: "cid mismatch",
-            purchaseId: obstoken,
+            cid: cid,
+            storedCid: test ? storedcid : undefined,
+            purchaseId: test ? purchasetoken : obstoken,
+            test: test,
           });
         }
 
         if (!paid || pending) {
           return r400j({
             error: "purchase not completed",
-            purchaseId: obstoken,
+            purchaseId: test ? purchasetoken : obstoken,
+            state: onetimePurchaseStateStr2(purchase2),
+            sku: sku,
+            test: test,
           });
         }
 
@@ -2849,7 +2901,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // such purchases can only be cancelled/refunded
           return r400j({
             error: "not a valid product; will be auto refunded",
-            purchaseId: obstoken,
+            purchaseId: test ? purchasetoken : obstoken,
+            cid: cid,
+            sku: sku,
+            test: test,
           });
         }
         const expiry = gent.expiry;
@@ -2861,14 +2916,18 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "user banned",
             cid: cid,
-            purchaseId: obstoken,
+            sku: sku,
+            test: test,
+            purchaseId: test ? purchasetoken : obstoken,
           });
         }
         if (ent.status === "expired" && !force) {
           return r400j({
             error: "entitlement expired",
             cid: cid,
-            purchaseId: obstoken,
+            sku: sku,
+            test: test,
+            purchaseId: test ? purchasetoken : obstoken,
           });
         }
         if (ent.status !== "valid" && !force) {
@@ -2876,7 +2935,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "invalid entitlement status",
             status: ent.status,
             cid: cid,
-            purchaseId: obstoken,
+            sku: sku,
+            test: test,
+            purchaseId: test ? purchasetoken : obstoken,
           });
         }
 
@@ -2892,8 +2953,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           message: "Onetime purchase acknowledged",
           cid: cid,
           productId: sku,
-          purchaseId: obstoken,
-          expiry: expiry.toISOString(),
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gprod.expiryDate,
+          sku: sku,
+          test: test,
           developerPayload: sendPayload
             ? JSON.stringify({
                 ws: await ent.toClientEntitlement(env),
@@ -2905,7 +2968,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
     // get subscription details from google play
     const sub = await getSubscription(env, purchasetoken);
-    const test = sub.testPurchase != null;
+    test = sub.testPurchase != null;
     const state = sub.subscriptionState;
     const ackstate = sub.acknowledgementState;
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
@@ -2921,7 +2984,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       loge(`ack: err inactive: ${cid}, state: ${state}`);
       return r400j({
         error: "subscription not active",
-        purchaseId: obstoken,
+        purchaseId: test ? purchasetoken : obstoken,
         state: state,
       });
     }
@@ -2932,7 +2995,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       loge(`ack: sub err invalid product for ${obstoken}`);
       return r400j({
         error: "not a valid product subscription; will be auto refunded",
-        purchaseId: obstoken,
+        purchaseId: test ? purchasetoken : obstoken,
+        cid: cid,
+        sku: sku,
+        test: test,
       });
     }
 
@@ -2948,8 +3014,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         return r400j({
           error: "subscription expired",
           cid: cid,
-          purchaseId: obstoken,
-          expiry: expiry.toISOString(),
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gprod.expiryDate,
         });
       }
 
@@ -2960,16 +3026,21 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (existingCid !== cid) {
           loge(`ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`);
           return r400j({
-            purchaseId: obstoken,
+            purchaseId: test ? purchasetoken : obstoken,
+            cid: cid,
+            sku: sku,
+            test: test,
             error: `cid ${cid} not registered with purchase token`,
           });
         }
       } catch (e) {
         loge(`ack: err validating cid (${cid}): ${e.message}`);
         return r400j({
-          purchaseId: obstoken,
+          purchaseId: test ? purchasetoken : obstoken,
           error: "cid validation failed",
           cid: cid,
+          sku: sku,
+          test: test,
         });
       }
 
@@ -2984,8 +3055,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           message: "subscription acknowledged without entitlement",
           cid: cid,
           productId: productId,
-          purchaseId: obstoken,
-          expiry: expiry.toISOString(),
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gprod.expiryDate,
+          sku: sku,
+          test: test,
         });
       }
 
@@ -2998,16 +3071,21 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       }
       if (ent.status === "banned" && !force) {
         return r400j({
-          error: "user banned",
+          error: "banned user",
           cid: cid,
-          purchaseId: obstoken,
+          purchaseId: test ? purchasetoken : obstoken,
+          sku: sku,
+          test: test,
         });
       }
       if (ent.status === "expired" && !force) {
         return r400j({
           error: "entitlement expired",
           cid: cid,
-          purchaseId: obstoken,
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gprod.expiryDate,
+          sku: sku,
+          test: test,
         });
       }
       if (ent.status !== "valid" && !force) {
@@ -3015,7 +3093,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           error: "invalid entitlement status",
           status: ent.status,
           cid: cid,
-          purchaseId: obstoken,
+          purchaseId: test ? purchasetoken : obstoken,
+          sku: sku,
+          test: test,
         });
       }
 
@@ -3028,11 +3108,13 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
       return r200j({
         success: true,
-        message: "Subscription acknowledged",
+        message: "subscription acknowledged",
         cid: cid,
         productId: productId,
-        purchaseId: obstoken,
-        expiry: expiry.toISOString(),
+        purchaseId: test ? purchasetoken : obstoken,
+        expiry: gprod.expiryDate,
+        test: test,
+        sku: sku,
         developerPayload: sendPayload
           ? JSON.stringify({
               ws: await ent.toClientEntitlement(env),
@@ -3044,6 +3126,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     return r500j({
       error: "acknowledge failed",
       details: err.message,
+      purchaseId: test ? purchasetoken : obstoken,
+      cid: cid,
+      sku: sku,
+      test: test,
     });
   }
 }
