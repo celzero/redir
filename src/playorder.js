@@ -2950,7 +2950,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         return r200j({
           success: true,
-          message: "Onetime purchase acknowledged",
+          message: "onetime purchase acknowledged",
           cid: cid,
           productId: sku,
           purchaseId: test ? purchasetoken : obstoken,
@@ -2975,7 +2975,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
     const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
     const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
-    const obstoken = await obfuscate(purchasetoken);
+    obstoken = await obfuscate(purchasetoken);
 
     logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
