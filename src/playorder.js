@@ -1423,10 +1423,11 @@ async function handleOneTimeProductNotification(env, notif) {
     return;
   }
 
+  // allow errors from async/await to propagate, so google rtdn will retry
+  const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+  const test = isOnetimeTest2(purchase2);
+
   return als.run(new ExecCtx(env, test, obstoken), async () => {
-    // allow errors from async/await to propagate, so google rtdn will retry
-    const purchase2 = await getOnetimeProductV2(env, purchasetoken);
-    const test = isOnetimeTest2(purchase2);
     const ackd = isOnetimeAck2(purchase2);
     const paid = isOnetimePaid2(purchase2);
     const cancelled = isOnetimeCancelled2(notif, purchase2);

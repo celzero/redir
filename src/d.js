@@ -52,7 +52,8 @@ export function workersEnv() {
 }
 
 /**
- * @returns {boolean} - Whether this is a test run.
+ * @returns {boolean} - Whether this is using test domain. This is distinct from
+ * test purchases.
  */
 export function testmode() {
   /** @type {ExecCtx} */
