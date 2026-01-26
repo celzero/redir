@@ -203,6 +203,16 @@ class GEntitlement {
   get expiryDate() {
     return this.expiry.toISOString();
   }
+
+  get json() {
+    return {
+      productId: this.productId,
+      basePlanId: this.basePlanId,
+      start: this.start,
+      expiry: this.expiry,
+      withinRefundWindow: this.withinRefundWindow,
+    };
+  }
 }
 
 knownBasePlans.set(
@@ -1425,7 +1435,7 @@ async function handleOneTimeProductNotification(env, notif) {
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan}`,
+      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan.json}`,
     );
 
     // register purchase rightaway regardless of its veracity;

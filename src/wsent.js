@@ -300,7 +300,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   // if WSEntitlement has "expired", attempt to renew it
   if (c.status === "expired" || renew) {
     log.w(
-      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force? ${renew}`,
+      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force renew? ${renew}`,
     );
     try {
       // No downgrade of the user is necessary if they stop paying
@@ -545,7 +545,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     );
   }
 
-  const note = updates == execCount ? log.i : log.w;
+  const note = updates == execCount ? log.i.bind(log) : log.w.bind(log);
   // TODO: worker analytics on missed updates?
   note(
     `update creds: err for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}x${updates}] (sub expiry: ${subExpiry})`,
