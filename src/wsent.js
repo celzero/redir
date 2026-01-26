@@ -300,7 +300,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   // if WSEntitlement has "expired", attempt to renew it
   if (c.status === "expired" || renew) {
     log.w(
-      `getOrGen: renewing entitlement for ${c.cid} ${c.status}; force renew? ${renew}`,
+      `getOrGen: renewing existing entitlement for ${c.cid} (test? ${c.test}) ${c.status}; force renew? ${renew}`,
     );
     try {
       // No downgrade of the user is necessary if they stop paying
@@ -548,7 +548,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   const note = updates == execCount ? log.i.bind(log) : log.w.bind(log);
   // TODO: worker analytics on missed updates?
   note(
-    `update creds: err for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}x${updates}] (sub expiry: ${subExpiry})`,
+    `update creds: for ${c.cid} expiring on ${c.expiry} [${plan}x${execCount}x${updates}] (sub expiry: ${subExpiry})`,
   );
 
   // TODO: change all fields in WSUser to be from the updated WSUser?
@@ -637,7 +637,11 @@ async function newCreds(env, expiry, requestedPlan) {
   }
   // data = { data: { ... }, metadata: { ... } }
   const data = await r.json();
-  if (!data || typeof data !== "object") {
+  if (!data || typeof data !== "object" || data.data == null) {
+    log.e(
+      `new creds: invalid response ${data} from WS (url: ${url}, test? ${testing})`,
+    );
+    log.o(data);
     throw new Error(`invalid response from WS (url: ${url}, test? ${testing})`);
   }
   const meta = new WSMetaResponse(data.metadata);
@@ -651,6 +655,7 @@ async function newCreds(env, expiry, requestedPlan) {
     );
   }
 
+  const userid = wsuser.userId || "nowsuser??";
   const remExec = execCount - 1; // already executed once above
   let tries = 3;
   for (let i = 0; i < remExec && tries > 0; i++) {
@@ -678,7 +683,7 @@ async function newCreds(env, expiry, requestedPlan) {
         const err = await r2.json();
         const errstr = JSON.stringify(err);
         log.e(
-          `new creds upgrade ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
+          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
         );
         i -= 1; // retry
         tries -= 1;
@@ -689,7 +694,7 @@ async function newCreds(env, expiry, requestedPlan) {
       const data2 = await r2.json();
       if (!data2 || typeof data2 !== "object") {
         log.e(
-          `new creds upgrade ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
+          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
         );
         errors.push("ws: invalid response");
         i -= 1; // retry
@@ -704,21 +709,18 @@ async function newCreds(env, expiry, requestedPlan) {
         i -= 1; // retry
         tries -= 1;
         log.e(
-          `new creds upgrade ${i}/${remExec}/${tries} not successful for (test? ${testing}) ` +
+          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} not successful for (test? ${testing}) ` +
             `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.md5}`,
         );
         await sleep(3);
         continue;
       }
       log.i(
-        `new creds upgrade ${i}/${remExec}/${tries} successful for ${plan}`,
+        `new creds: upgrade ${userid} ${i}/${remExec}/${tries} successful for ${plan}`,
       );
       tries = 3; // reset tries on success
     } catch (err) {
-      log.e(
-        `new creds: #${tries}+${i} err ${wsuser.userId} during upgrade:`,
-        err,
-      );
+      log.e(`new creds: #${tries}+${i} err ${userid} during upgrade:`, err);
       i -= 1; // retry
       tries -= 1;
       await sleep(3);
