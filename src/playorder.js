@@ -1423,25 +1423,25 @@ async function handleOneTimeProductNotification(env, notif) {
     return;
   }
 
-  // allow error to propagate, so google rtdn will retry
-  const purchase2 = await getOnetimeProductV2(env, purchasetoken);
-  const test = isOnetimeTest2(purchase2);
-  const ackd = isOnetimeAck2(purchase2);
-  const paid = isOnetimePaid2(purchase2);
-  const cancelled = isOnetimeCancelled2(notif, purchase2);
-  const pending = isOnetimeUnpaid2(purchase2);
-  const onetimeState = onetimePurchaseStateStr2(purchase2);
-  const plan = onetimePlan(purchase2);
-
   return als.run(new ExecCtx(env, test, obstoken), async () => {
+    // allow errors from async/await to propagate, so google rtdn will retry
+    const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+    const test = isOnetimeTest2(purchase2);
+    const ackd = isOnetimeAck2(purchase2);
+    const paid = isOnetimePaid2(purchase2);
+    const cancelled = isOnetimeCancelled2(notif, purchase2);
+    const pending = isOnetimeUnpaid2(purchase2);
+    const onetimeState = onetimePurchaseStateStr2(purchase2);
+    const plan = onetimePlan(purchase2);
+
+    const cid = await getCidThenPersistProduct(env, purchase2);
+    // register purchase rightaway regardless of its veracity;
+    // so it can be later revoke/refunded, as needed.
+    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
+
     logi(
       `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan.json}`,
     );
-
-    // register purchase rightaway regardless of its veracity;
-    // so it can be later revoke/refunded, as needed.
-    const cid = await getCidThenPersistProduct(env, purchase2);
-    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     if (pending) {
       logi(
@@ -2846,8 +2846,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         const gent = onetimePlan(purchase2);
         if (gent == null) {
+          // such purchases can only be cancelled/refunded
           return r400j({
-            error: "missing plan info",
+            error: "not a valid product; will be auto refunded",
             purchaseId: obstoken,
           });
         }
@@ -2927,9 +2928,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
     const gprod = subscriptionInfo(sub);
     if (gprod == null) {
+      // such purchases can only be cancelled/refunded
       loge(`ack: sub err invalid product for ${obstoken}`);
       return r400j({
-        error: "not a valid product",
+        error: "not a valid product subscription; will be auto refunded",
         purchaseId: obstoken,
       });
     }
@@ -2979,7 +2981,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         }
         return r200j({
           success: true,
-          message: "Subscription acknowledged without entitlement",
+          message: "subscription acknowledged without entitlement",
           cid: cid,
           productId: productId,
           purchaseId: obstoken,
