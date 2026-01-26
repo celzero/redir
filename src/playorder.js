@@ -52,8 +52,8 @@ const proProductId = "pro.tier";
 const onetimeProductId = "onetime.tier";
 const monthlyBasePlanId = "proxy-monthly";
 const yearlyBasePlanId = "proxy-yearly";
-const twoYearlyBasePlanId = "proxy-yearly-two";
-const fiveYearlyBasePlanId = "proxy-yearly-five";
+const twoYearlyBasePlanId = "proxy-yearly-2";
+const fiveYearlyBasePlanId = "proxy-yearly-5";
 
 const log = new glog.Log("playorder");
 
