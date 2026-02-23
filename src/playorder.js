@@ -43,6 +43,9 @@ const revokesuffix = ":revoke";
 // see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/cancel
 const cancelsuffix = ":cancel";
 const refundsuffix = ":refund";
+// see: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/consume
+const consumesuffix = ":consume";
+// see: developers.google.com/android-publisher/api-ref/rest/v3/orders/refund
 const revokeparam = "revoke=true";
 const cancelparam = "revoke=false";
 
@@ -1430,6 +1433,9 @@ async function handleOneTimeProductNotification(env, notif) {
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     const ackd = isOnetimeAck2(purchase2);
+    const consumed = isOnetimeAllConsumed2(purchase2);
+    const productIds = allProducts2(purchase2);
+    const unconsumedProductIds = unconsumedProducts2(purchase2);
     const paid = isOnetimePaid2(purchase2);
     const cancelled = isOnetimeCancelled2(notif, purchase2);
     const pending = isOnetimeUnpaid2(purchase2);
@@ -1442,7 +1448,7 @@ async function handleOneTimeProductNotification(env, notif) {
     await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} / ackd? ${ackd} test? ${test} / p=${plan.json}`,
+      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${plan.json}`,
     );
 
     if (pending) {
@@ -1461,12 +1467,12 @@ async function handleOneTimeProductNotification(env, notif) {
         try {
           await deleteWsEntitlement(env, cid);
           logi(
-            `onetime: revoked ent for ${cid} for ${obstoken} ${sku}; test? ${test}`,
+            `onetime: revoked ent for ${cid} for ${obstoken} ${sku}/${productIds}; test? ${test}`,
           );
           break;
         } catch (e) {
           loge(
-            `onetime: err revoking ent for ${cid} for ${obstoken} ${sku}: ${e.message}; test? ${test}`,
+            `onetime: err revoking ent for ${cid} for ${obstoken} ${sku}/${productIds}: ${e.message}; test? ${test}`,
           );
         }
       }
@@ -1475,42 +1481,56 @@ async function handleOneTimeProductNotification(env, notif) {
 
     if (!paid || pending) {
       logw(
-        `onetime: unpaid ${onetimeState} ${cid} for ${obstoken} sku=${sku}; test? ${test}`,
+        `onetime: unpaid ${onetimeState} ${cid} for ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
       );
       return;
     }
 
     if (plan == null) {
       // TODO: auto refund?
-      throw new Error(`onetime: missing plan info for ${obstoken} sku=${sku}`);
+      throw new Error(
+        `onetime: missing plan info for ${obstoken} sku=${sku} ${productIds}`,
+      );
     }
 
     const expiry = plan.expiry;
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan.plan);
-    if (ackd) {
+    if (ackd && consumed) {
       logi(
-        `onetime: already ack: ${cid} for ${obstoken} sku=${sku}; test? ${test}`,
+        `onetime: already ack/con: ${cid} for ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
       );
       return;
     }
 
     if (ent == null) {
       throw new Error(
-        `onetime: no ent for ${cid} but onetime active; sku=${sku}`,
+        `onetime: no ent for ${cid} but onetime active; sku=${sku}/${productIds}`,
       );
     }
     if (ent.status === "banned") {
-      loge(`onetime: ${ent.status} ${cid} sku=${sku}; test? ${test}`);
+      loge(
+        `onetime: ${ent.status} ${cid} sku=${sku} ${productIds}; test? ${test}`,
+      );
       return; // never ack but report success
     }
     if (ent.status === "expired") {
       // TODO: reissue entitlement?
       throw new Error(
-        `onetime: ent expired ${cid} but onetime active; sku=${sku}`,
+        `onetime: ent expired ${cid} but onetime active; sku=${sku} ${productIds}`,
       );
     }
 
-    await ackOnetimePurchase(env, onetimeProductId, purchasetoken, ent);
+    if (!ackd || !consumed) {
+      // TODO: separate out ackd but not-consumed productIds and only consume those?
+      await ackThenConsumeOnetimePurchase(
+        env,
+        productIds,
+        unconsumedProductIds,
+        purchasetoken,
+        ent,
+        ackd,
+      );
+    }
     return;
   });
 }
@@ -1556,7 +1576,7 @@ async function handleSubscriptionNotification(env, notif, test) {
  * @returns {Promise<boolean>}
  */
 async function processSubscription(env, cid, sub, purchasetoken, revoked) {
-  const test = sub.testPurchase != null;
+  const test = /*TODO: testmode() ||*/ sub.testPurchase != null;
 
   const state = sub.subscriptionState;
   // RECOVERED, RENEWED, PURCHASED, RESTARTED must have "active" states
@@ -1764,7 +1784,7 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  log.d(`onetime: get product ${productId}`);
+  logd(`onetime: get product ${productId}`);
   const r = await fetch(url, { headers });
   if (!r.ok) {
     const gmsg = await gerror(r);
@@ -1796,7 +1816,7 @@ async function getOnetimeProductV2(env, purchaseToken) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  log.d("onetime: get product v2");
+  logd("onetime: get product v2");
   const r = await fetch(url, { headers });
   if (!r.ok) {
     const gmsg = await gerror(r);
@@ -2233,21 +2253,115 @@ async function ackSubscriptionWithoutEntitlement(env, tok) {
 }
 
 /**
- * @param {any} env
- * @param {string} productId
+ * @param {any} env - Workers environment.
+ * @param {string[]} productIds - all productIds associated with the purchase token.
+ * @param {string[]} unconsumedProductIds - subset of productIds that are not yet consumed.
  * @param {string} tok - Google Play purchase token.
- * @param {WSEntitlement} ent - Windscribe entitlement.
- * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge payments without an entitlement.
+ * @param {WSEntitlement?} ent - Windscribe entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, never acknowledge payments without an entitlement.
+ * @param {boolean} alreadyAckd - if true, skip acknowledgment and only consume the purchase;
+ * used for handling the case where ack succeeded but consume failed in a previous attempt.
  * @returns {Promise<void>}
+ * @throws {Error} - If the acknowledgment or consumption fails.
+ */
+async function ackThenConsumeOnetimePurchase(
+  env,
+  productIds,
+  unconsumedProductIds,
+  tok,
+  ent,
+  ackWithoutEntitlement = false,
+  alreadyAckd = false,
+) {
+  const cid = ent ? ent.cid : "w/o entitlement";
+  logd(
+    `onetime: ackThenConsume for ${cid} / all: ${productIds} + unconsumed: ${unconsumedProductIds} / force? ${ackWithoutEntitlement} / alreadyAckd? ${alreadyAckd}`,
+  );
+
+  if (!alreadyAckd) {
+    for (const productId of productIds) {
+      if (productId == null) continue;
+      // TODO: try-catch?
+      await ackOnetimePurchase(
+        env,
+        productId,
+        cid,
+        tok,
+        ent,
+        ackWithoutEntitlement,
+      );
+    }
+  }
+
+  for (const productId of unconsumedProductIds) {
+    if (productId == null) continue;
+    if (ackWithoutEntitlement || ent != null) {
+      await consumeOnetimePurchase(env, productId, cid, tok);
+    }
+  }
+}
+
+/**
+ *
+ * @param {any} env - Workers environment.
+ * @param {string} productId
+ * @param {string} cid - Client ID for logging purposes.
+ * @param {string} tok - Google Play purchase token.
+ */
+async function consumeOnetimePurchase(env, productId, cid, tok) {
+  const obs = obsToken();
+
+  logd(`onetime: consume ${productId} / ${cid} / ${obs}`);
+
+  // Ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.products/consume
+  // POST
+  // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/products/{productId}/tokens/{token}:consume'
+  // -H 'Accept: application/json' \
+  // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
+  const consumeurl = `${iap4}${productId}${tokpath}${tok}${consumesuffix}`;
+  const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${bearer}`,
+  };
+
+  const r = await fetch(consumeurl, {
+    method: "POST",
+    headers: headers,
+  });
+
+  if (!r.ok) {
+    const gmsg = await gerror(r);
+    // TODO: retry for 3 days with pipeline?
+    throw new Error(
+      `onetime: unexpected err consume ${obs}: ${r.status} for ${cid}; ${gmsg}`,
+    );
+  }
+
+  logi(`onetime: consumed ${productId} / ${obs} for ${cid}`);
+}
+
+/**
+ * Acknowledges a one-time purchase. If an entitlement is provided, it will be included in the developer payload.
+ * If no entitlement is provided and ackWithoutEntitlement is false, the acknowledgment will be rejected. Throws
+ * an error if the acknowledgement fails.
+ * @param {any} env - Workers environment.
+ * @param {string} productId
+ * @param {string} cid - Client ID for logging purposes.
+ * @param {string} tok - Google Play purchase token.
+ * @param {WSEntitlement?} ent - Windscribe entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge payments without an entitlement.
  * @throws {Error} - If the acknowledgment fails.
  */
 async function ackOnetimePurchase(
   env,
   productId,
+  cid,
   tok,
   ent,
   ackWithoutEntitlement = false,
 ) {
+  logd(`onetime: ack ${productId} / ${obs} / force? ${ackWithoutEntitlement}`);
   // POST
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/products/{productId}/tokens/{token}:acknowledge' \
   // -H 'Accept: application/json' \
@@ -2257,6 +2371,7 @@ async function ackOnetimePurchase(
   const ackurl = `${iap4}${productId}${tokpath}${tok}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
   const obs = obsToken();
+
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -2731,6 +2846,51 @@ function isOnetimeAck2(purchase2) {
 }
 
 /**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {string[]} list of productIds (may return [undefined, undefined, ...])
+ */
+function allProducts2(purchase2) {
+  return purchase2.productLineItem?.map((item) => item.productId);
+}
+
+/**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {string[]} list of unconsumed productIds
+ */
+function unconsumedProducts2(purchase2) {
+  return (
+    purchase2.productLineItem
+      ?.filter(
+        (p) =>
+          p != null &&
+          p.productOfferDetails != null &&
+          p.productOfferDetails.consumptionState !==
+            "CONSUMPTION_STATE_CONSUMED",
+      )
+      ?.map((p) => p.productId) || []
+  );
+}
+
+/**
+ * @param {ProductPurchaseV2} purchase2
+ */
+function isOnetimeAllConsumed2(purchase2) {
+  const p = purchase2.productLineItem;
+  if (p == null || p.length === 0) {
+    return true; // nothing to consume, so all consumed
+  }
+  return (
+    p.filter(
+      (it) =>
+        it != null &&
+        it.productOfferDetails != null &&
+        it.productOfferDetails.consumptionState !==
+          "CONSUMPTION_STATE_CONSUMED",
+    ).length === 0
+  );
+}
+
+/**
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
@@ -2785,6 +2945,32 @@ function isOnetimeCancelled2(notif, purchase2) {
 }
 
 /**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimeRefunded2(purchase2) {
+  return purchase2.productLineItem.some(
+    (item) =>
+      (item != null &&
+        item.productOfferDetails != null && // fully refunded
+        item.productOfferDetails.refundableQuantity === 0) ||
+      // partially refunded
+      item.productOfferDetails.quantity !==
+        item.productOfferDetails.refundableQuantity,
+  );
+}
+
+/**
+ * @param {ProductPurchaseV2} purchase2
+ * @returns {boolean}
+ */
+function isOnetimeFullyRefunded2(purchase2) {
+  return purchase2.productLineItem.every(
+    (item) => item.productOfferDetails?.refundableQuantity === 0,
+  );
+}
+
+/**
  * @param {ProductPurchaseV1} purchase
  * @returns {boolean}
  */
@@ -2809,6 +2995,14 @@ function onetimePurchaseStateStr2(purchase2) {
   const ack = purchase2.acknowledgementState;
   const ps = purchase2.purchaseStateContext?.purchaseState;
   return `${ps}|${ack}`;
+}
+
+/**
+ * @param {SubscriptionPurchaseV2} sub
+ * @returns {string[]} list of productIds in the subscription line items
+ */
+function subAllProducts(sub) {
+  return sub.lineItems?.map((item) => item.productId);
 }
 
 /**
@@ -2862,9 +3056,18 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       const purchase2 = await getOnetimeProductV2(env, purchasetoken);
       test = isOnetimeTest2(purchase2);
       const ackd = isOnetimeAck2(purchase2);
+      const consumed = isOnetimeAllConsumed2(purchase2);
+      // TODO: must sku match any productIds?
+      const productIds = allProducts2(purchase2);
+      const unconsumedProductIds = unconsumedProducts2(purchase2);
       const paid = isOnetimePaid2(purchase2);
       const pending = isOnetimeUnpaid2(purchase2);
+      const onetimeState = onetimePurchaseStateStr2(purchase2);
       obstoken = await obfuscate(purchasetoken);
+
+      logi(
+        `onetime: ack/con ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
+      );
 
       return await als.run(new ExecCtx(env, test, obstoken), async () => {
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
@@ -2884,6 +3087,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             cid: cid,
             storedCid: test ? storedcid : undefined,
             purchaseId: test ? purchasetoken : obstoken,
+            sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
           });
         }
@@ -2892,8 +3098,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "purchase not completed",
             purchaseId: test ? purchasetoken : obstoken,
-            state: onetimePurchaseStateStr2(purchase2),
+            state: onetimeState,
             sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
           });
         }
@@ -2905,7 +3113,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "not a valid product; will be auto refunded",
             purchaseId: test ? purchasetoken : obstoken,
             cid: cid,
+            state: onetimeState,
             sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
           });
         }
@@ -2918,7 +3129,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "user banned",
             cid: cid,
+            state: onetimeState,
             sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
@@ -2927,7 +3141,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "entitlement expired",
             cid: cid,
+            state: onetimeState,
             sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
@@ -2936,15 +3153,38 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "invalid entitlement status",
             status: ent.status,
+            state: onetimeState,
             cid: cid,
             sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
         }
 
-        if (!ackd) {
-          await ackOnetimePurchase(env, onetimeProductId, purchasetoken, ent);
+        if (!ackd || !consumed) {
+          try {
+            await ackThenConsumeOnetimePurchase(
+              env,
+              productIds,
+              unconsumedProductIds,
+              purchasetoken,
+              ent,
+              ackd,
+            );
+          } catch (e) {
+            loge(`onetime: err ack/consume ${obstoken}: ${e.message}`);
+            return r500j({
+              error: "failed to ack or consume",
+              purchaseId: test ? purchasetoken : obstoken,
+              cid: cid,
+              sku: sku,
+              allProducts: productIds,
+              unconsumedProducts: unconsumedProductIds,
+              test: test,
+            });
+          }
         }
 
         // TODO: sendPayload if ent.userId has changed from previous entitlement
@@ -2954,7 +3194,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           success: true,
           message: "onetime purchase acknowledged",
           cid: cid,
+          state: onetimeState,
           productId: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
           sku: sku,
@@ -2973,6 +3216,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     test = sub.testPurchase != null;
     const state = sub.subscriptionState;
     const ackstate = sub.acknowledgementState;
+    // TODO: must var sku match any productIds?
+    const productIds = subAllProducts(sub);
     const active = state === "SUBSCRIPTION_STATE_ACTIVE";
     const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
     const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
@@ -3000,6 +3245,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         purchaseId: test ? purchasetoken : obstoken,
         cid: cid,
         sku: sku,
+        allProducts: productIds,
         test: test,
       });
     }
@@ -3016,6 +3262,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         return r400j({
           error: "subscription expired",
           cid: cid,
+          sku: sku,
+          allProducts: productIds,
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
         });
@@ -3031,6 +3279,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             purchaseId: test ? purchasetoken : obstoken,
             cid: cid,
             sku: sku,
+            allProducts: productIds,
             test: test,
             error: `cid ${cid} not registered with purchase token`,
           });
@@ -3042,6 +3291,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           error: "cid validation failed",
           cid: cid,
           sku: sku,
+          allProducts: productIds,
           test: test,
         });
       }
@@ -3060,6 +3310,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
           sku: sku,
+          allProducts: productIds,
           test: test,
         });
       }
@@ -3077,6 +3328,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           cid: cid,
           purchaseId: test ? purchasetoken : obstoken,
           sku: sku,
+          allProducts: productIds,
           test: test,
         });
       }
@@ -3087,6 +3339,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
           sku: sku,
+          allProducts: productIds,
           test: test,
         });
       }
@@ -3097,6 +3350,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           cid: cid,
           purchaseId: test ? purchasetoken : obstoken,
           sku: sku,
+          allProducts: productIds,
           test: test,
         });
       }
@@ -3117,6 +3371,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         expiry: gprod.expiryDate,
         test: test,
         sku: sku,
+        allProducts: productIds,
         developerPayload: sendPayload
           ? JSON.stringify({
               ws: await ent.toClientEntitlement(env),
@@ -3131,6 +3386,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       purchaseId: test ? purchasetoken : obstoken,
       cid: cid,
       sku: sku,
+      allProducts: [],
       test: test,
     });
   }
