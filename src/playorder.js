@@ -44,6 +44,7 @@ const revokesuffix = ":revoke";
 const cancelsuffix = ":cancel";
 const refundsuffix = ":refund";
 const revokeparam = "revoke=true";
+const cancelparam = "revoke=false";
 
 const monthlyProxyProductId = "proxy_monthly_subscription_test";
 const annualProxyProductId = "proxy_annual_subscription_test";
@@ -1816,13 +1817,13 @@ async function getOnetimeProductV2(env, purchaseToken) {
  * @param {string} orderId
  * @returns {Promise<void>}
  */
-async function refundOrder(env, orderId) {
+async function refundOrder(env, orderId, revoke = true) {
   // POST
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/orders/{orderId}:refund'
   // -H 'Accept: application/json' \
   // -H 'Authorization: Bearer <YOUR_ACCESS_TOKEN>'
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const url = `${iap5}${orderId}${refundsuffix}?${revokeparam}`;
+  const url = `${iap5}${orderId}${refundsuffix}?${revoke ? revokeparam : cancelparam}`;
   const headers = {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
