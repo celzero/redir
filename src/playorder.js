@@ -1862,17 +1862,28 @@ async function refundOrder(env, orderId, revoke = true) {
  * @returns {Promise<Response>}
  */
 async function refundOnetimePurchase(env, cid, purchaseToken) {
+  if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    return r400j({ error: "missing/invalid client id" });
+  }
+  if (emptyString(purchaseToken)) {
+    return r400j({ error: "missing purchase token" });
+  }
+
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
   const plan = onetimePlan(purchase2);
+  const refunded = isOnetimeRefunded2(purchase2);
+  const fullyRefunded = isOnetimeFullyRefunded2(purchase2);
   const test = isOnetimeTest2(purchase2);
   const orderId = purchase2.orderId;
   const obstoken = obsToken();
 
-  log.i(
-    `onetime: refund request for ${cid}; orderId=${orderId} / tok=${obstoken} / test? ${test}`,
+  let deleteEntitlement = fullyRefunded;
+
+  logi(
+    `onetime: refund request for ${cid}; orderId=${orderId} / tok=${obstoken} / refunds: partial? ${refunded} & full? ${fullyRefunded} / test? ${test}`,
   );
 
-  if (emptyString(orderId) || emptyString(purchaseToken)) {
+  if (emptyString(orderId)) {
     return r400j({
       error: "missing product order",
       purchaseId: test ? purchaseToken : obstoken,
@@ -1883,36 +1894,49 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
   }
 
   // let refunds go through if no such plan exists
-  if (plan != null && !plan.withinRefundWindow) {
-    // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
-    return r400j({
-      error: "refund window exceeded",
-      purchaseId: test ? purchaseToken : obstoken,
-      orderId: test ? orderId : undefined,
-      windowDays: plan.refundWindowDays,
-      start: plan.startDate,
-      expiry: plan.expiryDate,
-      cid: cid,
-      test: test,
-    });
+  if (!fullyRefunded) {
+    if (plan != null && !plan.withinRefundWindow) {
+      // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
+      return r400j({
+        error: "refund window exceeded",
+        purchaseId: test ? purchaseToken : obstoken,
+        orderId: test ? orderId : undefined,
+        windowDays: plan.refundWindowDays,
+        start: plan.startDate,
+        expiry: plan.expiryDate,
+        cid: cid,
+        test: test,
+      });
+    }
+
+    // issues a full refund
+    await refundOrder(env, orderId);
+
+    // TODO: OK to not delete entitlement on partial refunds?
+    deleteEntitlement = true;
   }
 
-  await refundOrder(env, orderId);
-
-  // TODO: retry?
-  try {
-    // if no entitlement exists there's nothing to revoke; that's okay
-    await deleteWsEntitlement(env, cid);
-  } catch (e) {
-    loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
+  if (deleteEntitlement) {
+    // TODO: retry?
+    try {
+      // if no entitlement exists there's nothing to revoke; that's okay
+      await deleteWsEntitlement(env, cid);
+    } catch (e) {
+      // TODO: worker analytics?
+      loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
+    }
   }
 
-  log.i(`onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken}`);
+  logi(
+    `onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken} / deleted? ${deleteEntitlement} / test? ${test}`,
+  );
 
   return r200j({
     success: true,
     message: "refunded onetime purchase",
     hadEntitlement: plan != null,
+    deletedEntitlement: deleteEntitlement,
+    wasAlreadyFullyRefunded: fullyRefunded,
     purchaseId: test ? purchaseToken : obstoken,
     orderId: test ? orderId : undefined,
     test: test,
@@ -1980,6 +2004,7 @@ export async function cancelSubscription(env, req) {
     }
 
     if (sku === onetimeProductId) {
+      // TODO: do not revoke; but cancel only?
       return await refundOnetimePurchase(env, cid, purchaseToken);
     }
 
@@ -2390,7 +2415,10 @@ async function ackOnetimePurchase(
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`onetime: err ack ${obs}: ${r.status} for ${ent.cid}`);
+      const gmsg = await gerror(r);
+      throw new Error(
+        `onetime: err ack ${obs}: ${r.status} for ${cid}; ${gmsg}`,
+      );
     }
   } else {
     if (!ackWithoutEntitlement) {
@@ -2401,10 +2429,12 @@ async function ackOnetimePurchase(
       const gmsg = await gerror(r);
       // TODO: retry for 3 days with pipeline?
       throw new Error(
-        `onetime: unexpected err ack ${obs}: ${r.status} ${gmsg}`,
+        `onetime: unexpected err ack ${obs}: ${r.status} for ${cid}; ${gmsg}`,
       );
     }
   }
+
+  logi(`onetime: ackd ${productId} / ${obs} for ${cid}`);
 }
 
 /**
@@ -2685,20 +2715,21 @@ function subscriptionItem2plan(item, start) {
  */
 function onetimePlan(p) {
   if (p == null) {
-    log.e(`onetime: invalid product purchase ${p}`);
+    loge(`onetime: invalid product purchase ${p}`);
     return null;
   }
 
   const test = isOnetimeTest2(p);
+  // TODO: test if ackd and consumed?
   const products = p.productLineItem;
   if (!Array.isArray(products) || products.length === 0) {
-    log.e(`onetime: no product line items ${p}; test? ${test}`);
+    loge(`onetime: no product line items ${p}; test? ${test}`);
     return null;
   }
 
   for (const item of products) {
     if (!knownProducts.has(item.productId)) {
-      log.e(
+      loge(
         `onetime: unknown sku / product id ${item.productId}; test? ${test}`,
       );
       continue; // unknown product
@@ -2709,26 +2740,26 @@ function onetimePlan(p) {
       ? new Date(p.purchaseCompletionTime)
       : null;
     if (emptyString(baseplan) || emptyString(start)) {
-      log.e(
+      loge(
         `onetime: missing baseplan or start time; ${item.productId}; test? ${test}`,
       );
       continue; // no base plan or start time
     }
     let ent = knownBasePlans.get(baseplan);
     if (ent == null) {
-      log.e(
+      loge(
         `onetime: unknown baseplan ${baseplan} for ${item.productId}; test? ${test}`,
       );
       continue; // unknown base plan
     }
     ent = GEntitlement.since(ent, start);
-    log.d(
+    logd(
       `onetime: found plan ${baseplan} for ${item.productId}; test? ${test}`,
     );
     return ent;
   }
 
-  log.e(
+  loge(
     `onetime: no valid items; ${p.orderId} ${p.obfuscatedExternalAccountId} test? ${test}`,
   );
   return null;
@@ -2993,7 +3024,7 @@ function isOnetimeTest2(purchase) {
  */
 function onetimePurchaseStateStr2(purchase2) {
   const ack = purchase2.acknowledgementState;
-  const ps = purchase2.purchaseStateContext?.purchaseState;
+  const ps = purchase2.purchaseStateContext?.purchaseState || "";
   return `${ps}|${ack}`;
 }
 
