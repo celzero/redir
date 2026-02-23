@@ -70,6 +70,13 @@ const knownProducts = new Set([
   onetimeProductId,
 ]);
 
+/** @type Set<string> - set of onetime productIds and planIds */
+const knownOnetimeProductsAndPlans = new Set([
+  onetimeProductId,
+  twoYearlyBasePlanId,
+  fiveYearlyBasePlanId,
+]);
+
 /** @type Map<string, GEntitlement> - basePlanId => Entitlement */
 const knownBasePlans = new Map();
 
@@ -1421,7 +1428,7 @@ async function handleOneTimeProductNotification(env, notif) {
   const obstoken = await obfuscate(purchasetoken);
   const notifType = onetimeNotificationTypeStr(notif);
 
-  if (emptyString(sku) || !knownProducts.has(sku)) {
+  if (emptyString(sku) || !knownOnetimeProductsAndPlans.has(sku)) {
     // TODO: worker analytics
     loge(`onetime: type? ${notifType}; unknown sku ${sku} for ${obstoken}`);
     return;
@@ -1448,7 +1455,7 @@ async function handleOneTimeProductNotification(env, notif) {
     await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${plan.json}`,
+      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
     );
 
     if (pending) {
@@ -1528,6 +1535,7 @@ async function handleOneTimeProductNotification(env, notif) {
         unconsumedProductIds,
         purchasetoken,
         ent,
+        false,
         ackd,
       );
     }
@@ -2003,7 +2011,7 @@ export async function cancelSubscription(env, req) {
       });
     }
 
-    if (sku === onetimeProductId) {
+    if (knownOnetimeProductsAndPlans.has(sku)) {
       // TODO: do not revoke; but cancel only?
       return await refundOnetimePurchase(env, cid, purchaseToken);
     }
@@ -2147,7 +2155,7 @@ export async function revokeSubscription(env, req) {
       });
     }
 
-    if (sku === onetimeProductId) {
+    if (knownOnetimeProductsAndPlans.has(sku)) {
       return await refundOnetimePurchase(env, cid, purchaseToken);
     }
 
@@ -2386,6 +2394,7 @@ async function ackOnetimePurchase(
   ent,
   ackWithoutEntitlement = false,
 ) {
+  const obs = obsToken();
   logd(`onetime: ack ${productId} / ${obs} / force? ${ackWithoutEntitlement}`);
   // POST
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{pkg}/purchases/products/{productId}/tokens/{token}:acknowledge' \
@@ -2395,8 +2404,6 @@ async function ackOnetimePurchase(
   // -d '{"developerPayload": <string> "{\"ws\": \"entitlement\"}"}'
   const ackurl = `${iap4}${productId}${tokpath}${tok}${acksuffix}`;
   const bearer = await gtoken(env.GCP_REDIR_SVC_CREDS);
-  const obs = obsToken();
-
   const headers = {
     "Content-Type": "application/json",
     Accept: "application/json",
@@ -2537,7 +2544,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       return r400j({ error: "missing/invalid client id" });
     }
 
-    if (sku === onetimeProductId) {
+    if (knownOnetimeProductsAndPlans.has(sku)) {
       const purchase2 = await getOnetimeProductV2(env, purchasetoken);
       test = isOnetimeTest2(purchase2);
       const ackd = isOnetimeAck2(purchase2);
@@ -2656,6 +2663,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               unconsumedProductIds,
               purchasetoken,
               ent,
+              false,
               ackd,
             );
           } catch (e) {
@@ -2684,7 +2692,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           allProducts: productIds,
           unconsumedProducts: unconsumedProductIds,
           purchaseId: test ? purchasetoken : obstoken,
-          expiry: gprod.expiryDate,
+          expiry: gent.expiryDate,
           sku: sku,
           test: test,
           developerPayload: sendPayload
@@ -3184,7 +3192,11 @@ function onetimePlan(p) {
     const start = p.purchaseCompletionTime
       ? new Date(p.purchaseCompletionTime)
       : null;
-    if (emptyString(baseplan) || emptyString(start)) {
+    if (
+      emptyString(baseplan) ||
+      start == null ||
+      Number.isNaN(start.getTime())
+    ) {
       loge(
         `onetime: missing baseplan or start time; ${item.productId}; test? ${test}`,
       );
