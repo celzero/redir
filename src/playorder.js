@@ -137,6 +137,7 @@ class GEntitlement {
   }
 
   /**
+   * "Until" is appropriate for use with subscription plans.
    * @param {GEntitlement} o
    * @param {Date|null} s
    * @param {Date|null} t
@@ -153,6 +154,10 @@ class GEntitlement {
   }
 
   /**
+   * "Since" is appropriate for use with onetime plans, as the "expiry"
+   * exclusively depends on the "start" date and the plan duration.
+   * For subscriptions, the "expiry" date can be extended or reduced based
+   * on user actions, and thus "Until" is more appropriate.
    * @param {GEntitlement} o
    * @param {Date|null} s
    * @returns {GEntitlement}
@@ -794,7 +799,7 @@ class ProductOfferDetails {
       : null;
     /** @type {string} */
     this.offerToken = json.offerToken || "";
-    /** @type {number} */
+    /** @type {number} - set to at least 1 for valid purchases */
     this.quantity = json.quantity ?? -1;
     /** @type {number} */
     this.refundableQuantity = json.refundableQuantity ?? -1;
@@ -1409,7 +1414,7 @@ async function processGooglePlayNotification(env, notif) {
     await handleTestNotification(notif.test);
   }
   logi(
-    `notif: processed ${notif.version}, ${notif.packageName}, ${notif.eventTimeMillis}`,
+    `notif: processed ${notif.version}, ${notif.packageName}, ${notif.eventTimeMillis}; test? ${notif.test != null}`,
   );
 }
 
@@ -2625,6 +2630,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
+            expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
@@ -2637,6 +2643,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
+            expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
@@ -2650,6 +2657,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
+            expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
           });
@@ -2675,6 +2683,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               sku: sku,
               allProducts: productIds,
               unconsumedProducts: unconsumedProductIds,
+              expiry: gent.expiryDate,
               test: test,
             });
           }
