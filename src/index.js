@@ -51,6 +51,7 @@ const allLinks = grabLinks();
 async function handle(r, env, ctx) {
   env = d.wrap(env, r);
   const home = env.REDIR_CATCHALL;
+  const ray = rayid(r);
   try {
     const url = new URL(r.url);
     const path = url.pathname;
@@ -74,12 +75,12 @@ async function handle(r, env, ctx) {
       // ex: x/crt
       const p2 = p[2] ? p[2].toLowerCase() : "";
       if (!p2 || p2.length === 0) {
-        return r400("x: missing resource");
+        return r400(`x: ${ray} missing resource`);
       }
       if (p2 === "crt") {
         return xc.certfile(env, r);
       }
-      return r400("x: unknown resource " + p2);
+      return r400(`x: ${ray} unknown resource ${p2}`);
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
@@ -91,7 +92,7 @@ async function handle(r, env, ctx) {
       // g; play store subs rtdn at g/rtdn
       const p2 = p[2] ? p[2].toLowerCase() : "";
       if (!p2 || p2.length === 0) {
-        return r400("g: missing resource");
+        return r400(`g: ${ray} missing resource`);
       }
 
       if (p2 === "rtdn") {
@@ -103,7 +104,7 @@ async function handle(r, env, ctx) {
         const minVCodeNeeded = minvcode(env, "paid-features");
         const cansell = greaterThanEqCmp(vcode, minVCodeNeeded);
         if (!cansell) {
-          return r503(`g: app ${vcode} outdated`);
+          return r503(`g: ${ray} app ${vcode} outdated`);
         }
       }
 
@@ -128,7 +129,7 @@ async function handle(r, env, ctx) {
         // g/refund/[vcode]?cid&purchaseToken&test&vcode[&sku]
         return revokeSubscription(env, r);
       }
-      return r400("g: unknown resource " + p2);
+      return r400(`g: ${ray} unknown resource ${p2}`);
     } else if (p[1] === urlmoney1) {
       // mb; rsasig
       const psk = env.PRE_SHARED_KEY_SVC;
@@ -146,7 +147,7 @@ async function handle(r, env, ctx) {
       // p; proxy metadata
       const clientVCode = p[2];
       if (!clientVCode || clientVCode.length === 0) {
-        return r400("missing vcode");
+        return r400(`p: ${ray} missing vcode`);
       }
       const pkjwk = rsapubkey(env);
       // unparse pkjwk to avoid stringifying it twice
@@ -186,12 +187,13 @@ async function handle(r, env, ctx) {
         addrs: clientAddrs,
         status: svcs,
         pubkey: pk,
+        ray: ray,
       });
     } else {
-      console.warn("unknown path", path);
+      console.warn(`p: ${ray} unknown path`, path);
     }
   } catch (ex) {
-    console.error("handle: err", r.url, ex);
+    console.error(`handle: ${ray} err`, r.url, ex);
     return r500(ex.message);
   }
   return r302(home);
