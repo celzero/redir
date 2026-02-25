@@ -64,6 +64,19 @@ export function rayId() {
 }
 
 /**
+ * Appends ray id to input string if available in execution context.
+ * @param {string} s - string to append ray id to
+ * @returns {string} - input string with ray id appended if available
+ */
+export function appendRayId(s) {
+  const ray = rayId();
+  if (ray) {
+    return `${s} (ray: ${ray})`;
+  }
+  return s;
+}
+
+/**
  * @returns {boolean} - Whether this is using test domain. This is distinct from
  * test purchases.
  */

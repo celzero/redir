@@ -2,7 +2,7 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import * as bin from "./buf.js";
-import { workersEnv } from "./d.js";
+import { als, appendRayId, ExecCtx, workersEnv } from "./d.js";
 import {
   aesivsz,
   hkdfaes,
@@ -24,7 +24,7 @@ const log = new glog.Log("xc");
  * @returns {Response} - Response with status 400
  */
 function r400t(u) {
-  return new Response(u, { status: 400 });
+  return new Response(appendRayId(u), { status: 400 });
 }
 
 /**
@@ -33,7 +33,7 @@ function r400t(u) {
  * @returns {Response} - Response with status 500
  */
 function r500t(u) {
-  return new Response(u, { status: 500 });
+  return new Response(appendRayId(u), { status: 500 });
 }
 
 /**
@@ -46,27 +46,29 @@ export async function certfile(env, req) {
   if (env == null || req == null || req.method != "GET") {
     return r400t("args missing");
   }
-  const part0 = env.FLY_TLS_CERTKEY0;
-  const part1 = env.FLY_TLS_CERTKEY1;
-  if (bin.emptyString(part0) || bin.emptyString(part1)) {
-    return r400t("cert parts not found");
-  }
-  try {
-    const crt = part0 + part1;
-    const enccrthex = await encryptText(env, req, crt);
-    if (bin.emptyString(enccrthex)) {
-      return r500t("could not encrypt cert");
+  return als.run(new ExecCtx(env), async () => {
+    const part0 = env.FLY_TLS_CERTKEY0;
+    const part1 = env.FLY_TLS_CERTKEY1;
+    if (bin.emptyString(part0) || bin.emptyString(part1)) {
+      return r400t("xc: cert parts not found");
     }
-    return new Response(enccrthex, {
-      headers: {
-        "Content-Type": "text/plain",
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-      },
-    });
-  } catch (err) {
-    log.e("certfile: failed to encrypt cert", err);
-  }
-  return r500t("server error");
+    try {
+      const crt = part0 + part1;
+      const enccrthex = await encryptText(env, req, crt);
+      if (bin.emptyString(enccrthex)) {
+        return r500t("xc: could not encrypt cert");
+      }
+      return new Response(enccrthex, {
+        headers: {
+          "Content-Type": "text/plain",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+      });
+    } catch (err) {
+      log.e("certfile: failed to encrypt cert", err);
+      return r500t(`xc: server error ${err.message}`);
+    }
+  });
 }
 
 /**
@@ -162,7 +164,7 @@ async function encryptText(env, req, plaintext) {
       "<",
       authtime,
       ">",
-      maxtime
+      maxtime,
     );
     return ivciphertaghex;
   } catch (err) {
