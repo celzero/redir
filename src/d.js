@@ -6,6 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+// should NOT import any other local classes
+
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export class ExecCtx {
@@ -31,6 +33,7 @@ export class ExecCtx {
   }
 }
 
+/** @type {AsyncLocalStorage<ExecCtx>} - nodejs.org/api/async_context.html*/
 export const als = new AsyncLocalStorage();
 
 /**
@@ -52,6 +55,15 @@ export function workersEnv() {
 }
 
 /**
+ * @returns {string} - CF Ray ID
+ */
+export function rayId() {
+  /** @type {ExecCtx} */
+  const cfg = als.getStore();
+  return cfg?.env?.CF_RAY || "";
+}
+
+/**
  * @returns {boolean} - Whether this is using test domain. This is distinct from
  * test purchases.
  */
@@ -69,7 +81,13 @@ export function accountIdentifiersImmutable() {
   return true;
 }
 
-export function wrap(env) {
+/**
+ *
+ * @param {any} env - Workers environment
+ * @param {Request} r - The incoming request, used to extract any relevant info for env setup
+ * @returns {any} - Wrapped environment with defaults set
+ */
+export function wrap(env, r) {
   if (env == null) env = {};
 
   if (env.REDIR_CATCHALL == null) {
@@ -112,6 +130,15 @@ export function wrap(env) {
   if (env.WS_WL_TOKEN == null) env.WS_WL_TOKEN = null;
   if (env.WS_WL_TOKEN_TEST == null) env.WS_WL_TOKEN_TEST = null;
 
+  // developers.cloudflare.com/fundamentals/reference/http-headers/#cf-ray
+  env.CF_RAY = r.headers.get("Cf-Ray") || "";
+  env.COUNTRY = r.headers.get("CF-IPCountry") || r.cf?.country || "";
+  // developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
+  env.CITY = r.cf?.city || "";
+  env.ASN = r.cf?.asn || "";
+  env.ORG = r.cf?.asOrganization || "";
+  env.COLO = r.cf?.colo || "";
+
   return env;
 }
 
@@ -148,6 +175,8 @@ export class PlayErr {
     this.allProducts = payload.allProducts;
     /** @type {string[]|undefined} - list of unconsumed product identifiers */
     this.unconsumedProducts = payload.unconsumedProducts;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
   }
 
   /**
@@ -171,6 +200,7 @@ export class PlayErr {
     if (this.allProducts != null) out.allProducts = this.allProducts;
     if (this.unconsumedProducts != null)
       out.unconsumedProducts = this.unconsumedProducts;
+    if (this.ray != null) out.ray = this.ray;
     return out;
   }
 }
@@ -180,44 +210,46 @@ export class PlayOk {
    * @param {object} payload
    */
   constructor(payload = {}) {
-    /** @type {boolean} */
+    /** @type {boolean} - success flag; may be false when ops fails */
     this.success = payload.success ?? true;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - success or failure (not error) message */
     this.message = payload.message;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - customer identifier */
     this.cid = payload.cid;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - product identifier */
     this.sku = payload.sku;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - obsfuscated purchase identifier */
     this.purchaseId = payload.purchaseId;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - order identifier */
     this.orderId = payload.orderId;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - purchase state */
     this.state = payload.state;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - account status */
     this.status = payload.status;
-    /** @type {boolean|undefined} */
+    /** @type {boolean|undefined} - test mode */
     this.test = payload.test;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - expiry as ISO 8601 string */
     this.expiry = payload.expiry;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - start date as ISO 8601 string */
     this.start = payload.start;
-    /** @type {number|undefined} */
+    /** @type {number|undefined} - refund window in days */
     this.windowDays = payload.windowDays;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - cancellation context, if any */
     this.cancelCtx = payload.cancelCtx;
-    /** @type {string[]|undefined} */
+    /** @type {string[]|undefined} - list of product identifiers in purchase */
     this.allProducts = payload.allProducts;
-    /** @type {string[]|undefined} */
+    /** @type {string[]|undefined} - list of unconsumed product identifiers */
     this.unconsumedProducts = payload.unconsumedProducts;
-    /** @type {string|undefined} */
+    /** @type {string|undefined} - developer payload */
     this.developerPayload = payload.developerPayload;
-    /** @type {boolean|undefined} */
+    /** @type {boolean|undefined} - had entitlement */
     this.hadEntitlement = payload.hadEntitlement;
-    /** @type {boolean|undefined} */
+    /** @type {boolean|undefined} - deleted entitlement */
     this.deletedEntitlement = payload.deletedEntitlement;
-    /** @type {boolean|undefined} */
+    /** @type {boolean|undefined} - was already fully refunded */
     this.wasAlreadyFullyRefunded = payload.wasAlreadyFullyRefunded;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
   }
 
   /**
@@ -248,6 +280,7 @@ export class PlayOk {
       out.deletedEntitlement = this.deletedEntitlement;
     if (this.wasAlreadyFullyRefunded != null)
       out.wasAlreadyFullyRefunded = this.wasAlreadyFullyRefunded;
+    if (this.ray != null) out.ray = this.ray;
     return out;
   }
 }

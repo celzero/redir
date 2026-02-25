@@ -6,6 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { rayId } from "./d.js";
+
 /**
  * loglevel - global log level
  * 0 = debug, 1 = info, 2 = warn, 3 = error
@@ -18,7 +20,7 @@ export class Log {
     /**
      * @type {string}
      */
-    this.tag = tag || "";
+    this.ctag = tag || "";
     /**
      * @type {number} - Log level, 0 = debug, 1 = info, 2 = warn, 3 = error
      */
@@ -77,8 +79,13 @@ export class Log {
     this.i("object:");
     console.dir(obj);
   }
+  get tag() {
+    const rid = rayId();
+    return rid ? `${this.ctag} [${rid}]` : this.ctag;
+  }
 }
 
+// TODO: remove unused global log funcs: i, w, e, d, o
 export function i(...args) {
   if (loglevel > 1) return;
   console.info(ministack(), ...args);
@@ -103,6 +110,9 @@ export function o(obj) {
   console.dir(obj);
 }
 
+/**
+ * @returns {string|"nostack"|"nocallers"} - list of callees in the stack
+ */
 function ministack() {
   const stack = new Error().stack;
   if (!stack) return "nostack";

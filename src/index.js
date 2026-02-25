@@ -49,7 +49,7 @@ const allLinks = grabLinks();
  * @returns {Promise<Response>}
  */
 async function handle(r, env, ctx) {
-  env = d.wrap(env);
+  env = d.wrap(env, r);
   const home = env.REDIR_CATCHALL;
   try {
     const url = new URL(r.url);
