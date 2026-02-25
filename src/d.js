@@ -25,7 +25,7 @@ export class ExecCtx {
      * @type {boolean} - Whether this is a test call.
      * @default false
      */
-    this.test = test || false;
+    this.test = test || env.TEST || false;
     /**
      * @type {string} - Obfuscated purchase token.
      */
