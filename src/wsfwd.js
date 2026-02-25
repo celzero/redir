@@ -56,7 +56,7 @@ function r421t(u) {
  * @returns {Promise<Response>}
  */
 export async function forwardToWs(env, r) {
-  return als.run(new ExecCtx(env), async () => {
+  return als.run(new ExecCtx(env, env.TEST), async () => {
     const u = new URL(r.url);
 
     if (!allowlisted(u)) {

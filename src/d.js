@@ -25,7 +25,7 @@ export class ExecCtx {
      * @type {boolean} - Whether this is a test call.
      * @default false
      */
-    this.test = test || env.TEST || false;
+    this.test = test || false;
     /**
      * @type {string} - Obfuscated purchase token.
      */
@@ -77,8 +77,7 @@ export function appendRayId(s) {
 }
 
 /**
- * @returns {boolean} - Whether this is using test domain. This is distinct from
- * test purchases.
+ * @returns {boolean} - Whether this ExecCtx is in test domain.
  */
 export function testmode() {
   /** @type {ExecCtx} */

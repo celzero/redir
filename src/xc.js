@@ -46,7 +46,7 @@ export async function certfile(env, req) {
   if (env == null || req == null || req.method != "GET") {
     return r400t("args missing");
   }
-  return als.run(new ExecCtx(env), async () => {
+  return als.run(new ExecCtx(env, env.TEST), async () => {
     const part0 = env.FLY_TLS_CERTKEY0;
     const part1 = env.FLY_TLS_CERTKEY1;
     if (bin.emptyString(part0) || bin.emptyString(part1)) {
