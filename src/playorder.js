@@ -7,7 +7,14 @@
  */
 
 import { emptyString, str2byt2hex } from "./buf.js";
-import { accountIdentifiersImmutable, als, ExecCtx, obsToken } from "./d.js";
+import {
+  accountIdentifiersImmutable,
+  als,
+  ExecCtx,
+  obsToken,
+  PlayErr,
+  PlayOk,
+} from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
@@ -2023,7 +2030,8 @@ export async function cancelSubscription(env, req) {
 
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
     const sub = await getSubscription(env, purchaseToken);
-    // grab test domain from fetched subscription
+
+    // re-grab test domain from fetched subscription
     test = sub.testPurchase != null;
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
@@ -2033,7 +2041,6 @@ export async function cancelSubscription(env, req) {
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
-        sku: sku,
       });
     }
 
@@ -2085,7 +2092,6 @@ export async function cancelSubscription(env, req) {
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
-        sku: sku,
       });
     } else {
       logi(`sub: cancel for ${obstoken}`);
@@ -2095,7 +2101,6 @@ export async function cancelSubscription(env, req) {
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
-        sku: sku,
       });
     }
   });
@@ -2748,6 +2753,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         sku: sku,
         allProducts: productIds,
         test: test,
+        state: state,
       });
     }
 
@@ -2767,6 +2773,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           allProducts: productIds,
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
+          test: test,
+          state: state,
         });
       }
 
@@ -2782,6 +2790,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             sku: sku,
             allProducts: productIds,
             test: test,
+            state: state,
             error: `cid ${cid} not registered with purchase token`,
           });
         }
@@ -2794,6 +2803,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           sku: sku,
           allProducts: productIds,
           test: test,
+          state: state,
         });
       }
 
@@ -2812,6 +2822,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           sku: sku,
           allProducts: productIds,
           test: test,
+          state: state,
         });
       }
 
@@ -2830,6 +2841,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           sku: sku,
           allProducts: productIds,
           test: test,
+          state: state,
         });
       }
       if (ent.status === "expired" && !force) {
@@ -2841,6 +2853,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           sku: sku,
           allProducts: productIds,
           test: test,
+          state: state,
         });
       }
       if (ent.status !== "valid" && !force) {
@@ -2852,6 +2865,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           sku: sku,
           allProducts: productIds,
           test: test,
+          state: state,
         });
       }
 
@@ -2871,6 +2885,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         test: test,
         sku: sku,
         allProducts: productIds,
+        state: state,
         developerPayload: sendPayload
           ? JSON.stringify({
               ws: await ent.toClientEntitlement(env),
@@ -3567,17 +3582,20 @@ function replacing(sub) {
 
 function r200j(j) {
   const h = { "content-type": "application/json" };
-  return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
+  const payload = j instanceof PlayOk ? j.json : new PlayOk(j).json;
+  return new Response(JSON.stringify(payload), { status: 200, headers: h }); // ok
 }
 
 function r400j(j) {
   const h = { "content-type": "application/json" };
-  return new Response(JSON.stringify(j), { status: 400, headers: h }); // bad request
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 400, headers: h }); // bad request
 }
 
 function r500j(j) {
   const h = { "content-type": "application/json" };
-  return new Response(JSON.stringify(j), { status: 500, headers: h }); // internal server error
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 500, headers: h }); // internal server error
 }
 
 function r200t(txt) {

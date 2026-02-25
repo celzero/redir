@@ -114,3 +114,140 @@ export function wrap(env) {
 
   return env;
 }
+
+export class PlayErr {
+  /**
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {string} - error message */
+    this.error = payload.error || payload.message || "";
+    /** @type {string|undefined} - error details, if any*/
+    this.details = payload.details;
+    /** @type {string|undefined} - customer identifier */
+    this.cid = payload.cid;
+    /** @type {string|undefined} - product identifier */
+    this.sku = payload.sku;
+    /** @type {string|undefined} - obsfuscated purchase identifier*/
+    this.purchaseId = payload.purchaseId;
+    /** @type {string|undefined} - order identifier */
+    this.orderId = payload.orderId;
+    /** @type {string|undefined} - purchase state */
+    this.state = payload.state;
+    /** @type {string|undefined} - account status */
+    this.status = payload.status;
+    /** @type {boolean|undefined} - test mode*/
+    this.test = payload.test;
+    /** @type {string|undefined} - expiry as ISO 8601 string */
+    this.expiry = payload.expiry;
+    /** @type {string|undefined} - start date as ISO 8601 string */
+    this.start = payload.start;
+    /** @type {number|undefined} - refund window in days */
+    this.windowDays = payload.windowDays;
+    /** @type {string[]|undefined} - list of product identifiers in purchase */
+    this.allProducts = payload.allProducts;
+    /** @type {string[]|undefined} - list of unconsumed product identifiers */
+    this.unconsumedProducts = payload.unconsumedProducts;
+  }
+
+  /**
+   * @returns {object} - JSON representation of the error
+   */
+  get json() {
+    const out = {};
+    if (this.error) out.error = this.error;
+    if (this.message != null) out.message = this.message;
+    if (this.details != null) out.details = this.details;
+    if (this.cid != null) out.cid = this.cid;
+    if (this.sku != null) out.sku = this.sku;
+    if (this.purchaseId != null) out.purchaseId = this.purchaseId;
+    if (this.orderId != null) out.orderId = this.orderId;
+    if (this.state != null) out.state = this.state;
+    if (this.status != null) out.status = this.status;
+    if (this.test != null) out.test = this.test;
+    if (this.expiry != null) out.expiry = this.expiry;
+    if (this.start != null) out.start = this.start;
+    if (this.windowDays != null) out.windowDays = this.windowDays;
+    if (this.allProducts != null) out.allProducts = this.allProducts;
+    if (this.unconsumedProducts != null)
+      out.unconsumedProducts = this.unconsumedProducts;
+    return out;
+  }
+}
+
+export class PlayOk {
+  /**
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {boolean} */
+    this.success = payload.success ?? true;
+    /** @type {string|undefined} */
+    this.message = payload.message;
+    /** @type {string|undefined} */
+    this.cid = payload.cid;
+    /** @type {string|undefined} */
+    this.sku = payload.sku;
+    /** @type {string|undefined} */
+    this.purchaseId = payload.purchaseId;
+    /** @type {string|undefined} */
+    this.orderId = payload.orderId;
+    /** @type {string|undefined} */
+    this.state = payload.state;
+    /** @type {string|undefined} */
+    this.status = payload.status;
+    /** @type {boolean|undefined} */
+    this.test = payload.test;
+    /** @type {string|undefined} */
+    this.expiry = payload.expiry;
+    /** @type {string|undefined} */
+    this.start = payload.start;
+    /** @type {number|undefined} */
+    this.windowDays = payload.windowDays;
+    /** @type {string|undefined} */
+    this.cancelCtx = payload.cancelCtx;
+    /** @type {string[]|undefined} */
+    this.allProducts = payload.allProducts;
+    /** @type {string[]|undefined} */
+    this.unconsumedProducts = payload.unconsumedProducts;
+    /** @type {string|undefined} */
+    this.developerPayload = payload.developerPayload;
+    /** @type {boolean|undefined} */
+    this.hadEntitlement = payload.hadEntitlement;
+    /** @type {boolean|undefined} */
+    this.deletedEntitlement = payload.deletedEntitlement;
+    /** @type {boolean|undefined} */
+    this.wasAlreadyFullyRefunded = payload.wasAlreadyFullyRefunded;
+  }
+
+  /**
+   * @returns {object} - JSON representation of the success payload
+   */
+  get json() {
+    const out = {};
+    if (this.success != null) out.success = this.success;
+    if (this.message != null) out.message = this.message;
+    if (this.cid != null) out.cid = this.cid;
+    if (this.sku != null) out.sku = this.sku;
+    if (this.purchaseId != null) out.purchaseId = this.purchaseId;
+    if (this.orderId != null) out.orderId = this.orderId;
+    if (this.state != null) out.state = this.state;
+    if (this.status != null) out.status = this.status;
+    if (this.test != null) out.test = this.test;
+    if (this.expiry != null) out.expiry = this.expiry;
+    if (this.start != null) out.start = this.start;
+    if (this.windowDays != null) out.windowDays = this.windowDays;
+    if (this.cancelCtx != null) out.cancelCtx = this.cancelCtx;
+    if (this.allProducts != null) out.allProducts = this.allProducts;
+    if (this.unconsumedProducts != null)
+      out.unconsumedProducts = this.unconsumedProducts;
+    if (this.developerPayload != null)
+      out.developerPayload = this.developerPayload;
+    if (this.hadEntitlement != null) out.hadEntitlement = this.hadEntitlement;
+    if (this.deletedEntitlement != null)
+      out.deletedEntitlement = this.deletedEntitlement;
+    if (this.wasAlreadyFullyRefunded != null)
+      out.wasAlreadyFullyRefunded = this.wasAlreadyFullyRefunded;
+    return out;
+  }
+}
