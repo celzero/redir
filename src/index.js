@@ -293,7 +293,12 @@ function defaultparams(k) {
   return [];
 }
 
-// developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
+/**
+ * Get the country from the request headers.
+ * developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"us"} - Country, if any.
+ */
 function country(req) {
   if (req.cf && req.cf.country) {
     return req.cf.country.toLowerCase();
@@ -301,6 +306,20 @@ function country(req) {
   return "us";
 }
 
+/**
+ * Get the CF Ray ID from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|""} - CF Ray ID, if any.
+ */
+function rayid(req) {
+  return req.headers.get("Cf-Ray") || "";
+}
+
+/**
+ * Get the client IP address from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - The client IP address, if available.
+ */
 function clientIp(req) {
   const cfclient6 = req.headers.get("CF-Connecting-IPv6");
   const cfclient4 = req.headers.get("CF-Connecting-IP");
@@ -315,6 +334,11 @@ function clientIp(req) {
   return "unknown";
 }
 
+/**
+ * Get the AS Organization from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - AS Organization, if any.
+ */
 function asorg(req) {
   if (req.cf && req.cf.asOrganization) {
     return req.cf.asOrganization;
@@ -322,6 +346,11 @@ function asorg(req) {
   return "unknown";
 }
 
+/**
+ * Get the city from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - City, if any.
+ */
 function city(req) {
   if (req.cf && req.cf.city) {
     return req.cf.city;
@@ -329,6 +358,11 @@ function city(req) {
   return "unknown";
 }
 
+/**
+ * Get the Cloudflare colo from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - Colo, if any.
+ */
 function colo(req) {
   if (req.cf && req.cf.colo) {
     return req.cf.colo;
@@ -336,6 +370,11 @@ function colo(req) {
   return "unknown";
 }
 
+/**
+ * Get the region from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - Region, if any.
+ */
 function region(req) {
   if (req.cf && req.cf.region) {
     return req.cf.region;
@@ -343,6 +382,10 @@ function region(req) {
   return "unknown";
 }
 
+/**
+ * @param {Request} req - The incoming request object.
+ * @returns {string|"unknown"} - Postal code, if any.
+ */
 function postalcode(req) {
   if (req.cf && req.cf.postalCode) {
     return req.cf.postalCode;
