@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b64AsBytes, emptyBuf } from "./buf.js";
+import { b64AsBytes, emptyBuf, emptyString } from "./buf.js";
 import * as d from "./d.js";
 import {
   grabLinks,
@@ -32,6 +32,7 @@ const urlmoney2 = "mt"; // unused? generate token
 const urlsproxy = "p"; // sproxy metadata
 const urlgplay = "g"; // redirect to play store
 const crosssvc = "x"; // cross-service calls
+const paramwsfwd = "rpn"; // if url param is present, forward to ws
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
 
@@ -57,6 +58,9 @@ async function handle(r, env, ctx) {
     const path = url.pathname;
 
     if (mustWsFwd(url)) {
+      if ((await admit(env, r)) === false) {
+        return r429(`wsf: ${ray} rate limited`);
+      }
       return forwardToWs(env, r);
     }
 
@@ -106,6 +110,10 @@ async function handle(r, env, ctx) {
         if (!cansell) {
           return r503(`g: ${ray} app ${vcode} outdated`);
         }
+      }
+
+      if ((await admit(env, r)) === false) {
+        return r429(`g: ${ray} rate limited`);
       }
 
       if (p2 === "ack") {
@@ -463,6 +471,10 @@ function r400(w) {
   return new Response(w, { status: 400 }); // bad request
 }
 
+function r429(w) {
+  return new Response(w, { status: 429 }); // too many requests
+}
+
 function r302(where) {
   return new Response("Redirecting...", {
     status: 302, // redirect
@@ -557,8 +569,25 @@ function rsapubkey(env) {
  */
 function mustWsFwd(url) {
   const q = url.searchParams;
-  const w = q.get("rpn");
+  const w = q.get(paramwsfwd);
   return w != null && w.length > 0 && w.startsWith("ws");
+}
+
+/**
+ * Check if the request is allowed based on rate limiting.
+ * @param {any} env - Worker environment.
+ * @param {Request} r - The incoming request.
+ * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
+ */
+async function admit(env, r) {
+  const u = new URL(r.url);
+  const cid = u.searchParams.get("cid");
+  if (!emptyString(cid)) {
+    const { success } = await env.TEN_10s_AC.limit({ key: cid });
+    if (!success) return false; // rate limit by cid
+  }
+  const { success } = await env.THOUSAND_10s_AC.limit({ key: clientIp(r) });
+  return success;
 }
 
 export default {

@@ -38,6 +38,22 @@ binding = "REDIRDB"
 database_name = "rpn"
 database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
+# developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/
+[[ratelimits]]
+name = "TEN_10s_AC"
+namespace_id = "2121"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 10
+
+[[ratelimits]]
+name = "THOUSAND_10s_AC"
+namespace_id = "7777"
+
+  [ratelimits.simple]
+  limit = 1000
+  period = 10
 
 ##################
 #------PROD------#
