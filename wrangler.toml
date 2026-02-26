@@ -106,7 +106,7 @@ database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 name = "TEN_10s_AC"
 namespace_id = "21"
 
-  [ratelimits.simple]
+  [env.prod.ratelimits.simple]
   limit = 10
   period = 10
 
@@ -114,7 +114,7 @@ namespace_id = "21"
 name = "THOUSAND_10s_AC"
 namespace_id = "77"
 
-  [ratelimits.simple]
+  [env.prod.ratelimits.simple]
   limit = 1000
   period = 10
 
