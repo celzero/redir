@@ -92,15 +92,31 @@ WS_URL_TEST = "https://api-staging.windscribe.com/"
 WS_URL = "https://api.windscribe.com/"
 STATUS = "ok"
 
-[[d1_databases]]
+[[env.prod.d1_databases]]
 binding = "SVCDBTEST"
 database_name = "rpntest"
 database_id = "e6db9d1f-cf58-427e-aa15-bd3fbf54d69e"
 
-[[d1_databases]]
+[[env.prod.d1_databases]]
 binding = "SVCDB"
 database_name = "rpn"
 database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
+
+[[env.prod.ratelimits]]
+name = "TEN_10s_AC"
+namespace_id = "21"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 10
+
+[[env.prod.ratelimits]]
+name = "THOUSAND_10s_AC"
+namespace_id = "77"
+
+  [ratelimits.simple]
+  limit = 1000
+  period = 10
 
 ##################
 #-----SECRETS----#
