@@ -580,13 +580,28 @@ function mustWsFwd(url) {
  * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
  */
 async function admit(env, r) {
+  const ac10 = env.TEN_10s_AC;
+  const acThousand = env.THOUSAND_10s_AC;
+  if (
+    !ac10 ||
+    !acThousand ||
+    typeof ac10.limit !== "function" ||
+    typeof acThousand.limit !== "function"
+  ) {
+    console.warn("admit: missing rate limiters");
+    return true; // fail open
+  }
+
   const u = new URL(r.url);
   const cid = u.searchParams.get("cid");
   if (!emptyString(cid)) {
-    const { success } = await env.TEN_10s_AC.limit({ key: cid });
+    // ignore cid based rate limit if no cid provided.
+    // some url paths do not require cid.
+    // TODO: strictly determine paths that may bypass cid rate limits.
+    const { success } = await ac10.limit({ key: cid });
     if (!success) return false; // rate limit by cid
   }
-  const { success } = await env.THOUSAND_10s_AC.limit({ key: clientIp(r) });
+  const { success } = await acThousand.limit({ key: clientIp(r) });
   return success;
 }
 

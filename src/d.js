@@ -129,6 +129,9 @@ export function wrap(env, r) {
     env.DBTEST = env.SVCDBTEST; // "rpn-test"
   else env.DBTEST = env.REDIRDBTEST; // "rpn-test"
 
+  if (env.TEN_10s_AC == null) env.TEN_10s_AC = null;
+  if (env.THOUSAND_10s_AC == null) env.THOUSAND_10s_AC = null;
+
   // secrets
   if (env.STRIPE_API_KEY == null) env.STRIPE_API_KEY = null;
   if (env.STRIPE_WEBHOOK_SECRET == null) env.STRIPE_WEBHOOK_SECRET = null;
