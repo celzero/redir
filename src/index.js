@@ -581,14 +581,15 @@ function mustWsFwd(url) {
  */
 async function admit(env, r) {
   const ac10 = env.TEN_10s_AC;
-  const acThousand = env.THOUSAND_10s_AC;
-  if (
-    !ac10 ||
-    !acThousand ||
-    typeof ac10.limit !== "function" ||
-    typeof acThousand.limit !== "function"
-  ) {
-    console.warn("admit: missing rate limiters");
+  const ac1000 = env.THOUSAND_10s_AC;
+  const noac10 = !ac10;
+  const noac1000 = !ac1000;
+  const noac10func = typeof ac10.limit !== "function";
+  const noac1000func = typeof ac1000.limit !== "function";
+  if (noac10 || noac1000 || noac10func || noac1000func) {
+    console.warn(
+      `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 10f? ${noac10func}, 1000f? ${noac1000func}`,
+    );
     return true; // fail open
   }
 
@@ -601,7 +602,7 @@ async function admit(env, r) {
     const { success } = await ac10.limit({ key: cid });
     if (!success) return false; // rate limit by cid
   }
-  const { success } = await acThousand.limit({ key: clientIp(r) });
+  const { success } = await ac1000.limit({ key: clientIp(r) });
   return success;
 }
 
