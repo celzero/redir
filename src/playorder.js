@@ -1778,10 +1778,11 @@ async function getSubscription(env, purchaseToken) {
   }
   const json = await r.json();
   if (json != null && json.kind === "androidpublisher#subscriptionPurchaseV2") {
+    if (log.debug) logd("sub: get product", env.CF_RAY, JSON.stringify(json));
     return new SubscriptionPurchaseV2(json);
   } else {
     // TODO: should the json be logged instead?
-    throw new Error(`Unexpected response ${r.status}: ${JSON.stringify(json)}`);
+    throw new Error(`sub: json err ${r.status}: ${JSON.stringify(json)}`);
   }
 }
 
@@ -1804,7 +1805,6 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  logd(`onetime: get product ${productId}`);
   const r = await fetch(url, { headers });
   if (!r.ok) {
     const gmsg = await gerror(r);
@@ -1812,6 +1812,9 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
   }
   const json = await r.json();
   if (json != null && !emptyString(json.kind)) {
+    if (log.debug) {
+      logd(`onetime: getproduct ${env.CF_RAY} ${JSON.stringify(json)}`);
+    }
     return new ProductPurchaseV1(json);
   } else {
     throw new Error(`onetime: json err ${r.status}: ${JSON.stringify(json)}`);
@@ -1843,7 +1846,9 @@ async function getOnetimeProductV2(env, purchaseToken) {
   }
   const json = await r.json();
   if (json != null && !emptyString(json.kind)) {
-    logd("onetime: get product v2", env.CF_RAY, JSON.stringify(json));
+    if (log.debug) {
+      logd(`onetime: get product v2 ${env.CF_RAY} ${JSON.stringify(json)}`);
+    }
     return new ProductPurchaseV2(json);
   } else {
     throw new Error(

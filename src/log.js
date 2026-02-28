@@ -83,6 +83,9 @@ export class Log {
     const rid = rayId();
     return rid ? `${this.ctag} [${rid}]` : this.ctag;
   }
+  get debug() {
+    return this.level === 0;
+  }
 }
 
 // TODO: remove unused global log funcs: i, w, e, d, o
