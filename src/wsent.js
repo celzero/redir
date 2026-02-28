@@ -337,7 +337,9 @@ export async function deleteWsEntitlement(env, cid) {
   let c = null;
   try {
     c = await creds(env, cid, "del");
-  } catch (_) {}
+  } catch (e) {
+    log.w(`ws: no creds for ${cid}; nothing to delete? ${e.message}`);
+  }
   if (c == null) {
     return; // No existing credentials, nothing to delete
   }
@@ -429,7 +431,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
   if (c.expiry.getTime() >= subExpiryNoGraceMs) {
     log.d(
-      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiryNoGraceMs}`,
+      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiry} - 1d`,
     );
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
@@ -442,7 +444,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot update entitlement; subscription expiring soon: ${subExpiry.toISOString()}`,
+      `cannot update entitlement; subscription expiring soon: ${subExpiry}`,
     );
   }
 

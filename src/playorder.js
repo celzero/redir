@@ -2580,7 +2580,13 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           dbres.results == null ||
           dbres.results.length <= 0
         ) {
-          return r400j({ error: "purchase not found", purchaseId: obstoken });
+          return r400j({
+            error: "purchase not found",
+            cid: cid,
+            sku: sku,
+            purchaseId: test ? purchasetoken : obstoken,
+            test: test,
+          });
         }
         const entry = dbres.results[0];
         const storedcid = entry.cid;
@@ -2687,6 +2693,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             );
             return r500j({
               error: "failed to ack or consume",
+              details: e.message,
               purchaseId: test ? purchasetoken : obstoken,
               cid: cid,
               sku: sku,
@@ -2807,6 +2814,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         return r400j({
           purchaseId: test ? purchasetoken : obstoken,
           error: "cid validation failed",
+          details: e.message,
           cid: cid,
           sku: sku,
           allProducts: productIds,
@@ -3039,7 +3047,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
     kind = 1; // generated
   }
   if (kind == 1 && !gen) {
-    throw new Error("sub: missing for purchase token: err? " + msg);
+    throw new Error("sub: missing cid for purchase: err? " + msg);
   }
   if (insert) {
     const clientinfo = sub.subscribeWithGoogleInfo;
@@ -3144,7 +3152,7 @@ async function recursivelyGetCid(env, sub, n = 1) {
  */
 function subscriptionInfo(sub) {
   if (!sub || !sub.lineItems || sub.lineItems.length === 0) {
-    throw new Error("No sub line items");
+    throw new Error("fatal: no sub line items in purchase");
   }
   const start = sub.startTime ? new Date(sub.startTime) : null;
   for (const item of sub.lineItems) {
@@ -3654,7 +3662,7 @@ async function gerror(r) {
     if (msg == null || typeof msg !== "object") {
       return "unknown msg: " + msg;
     }
-    logo(msg);
+    loge(`gerror: ${JSON.stringify(msg)}`);
     if (msg.error && msg.error.message) {
       return msg.error.message;
     }
