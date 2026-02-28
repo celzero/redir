@@ -1467,31 +1467,31 @@ async function handleOneTimeProductNotification(env, notif) {
     await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
+      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
     );
 
     if (pending) {
       logi(
-        `onetime: purchase pending ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
+        `onetime: purchase pending ${onetimeState}; ${cid} / tok: ${obstoken}; test? ${test}`,
       );
       return;
     }
 
     if (cancelled) {
       logi(
-        `onetime: cancelled ${onetimeState}; ${cid} for ${obstoken}; test? ${test}`,
+        `onetime: cancelled ${onetimeState}; ${cid} / tok: ${obstoken}; test? ${test}`,
       );
       for (const tries of [1, 10]) {
         await sleep(tries); // wait 1s, then 10s
         try {
           await deleteWsEntitlement(env, cid);
           logi(
-            `onetime: revoked ent for ${cid} for ${obstoken} ${sku}/${productIds}; test? ${test}`,
+            `onetime: revoked ent for ${cid} / tok: ${obstoken} ${sku}/${productIds}; test? ${test}`,
           );
           break;
         } catch (e) {
           loge(
-            `onetime: err revoking ent for ${cid} for ${obstoken} ${sku}/${productIds}: ${e.message}; test? ${test}`,
+            `onetime: err revoking ent for ${cid} / tok: ${obstoken} ${sku}/${productIds}: ${e.message}; test? ${test}`,
           );
         }
       }
@@ -1500,7 +1500,7 @@ async function handleOneTimeProductNotification(env, notif) {
 
     if (!paid || pending) {
       logw(
-        `onetime: unpaid ${onetimeState} ${cid} for ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
+        `onetime: unpaid ${onetimeState} ${cid} / tok: ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
       );
       return;
     }
@@ -1508,7 +1508,7 @@ async function handleOneTimeProductNotification(env, notif) {
     if (plan == null) {
       // TODO: auto refund?
       throw new Error(
-        `onetime: missing plan info for ${obstoken} sku=${sku} ${productIds}`,
+        `onetime: missing plan info ${cid} / tok: ${obstoken} sku=${sku} ${productIds}`,
       );
     }
 
@@ -1516,7 +1516,7 @@ async function handleOneTimeProductNotification(env, notif) {
     const ent = await getOrGenWsEntitlement(env, cid, expiry, plan.plan);
     if (ackd && consumed) {
       logi(
-        `onetime: already ack/con: ${cid} for ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
+        `onetime: already ack/con: ${cid} / tok: ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
       );
       return;
     }
@@ -1836,7 +1836,6 @@ async function getOnetimeProductV2(env, purchaseToken) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  logd("onetime: get product v2");
   const r = await fetch(url, { headers });
   if (!r.ok) {
     const gmsg = await gerror(r);
@@ -1844,6 +1843,7 @@ async function getOnetimeProductV2(env, purchaseToken) {
   }
   const json = await r.json();
   if (json != null && !emptyString(json.kind)) {
+    logd("onetime: get product v2", env.CF_RAY, JSON.stringify(json));
     return new ProductPurchaseV2(json);
   } else {
     throw new Error(
@@ -2439,7 +2439,9 @@ async function ackOnetimePurchase(
     }
   } else {
     if (!ackWithoutEntitlement) {
-      throw new Error(`onetime: for ${obs}, cannot ack product`);
+      throw new Error(
+        `onetime: err ack ${obs} for ${cid}; missing entitlement`,
+      );
     }
     const r = await fetch(ackurl, { method: "POST", headers });
     if (!r.ok) {
@@ -2567,11 +2569,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       const onetimeState = onetimePurchaseStateStr2(purchase2);
       obstoken = await obfuscate(purchasetoken);
 
-      logi(
-        `onetime: ack/con ${onetimeState} for ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
-      );
-
       return await als.run(new ExecCtx(env, test, obstoken), async () => {
+        logi(
+          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
+        );
+
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
         if (
           dbres == null ||
@@ -2680,7 +2682,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               ackd,
             );
           } catch (e) {
-            loge(`onetime: err ack/consume ${obstoken}: ${e.message}`);
+            loge(
+              `onetime: err ack/con: ${cid} / tok: ${obstoken}: ${e.message}`,
+            );
             return r500j({
               error: "failed to ack or consume",
               purchaseId: test ? purchasetoken : obstoken,
@@ -2694,8 +2698,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           }
         }
 
-        // TODO: sendPayload if ent.userId has changed from previous entitlement
+        // TODO: sendPayload iff ent.userId has changed from previous entitlement
         const sendPayload = ent != null;
+
+        logi(
+          `onetime: ackd/con for ${cid} / tok: ${obstoken} / sentEnt? ${sendPayload}; test? ${test}`,
+        );
 
         return r200j({
           success: true,
@@ -2809,7 +2817,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
       const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
       if (obsoleted) {
-        logi(`ack: token ${obstoken} is obsoleted, cannot ack`);
+        logi(`ack: token ${obstoken} for ${cid} is obsoleted, cannot ack`);
         if (!ackd) {
           await ackSubscriptionWithoutEntitlement(env, purchasetoken);
         }
