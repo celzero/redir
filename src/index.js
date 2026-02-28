@@ -575,6 +575,7 @@ function mustWsFwd(url) {
 
 /**
  * Check if the request is allowed based on rate limiting.
+ * developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit
  * @param {any} env - Worker environment.
  * @param {Request} r - The incoming request.
  * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
