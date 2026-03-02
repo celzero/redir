@@ -2626,24 +2626,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       return r400j({ error: "missing/invalid client id" });
     }
 
-    if (knownOnetimeProductsAndPlans.has(sku)) {
-      const purchase2 = await getOnetimeProductV2(env, purchasetoken);
-      test = isOnetimeTest2(purchase2);
-      const ackd = isOnetimeAck2(purchase2);
-      const consumed = isOnetimeAllConsumed2(purchase2);
-      // TODO: must sku match any productIds?
-      const productIds = allProducts2(purchase2);
-      const unconsumedProductIds = unconsumedProducts2(purchase2);
-      const paid = isOnetimePaid2(purchase2);
-      const pending = isOnetimeUnpaid2(purchase2);
-      const onetimeState = onetimePurchaseStateStr2(purchase2);
-      obstoken = await obfuscate(purchasetoken);
+    obstoken = await obfuscate(purchasetoken);
 
-      return await als.run(new ExecCtx(env, test, obstoken), async () => {
-        logi(
-          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
-        );
-
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
+      if (knownOnetimeProductsAndPlans.has(sku)) {
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
         if (
           dbres == null ||
@@ -2673,6 +2659,34 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             test: test,
           });
         }
+
+        // TODO: if fetching purchase2 from Google fails, use onetime meta from db?
+        const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+        const testPurchase = isOnetimeTest2(purchase2);
+        const ackd = isOnetimeAck2(purchase2);
+        const consumed = isOnetimeAllConsumed2(purchase2);
+        // TODO: must sku match any productIds?
+        const productIds = allProducts2(purchase2);
+        const unconsumedProductIds = unconsumedProducts2(purchase2);
+        const paid = isOnetimePaid2(purchase2);
+        const pending = isOnetimeUnpaid2(purchase2);
+        const onetimeState = onetimePurchaseStateStr2(purchase2);
+
+        logi(
+          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
+        );
+
+        if (testPurchase !== test) {
+          return r400j({
+            error: "test domain mismatch",
+            purchaseId: testPurchase ? purchasetoken : obstoken,
+            state: onetimeState,
+            sku: sku,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
+            test: test,
+          });
+        } // else: test === testPurchase
 
         if (!paid || pending) {
           return r400j({
@@ -2799,185 +2813,228 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               })
             : undefined,
         });
-      });
-    }
-
-    // get subscription details from google play
-    const sub = await getSubscription(env, purchasetoken);
-    test = sub.testPurchase != null;
-    const state = sub.subscriptionState;
-    const ackstate = sub.acknowledgementState;
-    // TODO: must var sku match any productIds?
-    const productIds = subAllProducts(sub);
-    const active = state === "SUBSCRIPTION_STATE_ACTIVE";
-    const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
-    const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
-    const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
-    obstoken = await obfuscate(purchasetoken);
-
-    logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
-
-    // canceled subs could be expiring in the future
-    if ((!active && !cancelled) || expired) {
-      loge(`ack: err inactive: ${cid}, state: ${state}`);
-      return r400j({
-        error: "subscription not active",
-        purchaseId: test ? purchasetoken : obstoken,
-        state: state,
-      });
-    }
-
-    const gprod = subscriptionInfo(sub);
-    if (gprod == null) {
-      // such purchases can only be cancelled/refunded
-      loge(`ack: sub err invalid product for ${obstoken}`);
-      return r400j({
-        error: "not a valid product subscription; will be auto refunded",
-        purchaseId: test ? purchasetoken : obstoken,
-        cid: cid,
-        sku: sku,
-        allProducts: productIds,
-        test: test,
-        state: state,
-      });
-    }
-
-    const expiry = gprod.expiry;
-    const productId = gprod.productId;
-    const plan = gprod.plan;
-
-    return await als.run(new ExecCtx(env, test, obstoken), async () => {
-      // TODO: check if expiry/productId/plan are valid
-      // Play Billing deletes a purchaseToken after 60d from expiry
-      await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
-      if (Date.now() > expiry.getTime()) {
-        return r400j({
-          error: "subscription expired",
-          cid: cid,
-          sku: sku,
-          allProducts: productIds,
-          purchaseId: test ? purchasetoken : obstoken,
-          expiry: gprod.expiryDate,
-          test: test,
-          state: state,
-        });
-      }
-
-      try {
-        // TODO: validate cid only for credential-less accounts
-        // credentialed accounts can have different cids
-        const existingCid = await getCidThenPersist(env, sub);
-        if (existingCid !== cid) {
-          loge(`ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`);
+      } else {
+        const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
+        if (
+          dbres == null ||
+          dbres.results == null ||
+          dbres.results.length <= 0
+        ) {
+          loge(`ack: sub not found in db ${cid} / tok: ${obstoken}`);
           return r400j({
+            error: "cannot ack, subscription not found",
+            purchaseId: obstoken,
+            cid: cid,
+            sku: sku,
+            purchaseId: obstoken,
+            test: test,
+          });
+        }
+        const entry = dbres.results[0];
+        const storedcid = entry.cid;
+        // TODO: only allow credentialless clients to access this endpoint
+        if (accountIdentifiersImmutable() && storedcid !== cid) {
+          loge(`ack: sub cid mismatch: ${cid} != ${storedcid}`);
+          return r400j({
+            error: "cannot ack, cid mismatch",
+            purchaseId: obstoken,
+            cid: cid,
+            sku: sku,
+            test: test,
+          });
+        }
+
+        // TODO: test if subdb and sub are equal?
+        // const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
+        const sub = await getSubscription(env, purchasetoken);
+        const testPurchase = sub.testPurchase != null;
+        const state = sub.subscriptionState;
+        const ackstate = sub.acknowledgementState;
+        // TODO: must var sku match any productIds?
+        const productIds = subAllProducts(sub);
+        const active = state === "SUBSCRIPTION_STATE_ACTIVE";
+        const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
+        const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
+        const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
+        obstoken = await obfuscate(purchasetoken);
+
+        if (testPurchase !== test) {
+          loge(`ack: err test domain mismatch for ${cid} with ${obstoken}`);
+          return r400j({
+            error: "test domain mismatch",
+            purchaseId: testPurchase ? purchasetoken : obstoken,
+            state: state,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+          });
+        } // else: test === testPurchase
+
+        logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
+
+        // canceled subs could be expiring in the future
+        if ((!active && !cancelled) || expired) {
+          loge(`ack: err inactive: ${cid}, state: ${state}`);
+          return r400j({
+            error: "subscription not active",
+            purchaseId: test ? purchasetoken : obstoken,
+            state: state,
+          });
+        }
+
+        const gprod = subscriptionInfo(sub);
+        if (gprod == null) {
+          // such purchases can only be cancelled/refunded
+          loge(`ack: sub err invalid product for ${obstoken}`);
+          return r400j({
+            error: "not a valid product subscription; will be auto refunded",
             purchaseId: test ? purchasetoken : obstoken,
             cid: cid,
             sku: sku,
             allProducts: productIds,
             test: test,
             state: state,
-            error: `cid ${cid} not registered with purchase token`,
           });
         }
-      } catch (e) {
-        loge(`ack: err validating cid (${cid}): ${e.message}`);
-        return r400j({
-          purchaseId: test ? purchasetoken : obstoken,
-          error: "cid validation failed",
-          details: e.message,
-          cid: cid,
-          sku: sku,
-          allProducts: productIds,
-          test: test,
-          state: state,
-        });
-      }
 
-      const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
-      if (obsoleted) {
-        logi(`ack: token ${obstoken} for ${cid} is obsoleted, cannot ack`);
-        if (!ackd) {
-          await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+        const expiry = gprod.expiry;
+        const productId = gprod.productId;
+        const plan = gprod.plan;
+
+        // TODO: check if expiry/productId/plan are valid
+        // Play Billing deletes a purchaseToken after 60d from expiry
+        await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
+        if (Date.now() > expiry.getTime()) {
+          return r400j({
+            error: "subscription expired",
+            cid: cid,
+            sku: sku,
+            allProducts: productIds,
+            purchaseId: test ? purchasetoken : obstoken,
+            expiry: gprod.expiryDate,
+            test: test,
+            state: state,
+          });
         }
+
+        try {
+          // TODO: validate cid only for credential-less accounts
+          // credentialed accounts can have different cids
+          const existingCid = await getCidThenPersist(env, sub);
+          if (existingCid !== cid) {
+            loge(
+              `ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`,
+            );
+            return r400j({
+              purchaseId: test ? purchasetoken : obstoken,
+              cid: cid,
+              sku: sku,
+              allProducts: productIds,
+              test: test,
+              state: state,
+              error: `cid ${cid} not registered with purchase token`,
+            });
+          }
+        } catch (e) {
+          loge(`ack: err validating cid (${cid}): ${e.message}`);
+          return r400j({
+            purchaseId: test ? purchasetoken : obstoken,
+            error: "cid validation failed",
+            details: e.message,
+            cid: cid,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+            state: state,
+          });
+        }
+
+        const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+        if (obsoleted) {
+          logi(`ack: token ${obstoken} for ${cid} is obsoleted, cannot ack`);
+          if (!ackd) {
+            await ackSubscriptionWithoutEntitlement(env, purchasetoken);
+          }
+          return r200j({
+            success: true,
+            message: "subscription acknowledged without entitlement",
+            cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
+            expiry: gprod.expiryDate,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+            state: state,
+          });
+        }
+
+        logi(`ack: sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
+
+        // TODO: check if productId grants a WSEntitlement
+        const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
+        if (!force && !ent) {
+          return r500j({ error: "failed to get entitlement", cid: cid });
+        }
+        if (ent.status === "banned" && !force) {
+          return r400j({
+            error: "banned user",
+            cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+            state: state,
+          });
+        }
+        if (ent.status === "expired" && !force) {
+          return r400j({
+            error: "entitlement expired",
+            cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
+            expiry: gprod.expiryDate,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+            state: state,
+          });
+        }
+        if (ent.status !== "valid" && !force) {
+          return r400j({
+            error: "invalid entitlement status",
+            status: ent.status,
+            cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
+            sku: sku,
+            allProducts: productIds,
+            test: test,
+            state: state,
+          });
+        }
+
+        // TODO: sendPayload if ent.userId has changed from previous entitlement
+        const sendPayload = ent != null;
+
+        if (!ackd) {
+          await ackSubscription(env, purchasetoken, ent);
+        }
+
         return r200j({
           success: true,
-          message: "subscription acknowledged without entitlement",
+          message: "subscription acknowledged",
           cid: cid,
           purchaseId: test ? purchasetoken : obstoken,
           expiry: gprod.expiryDate,
+          test: test,
           sku: sku,
           allProducts: productIds,
-          test: test,
           state: state,
+          developerPayload: sendPayload
+            ? JSON.stringify({
+                ws: await ent.toClientEntitlement(env),
+              })
+            : undefined,
         });
       }
-
-      logi(`ack: sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
-
-      // TODO: check if productId grants a WSEntitlement
-      const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
-      if (!force && !ent) {
-        return r500j({ error: "failed to get entitlement", cid: cid });
-      }
-      if (ent.status === "banned" && !force) {
-        return r400j({
-          error: "banned user",
-          cid: cid,
-          purchaseId: test ? purchasetoken : obstoken,
-          sku: sku,
-          allProducts: productIds,
-          test: test,
-          state: state,
-        });
-      }
-      if (ent.status === "expired" && !force) {
-        return r400j({
-          error: "entitlement expired",
-          cid: cid,
-          purchaseId: test ? purchasetoken : obstoken,
-          expiry: gprod.expiryDate,
-          sku: sku,
-          allProducts: productIds,
-          test: test,
-          state: state,
-        });
-      }
-      if (ent.status !== "valid" && !force) {
-        return r400j({
-          error: "invalid entitlement status",
-          status: ent.status,
-          cid: cid,
-          purchaseId: test ? purchasetoken : obstoken,
-          sku: sku,
-          allProducts: productIds,
-          test: test,
-          state: state,
-        });
-      }
-
-      // TODO: sendPayload if ent.userId has changed from previous entitlement
-      const sendPayload = ent != null;
-
-      if (!ackd) {
-        await ackSubscription(env, purchasetoken, ent);
-      }
-
-      return r200j({
-        success: true,
-        message: "subscription acknowledged",
-        cid: cid,
-        purchaseId: test ? purchasetoken : obstoken,
-        expiry: gprod.expiryDate,
-        test: test,
-        sku: sku,
-        allProducts: productIds,
-        state: state,
-        developerPayload: sendPayload
-          ? JSON.stringify({
-              ws: await ent.toClientEntitlement(env),
-            })
-          : undefined,
-      });
     });
   } catch (err) {
     return r500j({
