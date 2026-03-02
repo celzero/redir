@@ -2026,25 +2026,31 @@ export async function cancelSubscription(env, req) {
 
   const obstoken = await obfuscate(purchaseToken);
 
-  logd(`sub: cancel for ${cid}; test? ${test} ${sku} for ${obstoken}`);
-
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
+    logd(`cancel: ${cid}; ${sku} for ${cid} / tok: ${obstoken}; test? ${test}`);
+
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
-      loge(`sub: revoke not found for ${obstoken}`);
+      loge(`cancel: not in db ${cid} / tok: ${obstoken}; test? ${test}`);
       return r400j({
         error: "subscription not found",
         purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
       });
     }
     const entry = dbres.results[0];
     const storedcid = entry.cid;
     // TODO: only allow credentialless clients to access this endpoint
     if (accountIdentifiersImmutable() && storedcid !== cid) {
-      loge(`sub: cancel cid mismatch: ${cid} != ${storedcid}`);
+      loge(`cancel: cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot cancel, cid mismatch",
         purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
       });
     }
 
@@ -2073,12 +2079,13 @@ export async function cancelSubscription(env, req) {
     } // else: testPurchase === test
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
-      loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
+      loge(`cancel: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
         error: "cannot cancel, subscription mismatch",
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
+        sku: sku,
       });
     }
 
@@ -2088,7 +2095,7 @@ export async function cancelSubscription(env, req) {
 
     if (cancelled || expired) {
       // If the subscription has expired, we cannot cancel it.
-      loge(`sub: ${obstoken} already cancelled or expired`);
+      loge(`cancel: sub ${cid} / tok: ${obstoken} sub cancelled or expired`);
       return r200j({
         success: false,
         message: "cannot revoke, subscription cancelled or expired",
@@ -2098,6 +2105,7 @@ export async function cancelSubscription(env, req) {
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
+        sku: sku,
       });
     }
     // curl -X POST \
@@ -2124,21 +2132,23 @@ export async function cancelSubscription(env, req) {
 
     if (!r.ok) {
       const gerr = await gerror(r);
-      loge(`sub: cancel err: ${r.status} ${gerr}`);
+      loge(`cancel: sub err: ${cid} / tok: ${obstoken}; ${r.status} ${gerr}`);
       return r400j({
         error: `failed to cancel subscription: ${r.status} ${gerr}`,
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
+        sku: sku,
       });
     } else {
-      logi(`sub: cancel for ${obstoken}`);
+      logi(`cancel: sub done ${cid} / tok: ${obstoken}; test? ${test}`);
       return r200j({
         success: true,
         message: "cancelled subscription",
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
+        sku: sku,
       });
     }
   });
@@ -2181,16 +2191,19 @@ export async function revokeSubscription(env, req) {
 
   const obstoken = await obfuscate(purchaseToken);
 
-  // TODO: only allow credentialless clients to access this endpoint
-  logd(`sub: revoke for ${cid}; test? ${test} ${sku} for ${obstoken}`);
-
   return await als.run(new ExecCtx(env, test, obstoken), async () => {
+    // TODO: only allow credentialless clients to access this endpoint
+    logd(`sub: revoke for ${cid}; test? ${test} ${sku} for ${obstoken}`);
+
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
     if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
-      loge(`sub: revoke not found for ${obstoken}`);
+      loge(`sub: revoke not found in db ${cid} / tok: ${obstoken}`);
       return r400j({
         error: "subscription not found",
         purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
       });
     }
     const entry = dbres.results[0];
@@ -2200,6 +2213,9 @@ export async function revokeSubscription(env, req) {
       return r400j({
         error: "cannot revoke, cid mismatch",
         purchaseId: obstoken,
+        cid: cid,
+        sku: sku,
+        test: test,
       });
     }
 
@@ -2226,9 +2242,9 @@ export async function revokeSubscription(env, req) {
     } // else: testPurchase === test
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
-      loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
+      loge(`revoke: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
-        error: "cannot cancel, subscription mismatch",
+        error: "cannot revoke, subscription mismatch",
         purchaseId: test ? purchaseToken : obstoken,
         test: test,
         cid: cid,
@@ -2242,7 +2258,7 @@ export async function revokeSubscription(env, req) {
 
     if (cancelled || expired) {
       // If the subscription is cancelled, we cannot revoke it.
-      loge(`sub: ${obstoken} is cancelled, cannot revoke`);
+      loge(`revoke: ${cid} / tok: ${obstoken} sub cancelled, cannot revoke`);
       return r200j({
         success: false,
         message: "cannot revoke, subscription cancelled or expired",
@@ -2261,9 +2277,11 @@ export async function revokeSubscription(env, req) {
     // if gprod is null (no such plan), allow unconditional refunds
     if (gprod != null && !gprod.withinRefundWindow) {
       // If sub is not within threshold millis ago, do not revoke it.
-      loge(`sub: revoke ${obstoken} started too long ago, cannot revoke`);
+      loge(
+        `revoke: ${cid} / tok: ${obstoken} sub started too long ago, cannot revoke`,
+      );
       return r400j({
-        error: "cannot revoke, sub too old, email hello@celzero.com",
+        error: "cannot revoke, sub too old, contact support",
         windowDays: gprod.refundWindowDays,
         start: gprod.startDate,
         expiry: gprod.expiryDate,
@@ -2312,7 +2330,7 @@ export async function revokeSubscription(env, req) {
 
     if (!r.ok) {
       const gerr = await gerror(r);
-      loge(`sub: revoke err: ${r.status} ${gerr}`);
+      loge(`revoke: sub err: ${cid} / tok: ${obstoken} ${r.status} ${gerr}`);
       // TODO: retry for 3 days with pipeline?
       return r400j({
         error: `failed to revoke subscription: ${r.status} ${gerr}`,
@@ -2322,7 +2340,7 @@ export async function revokeSubscription(env, req) {
         sku: sku,
       });
     } else {
-      logi(`sub: revoke for ${obstoken}`);
+      logi(`revoke: done sub for ${cid} / tok: ${obstoken}; test? ${test}`);
       return r200j({
         success: true,
         hadEntitlement: gprod != null,
