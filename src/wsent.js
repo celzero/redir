@@ -341,6 +341,7 @@ export async function deleteWsEntitlement(env, cid) {
     log.w(`ws: no creds for ${cid}; nothing to delete? ${e.message}`);
   }
   if (c == null) {
+    // do not throw on no creds (client code may keep retrying otherwise)
     return; // No existing credentials, nothing to delete
   }
   // TODO: allow deletion of banned users?
