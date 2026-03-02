@@ -14,6 +14,7 @@ import {
   obsToken,
   PlayErr,
   PlayOk,
+  testmode,
 } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
@@ -1571,6 +1572,7 @@ async function handleSubscriptionNotification(env, notif, test) {
 
   const purchasetoken = notif.purchaseToken;
   const typ = notificationTypeStr(notif);
+  // tokens & state not retrievable 60d after expiry
   const sub = await getSubscription(env, purchasetoken);
   test = test || sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
@@ -1755,10 +1757,12 @@ async function handleTestNotification(notif) {
 }
 
 /**
+ * Retrieving sub for an invalid purchase token will error out. A purchase token
+ * may go invalid 60d after purchase expiry (in case of subscriptions, for example).
  * @param {any} env
  * @param {string} purchaseToken
  * @returns {Promise<SubscriptionPurchaseV2>}
- * @throws {Error} - If the response is not as expected.
+ * @throws {Error} - If the response is not as expected (ex: purchase token is invalid)
  */
 async function getSubscription(env, purchaseToken) {
   // GET
@@ -1894,13 +1898,29 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
     return r400j({ error: "missing purchase token" });
   }
 
+  // TODO: fetch from db if onetime purchase not retrivable from Google
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
   const plan = onetimePlan(purchase2);
   const refunded = isOnetimeRefunded2(purchase2);
   const fullyRefunded = isOnetimeFullyRefunded2(purchase2);
-  const test = isOnetimeTest2(purchase2);
+  const testPurchase = isOnetimeTest2(purchase2);
   const orderId = purchase2.orderId;
   const obstoken = obsToken();
+  const test = testmode();
+
+  // TODO: compare purchase2.cid and arg(cid)?
+  if (testPurchase !== test) {
+    logw(
+      `onetime: refund test? ${test} !== purchase-test? ${testPurchase} for ${cid} / tok: ${obstoken}`,
+    );
+    return r400j({
+      error: "cannot refund, test mode mismatch",
+      purchaseId: testPurchase ? purchaseToken : obstoken,
+      orderId: testPurchase ? orderId : undefined,
+      cid: cid,
+      test: test,
+    });
+  } // else: testPurchase === test
 
   let deleteEntitlement = fullyRefunded;
 
@@ -2037,7 +2057,20 @@ export async function cancelSubscription(env, req) {
     const sub = await getSubscription(env, purchaseToken);
 
     // re-grab test domain from fetched subscription
-    test = sub.testPurchase != null;
+    const testPurchase = sub.testPurchase != null;
+
+    if (testPurchase !== test) {
+      loge(
+        `cancel: test mismatch for ${cid} / tok: ${obstoken}; expected test? ${test} but got test? ${testPurchase}`,
+      );
+      return r400j({
+        error: "cannot cancel, test domain mismatch",
+        purchaseId: testPurchase ? purchaseToken : obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
+      });
+    } // else: testPurchase === test
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
@@ -2177,7 +2210,20 @@ export async function revokeSubscription(env, req) {
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
     const sub = await getSubscription(env, purchaseToken);
     // grab test domain from fetched subscription
-    test = sub.testPurchase != null;
+    const testPurchase = sub.testPurchase != null;
+
+    if (testPurchase !== test) {
+      loge(
+        `revoke: test mismatch for ${cid} / tok: ${obstoken}; expected test? ${test} but got test? ${testPurchase}`,
+      );
+      return r400j({
+        error: "cannot revoke, test domain mismatch",
+        purchaseId: testPurchase ? purchaseToken : obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
+      });
+    } // else: testPurchase === test
 
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`sub: cancel sub mismatch for ${cid} with ${obstoken}`);
@@ -2549,6 +2595,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       url.searchParams.get("productId") ||
       url.searchParams.get("productid") ||
       stdProductId;
+    test = url.searchParams.has("test");
     // TODO: use vcode = url.searchParams.get("vcode") to accept or reject purchases
 
     if (emptyString(purchasetoken)) {
