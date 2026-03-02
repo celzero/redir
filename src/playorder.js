@@ -3046,6 +3046,232 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 }
 
 /**
+ * Consumes a Google Play one-time purchase if all conditions are met.
+ * Consumption can only be triggered within 30 days before expiry, or at any
+ * time after expiry provided the purchase has not already been fully consumed.
+ *
+ * @param {any} env - Worker environment.
+ * @param {Request} req - HTTP request containing purchase token and product ID for a one-time purchase to be consumed.
+ * @returns {Promise<Response>} - HTTP response indicating success or failure of the consumption.
+ */
+export async function googlePlayConsumePurchase(env, req) {
+  let test = false;
+  let purchasetoken = "";
+  let obstoken = "";
+  let cid = "";
+  let sku = "";
+
+  try {
+    if (req.method !== "POST") {
+      return r400j({ error: "method not allowed" });
+    }
+
+    const url = new URL(req.url);
+    purchasetoken =
+      url.searchParams.get("purchaseToken") ||
+      url.searchParams.get("purchasetoken");
+    cid = url.searchParams.get("cid");
+    sku =
+      url.searchParams.get("sku") ||
+      url.searchParams.get("productId") ||
+      url.searchParams.get("productid") ||
+      stdProductId;
+    test = url.searchParams.has("test");
+
+    if (emptyString(purchasetoken)) {
+      return r400j({ error: "missing purchase token" });
+    }
+    if (emptyString(sku)) {
+      return r400j({ error: "missing product id" });
+    }
+    if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      return r400j({ error: "missing/invalid client id" });
+    }
+
+    // consume only applies to onetime purchases
+    if (!knownOnetimeProductsAndPlans.has(sku)) {
+      return r400j({
+        error: "consume not applicable",
+        cid: cid,
+        sku: sku,
+        test: test,
+      });
+    }
+
+    obstoken = await obfuscate(purchasetoken);
+
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
+      const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
+      if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+        return r400j({
+          error: "purchase not found",
+          cid: cid,
+          sku: sku,
+          purchaseId: test ? purchasetoken : obstoken,
+          test: test,
+        });
+      }
+
+      const entry = dbres.results[0];
+      const storedcid = entry.cid;
+      // identifiers must be immutable for onetime purchases
+      if (accountIdentifiersImmutable() && storedcid !== cid) {
+        return r400j({
+          error: "cid mismatch",
+          cid: cid,
+          storedCid: test ? storedcid : undefined,
+          purchaseId: test ? purchasetoken : obstoken,
+          sku: sku,
+          test: test,
+        });
+      }
+
+      const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+      const testPurchase = isOnetimeTest2(purchase2);
+      const consumed = isOnetimeAllConsumed2(purchase2);
+      const productIds = allProducts2(purchase2);
+      const unconsumedProductIds = unconsumedProducts2(purchase2);
+      const paid = isOnetimePaid2(purchase2);
+      const pending = isOnetimeUnpaid2(purchase2);
+      const onetimeState = onetimePurchaseStateStr2(purchase2);
+
+      logi(
+        `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / consumed? ${consumed} test? ${test}`,
+      );
+
+      // already fully consumed — after expiry this is fine; report success
+      if (consumed) {
+        logi(
+          `onetime: already consumed for ${cid} / tok: ${obstoken}; test? ${test}`,
+        );
+        return r200j({
+          success: true,
+          message: "onetime purchase already consumed",
+          cid: cid,
+          state: onetimeState,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gent.expiryDate,
+          sku: sku,
+          expired: expired,
+          test: test,
+        });
+      }
+
+      if (testPurchase !== test) {
+        return r400j({
+          error: "test domain mismatch",
+          purchaseId: testPurchase ? purchasetoken : obstoken,
+          state: onetimeState,
+          sku: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          test: test,
+        });
+      } // else: test === testPurchase
+
+      if (!paid || pending) {
+        return r400j({
+          error: "purchase not completed",
+          purchaseId: test ? purchasetoken : obstoken,
+          state: onetimeState,
+          sku: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          test: test,
+        });
+      }
+
+      const gent = onetimePlan(purchase2);
+      if (gent == null) {
+        // such purchases can only be cancelled/refunded
+        return r400j({
+          error: "not a valid product; will be auto refunded",
+          purchaseId: test ? purchasetoken : obstoken,
+          cid: cid,
+          state: onetimeState,
+          sku: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          test: test,
+        });
+      }
+
+      const now = Date.now();
+      const expiryMs = gent.expiry.getTime();
+      const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+      const expired = now >= expiryMs;
+      const withinConsumeWindow = now >= expiryMs - thirtyDaysMs; // within 30d before or after expiry
+
+      // consume is only allowed within 30d of expiry or anytime after expiry
+      if (!withinConsumeWindow) {
+        return r400j({
+          error: "too early to consume",
+          purchaseId: test ? purchasetoken : obstoken,
+          cid: cid,
+          state: onetimeState,
+          sku: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          expiry: gent.expiryDate,
+          test: test,
+        });
+      }
+
+      try {
+        await consumeOnetimePurchases(
+          env,
+          cid,
+          unconsumedProductIds,
+          purchasetoken,
+        );
+      } catch (e) {
+        loge(`onetime: err consume: ${cid} / tok: ${obstoken}: ${e.message}`);
+        return r500j({
+          error: "failed to consume",
+          details: e.message,
+          purchaseId: test ? purchasetoken : obstoken,
+          cid: cid,
+          sku: sku,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          expiry: gent.expiryDate,
+          test: test,
+        });
+      }
+
+      logi(
+        `onetime: ack/con done for ${cid} / tok: ${obstoken}; expired? ${expired} test? ${test}`,
+      );
+
+      return r200j({
+        success: true,
+        message: "onetime purchase consumed",
+        cid: cid,
+        state: onetimeState,
+        allProducts: productIds,
+        unconsumedProducts: unconsumedProductIds,
+        purchaseId: test ? purchasetoken : obstoken,
+        expiry: gent.expiryDate,
+        sku: sku,
+        test: test,
+      });
+    });
+  } catch (err) {
+    return r500j({
+      error: "consume failed",
+      details: err.message,
+      purchaseId: test ? purchasetoken : obstoken,
+      cid: cid,
+      sku: sku,
+      allProducts: [],
+      test: test,
+    });
+  }
+}
+
+/**
  * Retrieves stored WSEntitlement for the requesting client.
  *
  * @param {any} env - Worker environment

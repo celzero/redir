@@ -17,6 +17,7 @@ import {
 import {
   cancelSubscription,
   googlePlayAcknowledgePurchase,
+  googlePlayConsumePurchase,
   googlePlayGetEntitlements,
   googlePlayNotification,
   revokeSubscription,
@@ -120,6 +121,10 @@ async function handle(r, env, ctx) {
         // TODO: must be a POST request
         // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku&test]
         return googlePlayAcknowledgePurchase(env, r);
+      } else if (p2 === "con") {
+        // TODO: must be a POST request
+        // g/con/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        return googlePlayConsumePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
