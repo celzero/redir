@@ -1540,17 +1540,9 @@ async function handleOneTimeProductNotification(env, notif) {
       );
     }
 
-    if (!ackd || !consumed) {
+    if (!ackd) {
       // TODO: separate out ackd but not-consumed productIds and only consume those?
-      await ackThenConsumeOnetimePurchase(
-        env,
-        productIds,
-        unconsumedProductIds,
-        purchasetoken,
-        ent,
-        false,
-        ackd,
-      );
+      await ackOnetimePurchases(env, productIds, purchasetoken, ent, false);
     }
     return;
   });
@@ -2376,45 +2368,51 @@ async function ackSubscriptionWithoutEntitlement(env, tok) {
  * @returns {Promise<void>}
  * @throws {Error} - If the acknowledgment or consumption fails.
  */
-async function ackThenConsumeOnetimePurchase(
+async function ackOnetimePurchases(
   env,
   productIds,
-  unconsumedProductIds,
   tok,
   ent,
   ackWithoutEntitlement = false,
-  alreadyAckd = false,
 ) {
   const cid = ent ? ent.cid : "w/o entitlement";
   logd(
-    `onetime: ackThenConsume for ${cid} / all: ${productIds} + unconsumed: ${unconsumedProductIds} / force? ${ackWithoutEntitlement} / alreadyAckd? ${alreadyAckd}`,
+    `onetime: ack/con for ${cid} / all: ${productIds} / force? ${ackWithoutEntitlement} / alreadyAckd? ${alreadyAckd}`,
   );
 
-  if (!alreadyAckd) {
-    for (const productId of productIds) {
-      if (productId == null) continue;
-      // TODO: try-catch?
-      await ackOnetimePurchase(
-        env,
-        productId,
-        cid,
-        tok,
-        ent,
-        ackWithoutEntitlement,
-      );
-    }
+  for (const productId of productIds) {
+    if (productId == null) continue;
+    // TODO: try-catch?
+    await ackOnetimePurchase(
+      env,
+      productId,
+      cid,
+      tok,
+      ent,
+      ackWithoutEntitlement,
+    );
+    // just one ack per purchasetoken is enough
+    // docs.godotengine.org/en/stable/tutorials/platform/android/android_in_app_purchases.html
+    break;
   }
+}
 
+async function consumeOnetimePurchases(env, cid, unconsumedProductIds, tok) {
+  logd(`onetime: ack/con for ${cid} / all: ${unconsumedProductIds}`);
   for (const productId of unconsumedProductIds) {
     if (productId == null) continue;
-    if (ackWithoutEntitlement || ent != null) {
-      await consumeOnetimePurchase(env, productId, cid, tok);
-    }
+    await consumeOnetimePurchase(env, productId, cid, tok);
+    // consuming once per purchase token is enough?
+    break;
   }
 }
 
 /**
- *
+ * "Developers have the option to manually invoke consume on onetime lifetime
+ * purchases, even though originally their re-purchase was restricted.
+ * Non-consumable purchase is converted into a consumable, making it available
+ * for re-purchase."
+ * docs.apphud.com/docs/consumable-and-non-consumable-purchases
  * @param {any} env - Workers environment.
  * @param {string} productId
  * @param {string} cid - Client ID for logging purposes.
@@ -2760,15 +2758,13 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
-        if (!ackd || !consumed) {
+        if (!ackd) {
           try {
-            await ackThenConsumeOnetimePurchase(
+            await ackOnetimePurchases(
               env,
               productIds,
-              unconsumedProductIds,
               purchasetoken,
               ent,
-              false,
               ackd,
             );
           } catch (e) {
