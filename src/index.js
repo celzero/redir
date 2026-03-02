@@ -118,23 +118,23 @@ async function handle(r, env, ctx) {
 
       if (p2 === "ack") {
         // TODO: must be a POST request
-        // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku]
+        // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku&test]
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
-        // g/entitlements/[vcode]?cid&test&vcode[&sku]
+        // g/entitlements/[vcode]?cid&vcode&test[&sku]
         return googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // TODO: must be a POST request
         // will refund and revoke onetime purchase, if &sku=onetime.tier
-        // g/stop/[vcode]?cid&purchaseToken&test&vcode[&sku]
+        // g/stop/[vcode]?cid&purchaseToken&vcode[&sku&test]
         return cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // TODO: must be a POST request
         // will refund and revoke onetime purchase, if &sku=onetime.tier
-        // g/refund/[vcode]?cid&purchaseToken&test&vcode[&sku]
+        // g/refund/[vcode]?cid&purchaseToken&vcode[&sku&test]
         return revokeSubscription(env, r);
       }
       return r400(`g: ${ray} unknown resource ${p2}`);
