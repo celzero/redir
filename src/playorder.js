@@ -3139,26 +3139,6 @@ export async function googlePlayConsumePurchase(env, req) {
         `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / consumed? ${consumed} test? ${test}`,
       );
 
-      // already fully consumed — after expiry this is fine; report success
-      if (consumed) {
-        logi(
-          `onetime: already consumed for ${cid} / tok: ${obstoken}; test? ${test}`,
-        );
-        return r200j({
-          success: true,
-          message: "onetime purchase already consumed",
-          cid: cid,
-          state: onetimeState,
-          allProducts: productIds,
-          unconsumedProducts: unconsumedProductIds,
-          purchaseId: test ? purchasetoken : obstoken,
-          expiry: gent.expiryDate,
-          sku: sku,
-          expired: expired,
-          test: test,
-        });
-      }
-
       if (testPurchase !== test) {
         return r400j({
           error: "test domain mismatch",
@@ -3215,6 +3195,25 @@ export async function googlePlayConsumePurchase(env, req) {
           allProducts: productIds,
           unconsumedProducts: unconsumedProductIds,
           expiry: gent.expiryDate,
+          test: test,
+        });
+      }
+
+      if (consumed) {
+        logi(
+          `onetime: ack/con already consumed for ${cid} / tok: ${obstoken}; test? ${test}`,
+        );
+        return r200j({
+          success: true,
+          message: "onetime purchase already consumed",
+          cid: cid,
+          state: onetimeState,
+          allProducts: productIds,
+          unconsumedProducts: unconsumedProductIds,
+          purchaseId: test ? purchasetoken : obstoken,
+          expiry: gent.expiryDate,
+          sku: sku,
+          expired: expired,
           test: test,
         });
       }
