@@ -545,6 +545,59 @@ class TestNotification {
     }
   ]
  }
+
+ example:
+    {
+      "kind": "androidpublisher#subscriptionPurchaseV2",
+      "regionCode": "IN",
+      "startTime": "2025-07-10T12:42:00.327Z",
+      "subscriptionState": "SUBSCRIPTION_STATE_EXPIRED",
+      "latestOrderId": "GPA.1111-1111-1111-11111",
+      "linkedPurchaseToken": null,
+      "pausedStateContext": null,
+      "canceledStateContext": {
+        "userInitiatedCancellation": {
+          "cancelSurveyResult": null,
+          "cancelTime": "2025-07-10T12:42:16.075Z"
+        },
+        "systemInitiatedCancellation": null,
+        "developerInitiatedCancellation": null,
+        "replacementCancellation": null
+      },
+      "testPurchase": {},
+      "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED",
+      "externalAccountIdentifiers": {
+        "externalAccountId": "",
+        "obfuscatedExternalAccountId": "deadbeef",
+        "obfuscatedExternalProfileId": ""
+      },
+      "subscribeWithGoogleInfo": null,
+      "lineItems": [
+        {
+          "productId": "standard.tier",
+          "expiryTime": "2025-07-10T12:46:59.421Z",
+          "latestSuccessfulOrderId": "GPA.1111-1111-1111-11111",
+          "autoRenewingPlan": {
+            "autoRenewEnabled": false,
+            "recurringPrice": {
+              "currencyCode": "INR",
+              "units": "210",
+              "nanos": -1
+            },
+            "priceChangeDetails": null,
+            "installmentDetails": null
+          },
+          "prepaidPlan": null,
+          "offerDetails": {
+            "offerTags": [],
+            "basePlanId": "proxy-monthly",
+            "offerId": ""
+          },
+          "deferredItemReplacement": null,
+          "signupPromotion": null
+        }
+      ]
+    }
  * ```
  */
 class SubscriptionPurchaseV2 {
@@ -741,6 +794,38 @@ class ProductPurchaseV1 {
       "regionCode": "US",
       "purchaseCompletionTime": "2024-01-15T10:00:00Z",
       "acknowledgementState": "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED"
+    }
+
+    example:
+    {
+      "productLineItem": [
+        {
+          "productId": "onetime.tier",
+          "productOfferDetails": {
+            "offerTags": [],
+            "offerId": "",
+            "purchaseOptionId": "proxy-yearly-2",
+            "rentOfferDetails": null,
+            "offerToken": "",
+            "quantity": 1,
+            "refundableQuantity": 1,
+            "consumptionState": "CONSUMPTION_STATE_YET_TO_BE_CONSUMED"
+          }
+        }
+      ],
+      "kind": "androidpublisher#productPurchaseV2",
+      "purchaseStateContext": {
+        "purchaseState": "PURCHASED"
+      },
+      "testPurchaseContext": {
+        "fopType": "TEST"
+      },
+      "orderId": "GPA.3306-8815-9212-00335",
+      "obfuscatedExternalAccountId": "deadbeef",
+      "obfuscatedExternalProfileId": "",
+      "regionCode": "IN",
+      "purchaseCompletionTime": "2026-02-28T20:24:19.404Z",
+      "acknowledgementState": "ACKNOWLEDGEMENT_STATE_PENDING"
     }
  * ```
  */
