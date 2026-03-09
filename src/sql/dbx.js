@@ -12,22 +12,25 @@ import * as glog from "../log.js";
 
 const log = new glog.Log("dbx");
 
-/*
-{
-  "success": true,
-  "meta": (object),
-  "results": [
-    {
-        col1: val1,
-        col2: val2
-    },
-    {
-      col1: val3,
-      col2: val4
-    }
-  ]
-}*/
-// developers.cloudflare.com/d1/worker-api/return-object/#d1result
+/**
+ * @see developers.cloudflare.com/d1/worker-api/return-object/#d1result
+ * ```
+ * {
+ *  "success": true,
+ *  "meta": (object),
+ *  "results": [
+ *    {
+ *        col1: val1,
+ *        col2: val2
+ *    },
+ *    {
+ *      col1: val3,
+ *      col2: val4
+ *    }
+ *  ]
+ * }
+ * ```
+ */
 export class D1Out {
   constructor(success, meta, results) {
     /**
@@ -40,7 +43,8 @@ export class D1Out {
     this.meta = meta ? new D1OutMeta(meta) : null;
 
     /**
-     * @type {Array<Object>} - May be null
+     * developers.cloudflare.com/d1/worker-api/prepared-statements/#guidance-1
+     * @type {Array<Object>} - Expected null for INSERT, UPDATE, DELETE; array of rows for SELECT (may be empty [])
      */
     this.results = results || null;
   }

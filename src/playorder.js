@@ -3368,7 +3368,8 @@ export async function googlePlayConsumePurchase(env, req) {
       const withinConsumeWindow = now >= expiryMs - thirtyDaysMs; // within 30d before or after expiry
 
       // consume is only allowed within 30d of expiry or anytime after expiry
-      if (!withinConsumeWindow) {
+      // for test domain, allow consume unconditionally.
+      if (!withinConsumeWindow && !test) {
         return r400j({
           error: "too early to consume",
           purchaseId: test ? purchasetoken : obstoken,
@@ -3534,7 +3535,7 @@ async function getActiveOnetimePurchasesForCid(env, cid, limit = -1) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID for which to find linked one-time purchase
  * @param {string} purchasetoken - Purchase token of the current one-time purchase being processed
- * @param {string?} linkedtoken - Optional purchase token that is already linked to the current purchase token in the database
+ * @param {string?} linkedtoken - Optional purchase token linked to the current purchase token in the database (may be an obsolete/deleted token)
  * @return {Promise<[string?, ProductPurchaseV2?]>} - List of the first linked one-time active purchase
  * (purchase token and metadata) for the given cid, excluding the current purchase token
  * @throw {Error} - If there is an issue retrieving the purchases from the database or if there are more than 2 active purchases for the CID
@@ -3551,6 +3552,8 @@ async function linkedOnetimePurchases2(
   }
 
   const limit = 2; // link up to 2 purchases incl. fn arg "purchasetoken"
+  // the sent linkedtoken may have been deleted, and so, grab all active
+  // purchases, regardless.
   const currentPurchases = await getActiveOnetimePurchasesForCid(env, cid);
   if (currentPurchases == null) {
     return nolink; // no active purchases found for cid
@@ -3826,13 +3829,13 @@ function subscriptionItem2plan(item, start) {
 /**
  * TODO: instead of null throw Error with approp msg
  * @param {ProductPurchaseV2} p
- * @param {ProductPurchaseV2} linkedPurchase - Add expiry to existing purchase
+ * @param {ProductPurchaseV?} linkedPurchase - Add expiry to existing purchase
  * @returns {GEntitlement?} - If p is valid, else null.
  */
-function onetimePlanDeferred(p, linkedPurchase) {
+function onetimeDeferredPlan(p, linkedPurchase = null) {
   if (linkedPurchase == null) {
     loge(`onetime: deferred: null linked purchase`);
-    return null;
+    return onetimePlan(p);
   }
 
   const existingPlan = onetimePlan(linkedPurchase);
@@ -3867,6 +3870,10 @@ function onetimePlanDeferred(p, linkedPurchase) {
   const newUntil =
     (existingExpiry > newStart ? existingExpiry : newStart) +
     (newExpiry - newStart);
+
+  logi(
+    `onetime: deferred: expiry ${new Date(existingExpiry)} => ${new Date(newUntil)}`,
+  );
 
   // expiry of old plan is extended until start of new plan
   return GEntitlement.until(newPlan, newPlan.start, newUntil);
