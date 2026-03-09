@@ -1553,7 +1553,7 @@ async function handleOneTimeProductNotification(env, notif) {
     await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
+      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
     );
 
     if (pending) {
@@ -2756,7 +2756,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const onetimeState = onetimePurchaseStateStr2(purchase2);
 
         logi(
-          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
+          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
         );
 
         if (testPurchase !== test) {
