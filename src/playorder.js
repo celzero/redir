@@ -2484,12 +2484,25 @@ async function ackOnetimePurchases(
 
 async function consumeOnetimePurchases(env, cid, unconsumedProductIds, tok) {
   logd(`onetime: ack/con for ${cid} / all: ${unconsumedProductIds}`);
+  let anyconsumed = true;
+  let log3 = loge.bind(this);
+  let errs = [];
   for (const productId of unconsumedProductIds) {
     if (productId == null) continue;
-    await consumeOnetimePurchase(env, productId, cid, tok);
+    try {
+      await consumeOnetimePurchase(env, productId, cid, tok);
+      anyconsumed = true;
+      log3 = logw.bind(this);
+    } catch (err) {
+      errs.push("con(" + productId + "): " + err.message);
+      log3(`onetime: failed to consume ${productId} / ${cid}: ${err}`);
+    }
     // consuming once per purchase token is enough?
-    break;
   }
+  if (!anyconsumed) {
+    throw new Error(`${errs.join("; ")}`);
+  }
+  return anyconsumed;
 }
 
 /**
