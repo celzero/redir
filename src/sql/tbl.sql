@@ -56,3 +56,6 @@ CREATE TABLE IF NOT EXISTS ws (
 -- developers.cloudflare.com/d1/best-practices/use-indexes
 CREATE INDEX IF NOT EXISTS idx_playorders_linkedtoken
 ON playorders(linkedtoken)
+
+CREATE INDEX IF NOT EXISTS idx_playorders_cid
+ON playorders(cid);

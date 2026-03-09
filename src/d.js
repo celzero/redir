@@ -172,6 +172,8 @@ export class PlayErr {
     this.sku = payload.sku;
     /** @type {string|undefined} - obsfuscated purchase identifier*/
     this.purchaseId = payload.purchaseId;
+    /** @type {string|undefined} - linked purchase identifier (never obfuscated, test only) */
+    this.linkedPurchaseId = payload.linkedPurchaseId;
     /** @type {string|undefined} - order identifier */
     this.orderId = payload.orderId;
     /** @type {string|undefined} - purchase state */
@@ -205,6 +207,9 @@ export class PlayErr {
     if (this.cid != null) out.cid = this.cid;
     if (this.sku != null) out.sku = this.sku;
     if (this.purchaseId != null) out.purchaseId = this.purchaseId;
+    if (this.linkedPurchaseId != null) {
+      out.linkedPurchaseId = this.linkedPurchaseId;
+    }
     if (this.orderId != null) out.orderId = this.orderId;
     if (this.state != null) out.state = this.state;
     if (this.status != null) out.status = this.status;
@@ -213,8 +218,9 @@ export class PlayErr {
     if (this.start != null) out.start = this.start;
     if (this.windowDays != null) out.windowDays = this.windowDays;
     if (this.allProducts != null) out.allProducts = this.allProducts;
-    if (this.unconsumedProducts != null)
+    if (this.unconsumedProducts != null) {
       out.unconsumedProducts = this.unconsumedProducts;
+    }
     if (this.ray != null) out.ray = this.ray;
     return out;
   }
@@ -235,6 +241,8 @@ export class PlayOk {
     this.sku = payload.sku;
     /** @type {string|undefined} - obsfuscated purchase identifier */
     this.purchaseId = payload.purchaseId;
+    /** @type {string|undefined} - linked purchase identifier (never obfuscated, test only) */
+    this.linkedPurchaseId = payload.linkedPurchaseId;
     /** @type {string|undefined} - order identifier */
     this.orderId = payload.orderId;
     /** @type {string|undefined} - purchase state */
@@ -277,6 +285,9 @@ export class PlayOk {
     if (this.cid != null) out.cid = this.cid;
     if (this.sku != null) out.sku = this.sku;
     if (this.purchaseId != null) out.purchaseId = this.purchaseId;
+    if (this.linkedPurchaseId != null) {
+      out.linkedPurchaseId = this.linkedPurchaseId;
+    }
     if (this.orderId != null) out.orderId = this.orderId;
     if (this.state != null) out.state = this.state;
     if (this.status != null) out.status = this.status;
@@ -286,15 +297,19 @@ export class PlayOk {
     if (this.windowDays != null) out.windowDays = this.windowDays;
     if (this.cancelCtx != null) out.cancelCtx = this.cancelCtx;
     if (this.allProducts != null) out.allProducts = this.allProducts;
-    if (this.unconsumedProducts != null)
+    if (this.unconsumedProducts != null) {
       out.unconsumedProducts = this.unconsumedProducts;
-    if (this.developerPayload != null)
+    }
+    if (this.developerPayload != null) {
       out.developerPayload = this.developerPayload;
+    }
     if (this.hadEntitlement != null) out.hadEntitlement = this.hadEntitlement;
-    if (this.deletedEntitlement != null)
+    if (this.deletedEntitlement != null) {
       out.deletedEntitlement = this.deletedEntitlement;
-    if (this.wasAlreadyFullyRefunded != null)
+    }
+    if (this.wasAlreadyFullyRefunded != null) {
       out.wasAlreadyFullyRefunded = this.wasAlreadyFullyRefunded;
+    }
     if (this.ray != null) out.ray = this.ray;
     return out;
   }

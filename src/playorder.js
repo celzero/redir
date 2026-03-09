@@ -97,6 +97,12 @@ const mincidlength = 32; // ideally 64 hex chars
 const gtokenCache = new Map();
 
 class GEntitlement {
+  /**
+   * @param {string} prod
+   * @param {string} base
+   * @param {Date} start
+   * @param {Date|null} expiry
+   */
   constructor(prod, base, start, expiry = null) {
     /** @type {string} */
     this.basePlanId = base || "";
@@ -145,10 +151,10 @@ class GEntitlement {
   }
 
   /**
-   * "Until" is appropriate for use with subscription plans.
-   * @param {GEntitlement} o
-   * @param {Date|null} s
-   * @param {Date|null} t
+   * "Until" is appropriate for use with subscription plans or onetime deferred plans.
+   * @param {GEntitlement} o - base product and plan
+   * @param {Date|null} s - start date
+   * @param {Date|null} t - end date
    * @returns {GEntitlement}
    */
   static until(o, s, t) {
@@ -1545,15 +1551,52 @@ async function handleOneTimeProductNotification(env, notif) {
     const cancelled = isOnetimeCancelled2(notif, purchase2);
     const pending = isOnetimeUnpaid2(purchase2);
     const onetimeState = onetimePurchaseStateStr2(purchase2);
-    const plan = onetimePlan(purchase2);
+
+    /** @type {ProductPurchaseV2?} */
+    let linkedPurchase2 = null;
+    /** @type {string?} */
+    let linkedPurchaseId = null;
+    try {
+      const [dblinktoken, dblinkmeta] = await linkedOnetimePurchases2(
+        env,
+        cid,
+        purchasetoken,
+      );
+      linkedPurchaseId = dblinktoken;
+      linkedPurchase2 = dblinkmeta;
+    } catch (err) {
+      loge(
+        `onetime: err linking for ${cid} / tok: ${obstoken} ${sku}/${productIds}: ${err.message}; test? ${test}`,
+      );
+      // return error as there can be atmost 2 active onetime purchases allowed
+      // the first purchase is assumed to be expiring soonish (like in 90d)
+      // while the second one is assumed to be "taking over" when the first one does.
+      // TODO: attempt refund?
+      return r409j({
+        error: "cannot link purchase",
+        details: err.message,
+        cid: cid,
+        purchaseId: test ? purchasetoken : obstoken,
+        sku: sku,
+        test: test,
+      });
+    }
+
+    const plan = onetimeDeferredPlan(purchase2, linkedPurchase2);
 
     const cid = await getCidThenPersistProduct(env, purchase2);
     // register purchase rightaway regardless of its veracity;
     // so it can be later revoke/refunded, as needed.
-    await registerOrUpdateOnetimePurchase(env, cid, purchasetoken, purchase2);
+    await registerOrUpdateOnetimePurchase(
+      env,
+      cid,
+      purchasetoken,
+      purchase2,
+      linkedPurchaseId,
+    );
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
+      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} linked? ${linkedPurchaseId} ; test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
     );
 
     if (pending) {
@@ -1977,6 +2020,9 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
 
   // TODO: fetch from db if onetime purchase not retrivable from Google
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
+  // the refund window depends on purchase time, and so linked purchases
+  // which adjust the expiry aren't necessary
+  // TODO: do not refund if any linked token is not consumed
   const plan = onetimePlan(purchase2);
   const refunded = isOnetimeRefunded2(purchase2);
   const fullyRefunded = isOnetimeFullyRefunded2(purchase2);
@@ -2736,7 +2782,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "purchase not found",
             cid: cid,
             sku: sku,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: obstoken,
             test: test,
           });
         }
@@ -2756,6 +2802,36 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
+        /** @type {ProductPurchaseV2?} */
+        let linkedPurchase2 = null;
+        /** @type {string?} */
+        let linkedPurchaseId = null;
+        try {
+          const [dblinktoken, dblinkmeta] = await linkedOnetimePurchases2(
+            env,
+            cid,
+            purchasetoken,
+            dbres.linkedtoken || null,
+          );
+          linkedPurchaseId = dblinktoken;
+          linkedPurchase2 = dblinkmeta;
+        } catch (err) {
+          loge(
+            `onetime: ack/con err linking purchases for ${cid} / tok: ${obstoken} ${sku}: ${err.message}; test? ${test}`,
+          );
+          // return error as there can be atmost 2 active onetime purchases allowed
+          // the first purchase is assumed to be expiring soonish (like in 90d)
+          // while the second one is assumed to be "taking over" when the first one does.
+          // TODO: attempt refund?
+          return r409j({
+            error: "cannot link purchase",
+            details: err.message,
+            cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
+            sku: sku,
+            test: test,
+          });
+        }
         // TODO: if fetching purchase2 from Google fails, use onetime meta from db?
         const purchase2 = await getOnetimeProductV2(env, purchasetoken);
         const testPurchase = isOnetimeTest2(purchase2);
@@ -2769,13 +2845,14 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const onetimeState = onetimePurchaseStateStr2(purchase2);
 
         logi(
-          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} test? ${test}`,
+          `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} linked? ${linkedPurchaseId}; test? ${test}`,
         );
 
         if (testPurchase !== test) {
           return r400j({
             error: "test domain mismatch",
             purchaseId: testPurchase ? purchasetoken : obstoken,
+            linkedPurchaseId: testPurchase ? linkedPurchaseId : undefined,
             state: onetimeState,
             sku: sku,
             allProducts: productIds,
@@ -2788,6 +2865,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "purchase not completed",
             purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
             state: onetimeState,
             sku: sku,
             allProducts: productIds,
@@ -2796,12 +2874,13 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
-        const gent = onetimePlan(purchase2);
+        const gent = onetimeDeferredPlan(purchase2, linkedPurchase2);
         if (gent == null) {
           // such purchases can only be cancelled/refunded
           return r400j({
             error: "not a valid product; will be auto refunded",
             purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
             cid: cid,
             state: onetimeState,
             sku: sku,
@@ -2826,6 +2905,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
         if (ent.status === "expired" && !force) {
@@ -2839,6 +2919,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
         if (ent.status !== "valid" && !force) {
@@ -2853,6 +2934,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             expiry: gent.expiryDate,
             test: test,
             purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
 
@@ -2873,6 +2955,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               error: "failed to ack or consume",
               details: e.message,
               purchaseId: test ? purchasetoken : obstoken,
+              linkedPurchaseId: test ? linkedPurchaseId : undefined,
               cid: cid,
               sku: sku,
               allProducts: productIds,
@@ -2898,6 +2981,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           allProducts: productIds,
           unconsumedProducts: unconsumedProductIds,
           purchaseId: test ? purchasetoken : obstoken,
+          linkedPurchaseId: test ? linkedPurchaseId : undefined,
           expiry: gent.expiryDate,
           sku: sku,
           test: test,
@@ -3261,6 +3345,7 @@ export async function googlePlayConsumePurchase(env, req) {
         });
       }
 
+      // TODO: do not consume if any linked token is not consumed
       const gent = onetimePlan(purchase2);
       if (gent == null) {
         // such purchases can only be cancelled/refunded
@@ -3427,6 +3512,71 @@ export async function googlePlayGetEntitlements(env, req) {
 }
 
 /**
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID for which to retrieve active one-time purchases
+ * @param {number} limit - Max number of active purchases to retrieve; if -1, retrieves all active purchases
+ * @returns {Promise<Array>} - List of active one-time purchases for the given CID
+ * @throws {Error} - If there is an issue retrieving the purchases from the database
+ */
+async function getActiveOnetimePurchasesForCid(env, cid, limit = -1) {
+  const out = await dbx.playOnetimeActive(dbx.db(env), cid, limit);
+  if (out == null || !out.success) {
+    return []; // no linked purchase token found
+  }
+  if (out.results == null || out.results.length === 0) {
+    return []; // no linked purchase token found
+  }
+  logd(`onetime: active for cid ${cid}: ${JSON.stringify(out.results)}`);
+  return out.results;
+}
+
+/**
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID for which to find linked one-time purchase
+ * @param {string} purchasetoken - Purchase token of the current one-time purchase being processed
+ * @param {string?} linkedtoken - Optional purchase token that is already linked to the current purchase token in the database
+ * @return {Promise<[string?, ProductPurchaseV2?]>} - List of the first linked one-time active purchase
+ * (purchase token and metadata) for the given cid, excluding the current purchase token
+ * @throw {Error} - If there is an issue retrieving the purchases from the database or if there are more than 2 active purchases for the CID
+ */
+async function linkedOnetimePurchases2(
+  env,
+  cid,
+  purchasetoken,
+  linkedtoken = null,
+) {
+  const nolink = [null, null];
+  if (emptyString(cid) || emptyString(purchasetoken)) {
+    return nolink;
+  }
+
+  const limit = 2; // link up to 2 purchases incl. fn arg "purchasetoken"
+  const currentPurchases = await getActiveOnetimePurchasesForCid(env, cid);
+  if (currentPurchases == null) {
+    return nolink; // no active purchases found for cid
+  }
+
+  if (currentPurchases.length > limit) {
+    throw new Error(
+      `too many active purchases for ${cid}: ${currentPurchases.length}`,
+    );
+  }
+
+  let link = nolink;
+  for (const p of currentPurchases) {
+    if (p.purchasetoken === linkedtoken) {
+      // link to the purchase already linked in db
+      return [p.purchasetoken, new ProductPurchaseV2(p.meta)];
+    }
+    if (link == nolink && p.purchasetoken !== purchasetoken) {
+      link = [p.purchasetoken, new ProductPurchaseV2(p.meta)];
+    }
+  }
+
+  return link; // linked purchases, if any
+}
+
+/**
  * @param {any} env
  * @param {SubscriptionPurchaseV2} sub
  * @returns {Promise<string|null>}
@@ -3550,17 +3700,45 @@ async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
 }
 
 /**
+ * Links purchases, if needed.
  * @param {any} env
  * @param {string} cid
- * @param {string} pt
- * @param {string} sku
- * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
+ * @param {string} purchasetoken
+ * @param {ProductPurchaseV2|ProductPurchaseV1} purchasemeta
+ * @param {string?} linkedtoken
  * @returns {Promise<dbx.D1Out>}
  */
-async function registerOrUpdateOnetimePurchase(env, cid, pt, purchase) {
-  // TODO: cid must match with existing db entry, if any
-  const nolinkedtok = null;
-  return dbx.upsertPlaySub(dbx.db(env), cid, pt, nolinkedtok, purchase);
+async function registerOrUpdateOnetimePurchase(
+  env,
+  cid,
+  purchasetoken,
+  purchasemeta,
+  linkedtoken = null,
+) {
+  const nolinktoken = null;
+  if (!emptyString(linkedtoken)) {
+    // cid for linkedtoken if supplied must match with existing db entry, if any
+    const dbres = await dbx.playSub(dbx.db(env), linkedtoken);
+    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+      throw new Error(`linked token ${linkedtoken} not found for ${cid}`);
+    }
+    const linkedentry = dbres.results[0];
+    const linkedcid = linkedentry.cid;
+    if (accountIdentifiersImmutable() && linkedcid !== cid) {
+      loge(
+        `onetime: register: linked token ${linkedtoken} cid ${linkedcid} != ${cid}`,
+      );
+      throw new Error(`mismatch: linked cid != ${cid}`);
+    }
+  }
+
+  return dbx.upsertPlaySub(
+    dbx.db(env),
+    cid,
+    purchasetoken,
+    linkedtoken || nolinktoken,
+    purchasemeta,
+  );
 }
 
 /**
@@ -3646,6 +3824,56 @@ function subscriptionItem2plan(item, start) {
 }
 
 /**
+ * TODO: instead of null throw Error with approp msg
+ * @param {ProductPurchaseV2} p
+ * @param {ProductPurchaseV2} linkedPurchase - Add expiry to existing purchase
+ * @returns {GEntitlement?} - If p is valid, else null.
+ */
+function onetimePlanDeferred(p, linkedPurchase) {
+  if (linkedPurchase == null) {
+    loge(`onetime: deferred: null linked purchase`);
+    return null;
+  }
+
+  const existingPlan = onetimePlan(linkedPurchase);
+  if (existingPlan == null) {
+    loge(`onetime: deferred: no plan for linked purchase`);
+    if (log.debug) logo(linkedPurchase);
+    return null;
+  }
+
+  const newPlan = onetimePlan(p);
+  if (newPlan == null) {
+    loge(`onetime: deferred: no plan for new purchase`);
+    if (log.debug) logo(p);
+    return null;
+  }
+
+  const newStart = newPlan.start.getTime();
+  const newExpiry = newPlan.expiry ? newPlan.expiry.getTime() : null;
+  const existingExpiry = existingPlan.expiry
+    ? existingPlan.expiry.getTime()
+    : null;
+
+  if (newStart == null || newExpiry == null || existingExpiry == null) {
+    loge(`onetime: deferred: missing start or expiry`);
+    if (log.debug) {
+      logo(p);
+      logo(linkedPurchase);
+    }
+    return null;
+  }
+
+  const newUntil =
+    (existingExpiry > newStart ? existingExpiry : newStart) +
+    (newExpiry - newStart);
+
+  // expiry of old plan is extended until start of new plan
+  return GEntitlement.until(newPlan, newPlan.start, newUntil);
+}
+
+/**
+ * TODO: instead of null throw Error with approp msg
  * @param {ProductPurchaseV2} p
  * @returns {GEntitlement?} - If p is valid, else null.
  */
@@ -4052,6 +4280,12 @@ function r400j(j) {
   const h = { "content-type": "application/json" };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
   return new Response(JSON.stringify(payload), { status: 400, headers: h }); // bad request
+}
+
+function r409j(j) {
+  const h = { "content-type": "application/json" };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 409, headers: h }); // conflict
 }
 
 function r500j(j) {

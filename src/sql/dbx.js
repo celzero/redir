@@ -209,8 +209,55 @@ export async function playSub(db, token) {
   if (db == null || token == null) {
     throw new Error("d1: playsub: db/cid/token missing");
   }
+  // TODO: limit to androidpublisher#subscriptionPurchase or androidpublisher#subscriptionPurchaseV2 info only
   const q = "SELECT * from playorders where purchasetoken = ?";
   const tx = db.prepare(q).bind(token);
+  return run(tx, q);
+}
+
+/**
+ * unused?
+ * @param {any} db
+ * @param {string} cid
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playActive(db, cid) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: playActive: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
+    " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_EXPIRED' )" +
+    " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
+    " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
+    " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_CONSUMED' ) ) )" +
+    " ORDER BY mtime DESC;";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
+ *
+ * @param {any} db
+ * @param {string} cid
+ * @param {number} limit - Max number of active purchases to retrieve; if -1, retrieves all active purchases
+ * @returns {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playOnetimeActive(db, cid, limit = -1) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: playOnetimeActive: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
+    " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
+    " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_UNCONSUMED' )" +
+    (limit > 0 ? ` LIMIT ${limit}` : "") +
+    " ORDER BY mtime DESC;";
+  const tx = db.prepare(q).bind(cid);
   return run(tx, q);
 }
 
@@ -296,7 +343,7 @@ async function run(tx, sql = "") {
   // TODO: retries?
   const out = D1Out.fromJson(await tx.run());
   log.d(
-    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
+    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`,
   );
   return out;
 }
