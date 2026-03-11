@@ -147,7 +147,7 @@ export function db(env, cfg = null) {
 
 /**
  * Insert client data into the clients table if not already present.
- * @param {any} d1 - D1 binding
+ * @param {any} db - D1 binding
  * @param {string} cid - client identifier
  * @param {object?} clientinfo - raw json
  * @param {number} kind - 0 for playclient, 1 for playserver, 2 for stripe
@@ -306,7 +306,7 @@ export async function wsCreds(db, cid) {
  * @param {string} cid - Client ID (hex string)
  * @param {string} userid - WS User ID
  * @param {string} sessiontoken - encrypted session token (hex string)
- * @returns {Promise<D1Out} - D1Out object
+ * @returns {Promise<D1Out>} - D1Out object
  * @throws {Error} - if db, cid, userid, or sessiontoken is null
  */
 export async function insertCreds(db, cid, userid, sessiontoken) {

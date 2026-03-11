@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS ws (
     -- client identifier
     cid TEXT PRIMARY KEY,
     -- ws session token (encrypted)
-    sessiontoken TEXT NOT NULL ,
+    sessiontoken TEXT NOT NULL,
     -- user identifier
     userid TEXT NOT NULL,
     -- created at timestamp
