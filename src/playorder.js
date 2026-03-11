@@ -286,7 +286,7 @@ class Rtdn {
     /**
      * @type {Object} - arb kv.
      */
-    this.attribues = json.message.attributes || {};
+    this.attributes = json.message.attributes || {};
     /**
      * @type {JSON} - base64 encoded JSON string.
      */
@@ -659,7 +659,9 @@ class SubscriptionPurchaseV2 {
     /**
      * @type {TestPurchase} - Test purchase information, if any.
      */
-    this.testPurchase = json.testPurchase ? new TestPurchase(json) : null;
+    this.testPurchase = json.testPurchase
+      ? new TestPurchase(json.testPurchase)
+      : null;
     /**
      * @type {string} - Acknowledgement state of the subscription.
      * 1 ACKNOWLEDGEMENT_STATE_UNSPECIFIED
@@ -1309,7 +1311,7 @@ class Money {
     /**
      * @type {number} - The amount in nanos, e.g., 990000000 for $12.99.
      */
-    this.nanos = json.nanos || -1;
+    this.nanos = json.nanos ?? -1;
   }
 }
 
@@ -2497,7 +2499,7 @@ async function ackSubscriptionWithoutEntitlement(env, tok) {
  * @param {boolean} alreadyAckd - if true, skip acknowledgment and only consume the purchase;
  * used for handling the case where ack succeeded but consume failed in a previous attempt.
  * @returns {Promise<void>}
- * @throws {Error} - If the acknowledgment or consumption fails.
+ * @throws {Error} - If no productIds to acknowledge or if acknowledgement fails.
  */
 async function ackOnetimePurchases(
   env,
@@ -2508,8 +2510,12 @@ async function ackOnetimePurchases(
 ) {
   const cid = ent ? ent.cid : "w/o entitlement";
   logd(
-    `onetime: ack/con for ${cid} / all: ${productIds} / force? ${ackWithoutEntitlement} / alreadyAckd? ${alreadyAckd}`,
+    `onetime: ack/con for ${cid} / all: ${productIds} / force? ${ackWithoutEntitlement}`,
   );
+
+  if (productIds == null || productIds.length <= 0) {
+    throw new Error("no product ids to ack");
+  }
 
   for (const productId of productIds) {
     if (productId == null) continue;
@@ -2530,15 +2536,15 @@ async function ackOnetimePurchases(
 
 async function consumeOnetimePurchases(env, cid, unconsumedProductIds, tok) {
   logd(`onetime: ack/con for ${cid} / all: ${unconsumedProductIds}`);
-  let anyconsumed = true;
-  let log3 = loge.bind(this);
+  let anyconsumed = false;
+  let log3 = loge;
   let errs = [];
   for (const productId of unconsumedProductIds) {
     if (productId == null) continue;
     try {
       await consumeOnetimePurchase(env, productId, cid, tok);
       anyconsumed = true;
-      log3 = logw.bind(this);
+      log3 = logw;
     } catch (err) {
       errs.push("con(" + productId + "): " + err.message);
       log3(`onetime: failed to consume ${productId} / ${cid}: ${err}`);
@@ -2704,7 +2710,10 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
-      throw new Error(`sub: err ack for ${obs}: ${r.status} for ${ent.cid}`);
+      const gmsg = await gerror(r);
+      throw new Error(
+        `sub: err ack for ${obs}: ${r.status} ${gmsg} for ${ent.cid}`,
+      );
     }
   } else {
     if (!ackWithoutEntitlement) {
@@ -2927,7 +2936,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "invalid entitlement status",
             status: ent?.status,
             cid: cid,
-            purchaseId: test ? purchasetoken : obstoken,
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
@@ -2999,7 +3007,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             purchaseId: obstoken,
             cid: cid,
             sku: sku,
-            purchaseId: obstoken,
             test: test,
           });
         }
@@ -3772,7 +3779,7 @@ async function recursivelyGetCid(env, sub, n = 1) {
     );
   }
   throw new Error(
-    `Cid ${cid} (${cidlen} ${n}) missing or invalid for profile ${sub.subscribeWithGoogleInfo.profileId}, ${sub.regionCode}, ${sub.startTime}`,
+    `Cid ${cid} (${cidlen} ${n}) missing or invalid for profile ${sub.subscribeWithGoogleInfo?.profileId ?? "unknown"}, ${sub.regionCode}, ${sub.startTime}`,
   );
 }
 
@@ -3856,13 +3863,21 @@ function onetimeDeferredPlan(p, linkedPurchase = null) {
     return null;
   }
 
-  const newStart = newPlan.start.getTime();
-  const newExpiry = newPlan.expiry ? newPlan.expiry.getTime() : null;
-  const existingExpiry = existingPlan.expiry
-    ? existingPlan.expiry.getTime()
-    : null;
+  const newStart =
+    newPlan.start instanceof Date ? newPlan.start.getTime() : NaN;
+  const newExpiry =
+    newPlan.expiry instanceof Date ? newPlan.expiry.getTime() : NaN;
+  const existingExpiry =
+    existingPlan.expiry instanceof Date ? existingPlan.expiry.getTime() : NaN;
 
-  if (newStart == null || newExpiry == null || existingExpiry == null) {
+  if (
+    Number.isNaN(newStart) ||
+    newStart <= 0 ||
+    Number.isNaN(newExpiry) ||
+    newExpiry <= 0 ||
+    Number.isNaN(existingExpiry) ||
+    existingExpiry <= 0
+  ) {
     loge(`onetime: deferred: missing start or expiry`);
     if (log.debug) {
       logo(p);
@@ -3951,11 +3966,14 @@ function onetimePlan(p) {
  * @throws {Error} - If the token cannot be retrieved.
  */
 async function gtoken(creds) {
+  if (!creds) {
+    throw new Error("gtoken: missing credentials");
+  }
   const key = JSON.parse(creds);
   const cacheKey = key.client_email;
 
   if (!cacheKey) {
-    return null;
+    throw new Error("gtoken: missing client_email in credentials");
   }
 
   const safetyMarginMs = 1 * 60 * 1000; // 1m
@@ -4060,7 +4078,11 @@ function isOnetimeAck2(purchase2) {
  * @returns {string[]} list of productIds (may return [undefined, undefined, ...])
  */
 function allProducts2(purchase2) {
-  return purchase2.productLineItem?.map((item) => item.productId);
+  return (
+    purchase2.productLineItem
+      ?.map((item) => item.productId)
+      .filter((id) => id != null) ?? []
+  );
 }
 
 /**
@@ -4161,12 +4183,11 @@ function isOnetimeCancelled2(notif, purchase2) {
 function isOnetimeRefunded2(purchase2) {
   return purchase2.productLineItem.some(
     (item) =>
-      (item != null &&
-        item.productOfferDetails != null && // fully refunded
-        item.productOfferDetails.refundableQuantity === 0) ||
-      // partially refunded
-      item.productOfferDetails.quantity !==
-        item.productOfferDetails.refundableQuantity,
+      item != null &&
+      item.productOfferDetails != null &&
+      (item.productOfferDetails.refundableQuantity === 0 || // fully refunded
+        item.productOfferDetails.quantity !==
+          item.productOfferDetails.refundableQuantity), // partially refunded
   );
 }
 
@@ -4212,7 +4233,10 @@ function onetimePurchaseStateStr2(purchase2) {
  * @returns {string[]} list of productIds in the subscription line items
  */
 function subAllProducts(sub) {
-  return sub.lineItems?.map((item) => item.productId);
+  return (
+    sub.lineItems?.map((item) => item.productId).filter((id) => id != null) ??
+    []
+  );
 }
 
 /**
@@ -4247,7 +4271,7 @@ function subscriptionsMoreOrLessEqual(sub1, sub2, strict = false) {
   ) {
     return false;
   }
-  if (sub1.testPurchase !== sub2.testPurchase) return false;
+  if ((sub1.testPurchase != null) !== (sub2.testPurchase != null)) return false;
 
   if (strict) {
     if (sub1.startTime !== sub2.startTime) return false;
