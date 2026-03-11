@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS clients (
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- last updated at timestamp
     mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 CREATE TABLE IF NOT EXISTS playorders (
     purchasetoken TEXT PRIMARY KEY,
@@ -21,9 +21,9 @@ CREATE TABLE IF NOT EXISTS playorders (
     linkedtoken TEXT,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
-)
+);
 
 CREATE TABLE IF NOT EXISTS stripeorders (
     sid TEXT PRIMARY KEY,
@@ -35,9 +35,9 @@ CREATE TABLE IF NOT EXISTS stripeorders (
     cid TEXT NOT NULL,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
-)
+);
 
 CREATE TABLE IF NOT EXISTS ws (
     -- client identifier
@@ -48,14 +48,14 @@ CREATE TABLE IF NOT EXISTS ws (
     userid TEXT NOT NULL,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     -- restrict deletion unless ws has been notified and sessiontoken is invalidated
-    FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT,
-)
+    FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT
+);
 
 -- developers.cloudflare.com/d1/best-practices/use-indexes
 CREATE INDEX IF NOT EXISTS idx_playorders_linkedtoken
-ON playorders(linkedtoken)
+ON playorders(linkedtoken);
 
 CREATE INDEX IF NOT EXISTS idx_playorders_cid
 ON playorders(cid);

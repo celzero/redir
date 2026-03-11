@@ -258,9 +258,10 @@ export async function playOnetimeActive(db, cid, limit = -1) {
     "SELECT * FROM playorders p WHERE p.cid=?" +
     " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
-    " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_UNCONSUMED' )" +
+    " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_YET_TO_BE_CONSUMED' )" +
+    " ORDER BY mtime DESC" +
     (limit > 0 ? ` LIMIT ${limit}` : "") +
-    " ORDER BY mtime DESC;";
+    ";";
   const tx = db.prepare(q).bind(cid);
   return run(tx, q);
 }
@@ -347,7 +348,7 @@ async function run(tx, sql = "") {
   // TODO: retries?
   const out = D1Out.fromJson(await tx.run());
   log.d(
-    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`,
+    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
   );
   return out;
 }

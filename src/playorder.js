@@ -2811,7 +2811,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             env,
             cid,
             purchasetoken,
-            dbres.linkedtoken || null,
+            entry.linkedtoken || null,
           );
           linkedPurchaseId = dblinktoken;
           linkedPurchase2 = dblinkmeta;
@@ -2926,8 +2926,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           return r400j({
             error: "invalid entitlement status",
             status: ent.status,
-            state: onetimeState,
             cid: cid,
+            purchaseId: test ? purchasetoken : obstoken,
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
@@ -2945,7 +2945,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               productIds,
               purchasetoken,
               ent,
-              ackd,
+              false,
             );
           } catch (e) {
             loge(
@@ -3567,16 +3567,17 @@ async function linkedOnetimePurchases2(
 
   let link = nolink;
   for (const p of currentPurchases) {
+    const meta =
+      typeof p.meta === "string" ? JSON.parse(p.meta || "{}") : p.meta || {};
     if (p.purchasetoken === linkedtoken) {
-      // link to the purchase already linked in db
-      return [p.purchasetoken, new ProductPurchaseV2(p.meta)];
+      return [p.purchasetoken, new ProductPurchaseV2(meta)];
     }
-    if (link == nolink && p.purchasetoken !== purchasetoken) {
-      link = [p.purchasetoken, new ProductPurchaseV2(p.meta)];
+    if (link === nolink && p.purchasetoken !== purchasetoken) {
+      link = [p.purchasetoken, new ProductPurchaseV2(meta)];
     }
   }
 
-  return link; // linked purchases, if any
+  return link;
 }
 
 /**
