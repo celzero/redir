@@ -3874,7 +3874,7 @@ function onetimeDeferredPlan(p, linkedPurchase = null) {
   );
 
   // expiry of old plan is extended until start of new plan
-  return GEntitlement.until(newPlan, newPlan.start, newUntil);
+  return GEntitlement.until(newPlan, newPlan.start, new Date(newUntil));
 }
 
 /**
