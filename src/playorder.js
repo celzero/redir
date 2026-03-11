@@ -3601,9 +3601,12 @@ async function getCid(env, sub) {
  * @returns {Promise<string|null>}
  */
 async function getCidThenPersistProduct(env, purchase) {
-  const gen = true;
-  const persist = true;
-  return getOrGenAndPersistCidFromProduct(env, purchase, !gen, persist);
+  return getOrGenAndPersistCidFromProduct(
+    env,
+    purchase,
+    /*do not generate */ false,
+    /*persist to db*/ true,
+  );
 }
 
 /**
@@ -3612,9 +3615,12 @@ async function getCidThenPersistProduct(env, purchase) {
  * @returns {Promise<string|null>}
  */
 async function getCidProduct(env, purchase) {
-  const gen = true;
-  const persist = true;
-  return getOrGenAndPersistCidFromProduct(env, purchase, !gen, !persist);
+  return getOrGenAndPersistCidFromProduct(
+    env,
+    purchase,
+    /*do not generate */ false,
+    /*do not persist */ false,
+  );
 }
 
 /**
