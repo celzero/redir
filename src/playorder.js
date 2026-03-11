@@ -1551,6 +1551,9 @@ async function handleOneTimeProductNotification(env, notif) {
     const cancelled = isOnetimeCancelled2(notif, purchase2);
     const pending = isOnetimeUnpaid2(purchase2);
     const onetimeState = onetimePurchaseStateStr2(purchase2);
+    // register purchase rightaway regardless of its veracity;
+    // so it can be later revoke/refunded, as needed.
+    const cid = await getCidThenPersistProduct(env, purchase2);
 
     /** @type {ProductPurchaseV2?} */
     let linkedPurchase2 = null;
@@ -1582,11 +1585,6 @@ async function handleOneTimeProductNotification(env, notif) {
       });
     }
 
-    const plan = onetimeDeferredPlan(purchase2, linkedPurchase2);
-
-    const cid = await getCidThenPersistProduct(env, purchase2);
-    // register purchase rightaway regardless of its veracity;
-    // so it can be later revoke/refunded, as needed.
     await registerOrUpdateOnetimePurchase(
       env,
       cid,
@@ -1594,6 +1592,8 @@ async function handleOneTimeProductNotification(env, notif) {
       purchase2,
       linkedPurchaseId,
     );
+
+    const plan = onetimeDeferredPlan(purchase2, linkedPurchase2);
 
     logi(
       `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} linked? ${linkedPurchaseId} ; test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
@@ -1670,7 +1670,7 @@ async function handleOneTimeProductNotification(env, notif) {
 
     if (!ackd) {
       // TODO: separate out ackd but not-consumed productIds and only consume those?
-      await ackOnetimePurchases(env, productIds, purchasetoken, ent, false);
+      await ackOnetimePurchases(env, productIds, purchasetoken, ent);
     }
     return;
   });
@@ -2796,8 +2796,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             storedCid: test ? storedcid : undefined,
             purchaseId: test ? purchasetoken : obstoken,
             sku: sku,
-            allProducts: productIds,
-            unconsumedProducts: unconsumedProductIds,
             test: test,
           });
         }
@@ -2894,11 +2892,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (!force && ent == null) {
           return r500j({ error: "failed to get entitlement", cid: cid });
         }
-        if (ent.status === "banned" && !force) {
+        if (ent?.status === "banned" && !force) {
           return r400j({
             error: "user banned",
             cid: cid,
             state: onetimeState,
+            status: ent?.status,
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
@@ -2908,11 +2907,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
-        if (ent.status === "expired" && !force) {
+        if (ent?.status === "expired" && !force) {
           return r400j({
             error: "entitlement expired",
             cid: cid,
             state: onetimeState,
+            status: ent?.status,
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
@@ -2922,10 +2922,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
-        if (ent.status !== "valid" && !force) {
+        if (ent?.status !== "valid" && !force) {
           return r400j({
             error: "invalid entitlement status",
-            status: ent.status,
+            status: ent?.status,
             cid: cid,
             purchaseId: test ? purchasetoken : obstoken,
             sku: sku,
@@ -2940,13 +2940,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         if (!ackd) {
           try {
-            await ackOnetimePurchases(
-              env,
-              productIds,
-              purchasetoken,
-              ent,
-              false,
-            );
+            await ackOnetimePurchases(env, productIds, purchasetoken, ent);
           } catch (e) {
             loge(
               `onetime: err ack/con: ${cid} / tok: ${obstoken}: ${e.message}`,
@@ -2954,6 +2948,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             return r500j({
               error: "failed to ack or consume",
               details: e.message,
+              status: ent?.status,
               purchaseId: test ? purchasetoken : obstoken,
               linkedPurchaseId: test ? linkedPurchaseId : undefined,
               cid: cid,
@@ -3153,10 +3148,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (!force && !ent) {
           return r500j({ error: "failed to get entitlement", cid: cid });
         }
-        if (ent.status === "banned" && !force) {
+        if (ent?.status === "banned" && !force) {
           return r400j({
             error: "banned user",
             cid: cid,
+            status: ent?.status,
             purchaseId: test ? purchasetoken : obstoken,
             sku: sku,
             allProducts: productIds,
@@ -3164,10 +3160,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             state: state,
           });
         }
-        if (ent.status === "expired" && !force) {
+        if (ent?.status === "expired" && !force) {
           return r400j({
             error: "entitlement expired",
             cid: cid,
+            status: ent?.status,
             purchaseId: test ? purchasetoken : obstoken,
             expiry: gprod.expiryDate,
             sku: sku,
@@ -3176,10 +3173,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             state: state,
           });
         }
-        if (ent.status !== "valid" && !force) {
+        if (ent?.status !== "valid" && !force) {
           return r400j({
             error: "invalid entitlement status",
-            status: ent.status,
+            status: ent?.status,
             cid: cid,
             purchaseId: test ? purchasetoken : obstoken,
             sku: sku,

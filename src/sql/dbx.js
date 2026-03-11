@@ -51,7 +51,7 @@ export class D1Out {
 
   static fromJson(json) {
     if (typeof json !== "object" || json == null) {
-      throw new TypeError("null or inavlid json");
+      throw new TypeError("null or invalid json");
     }
     return new D1Out(json.success, json.meta || null, json.results);
   }
@@ -232,12 +232,13 @@ export async function playActive(db, cid) {
   }
   const q =
     "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND p.meta IS NOT NULL" +
     " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
     " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_EXPIRED' )" +
     " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
     " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_CONSUMED' ) ) )" +
-    " ORDER BY mtime DESC;";
+    " ORDER BY p.mtime DESC;";
   const tx = db.prepare(q).bind(cid);
   return run(tx, q);
 }
@@ -256,10 +257,11 @@ export async function playOnetimeActive(db, cid, limit = -1) {
   }
   const q =
     "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND p.meta IS NOT NULL" +
     " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
     " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_YET_TO_BE_CONSUMED' )" +
-    " ORDER BY mtime DESC" +
+    " ORDER BY p.mtime DESC" +
     (limit > 0 ? ` LIMIT ${limit}` : "") +
     ";";
   const tx = db.prepare(q).bind(cid);
@@ -277,7 +279,7 @@ export async function firstLinkedPurchaseTokenEntry(db, token) {
     throw new Error("d1: playsub: db/cid/token missing");
   }
   const q =
-    "SELECT * from playorders where linkedtoken = ? ORDER BY mtime LIMIT 1";
+    "SELECT * from playorders where linkedtoken = ? ORDER BY mtime DESC LIMIT 1";
   const tx = db.prepare(q).bind(token);
   return run(tx, q);
 }
