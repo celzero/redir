@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { emptyString } from "../buf.js";
+import { emptyString } from "./buf.js";
 import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
 import { dbdomain, upsertDevice } from "./sql/dbx.js";
