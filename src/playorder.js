@@ -3140,7 +3140,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // TODO: validate cid only for credential-less accounts
           // credentialed accounts can have different cids
           const existingCid = await getCidThenPersist(env, sub);
-          if (existingCid !== cid) {
+          if (accountIdentifiersImmutable() && existingCid !== cid) {
             loge(
               `ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`,
             );
