@@ -1,0 +1,73 @@
+/*
+ * Copyright (c) 2026 RethinkDNS and its authors.
+ *
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+import { emptyString } from "../buf.js";
+import * as glog from "./log.js";
+import { mincidlength, mindidlength } from "./playorder.js";
+import { dbdomain, upsertDevice } from "./sql/dbx.js";
+
+const kindphone = 0;
+const log = new glog.Log("reg");
+
+/**
+ * @param {any} env - Workers environment
+ * @param {Request} req - Incoming request
+ */
+export async function registerDevice(env, req) {
+  if (req.method !== "POST") {
+    return r405("method not allowed");
+  }
+  if (req.headers.get("Content-Type") !== "application/json") {
+    return r400("unsupported content type");
+  }
+
+  const ray = glog.rayid(req);
+  const url = new URL(req.url);
+  const did = url.searchParams.get("did");
+  const cid = url.searchParams.get("cid");
+  const test = url.searchParams.has("test");
+
+  if (
+    emptyString(did) ||
+    did.length <= mindidlength ||
+    !/^[a-fA-F0-9]+$/.test(did) ||
+    emptyString(cid) ||
+    cid.length <= mincidlength ||
+    !/^[a-fA-F0-9]+$/.test(cid)
+  ) {
+    return r400("invalid identifiers");
+  }
+
+  const meta = await req.json();
+  const out = await upsertDevice(
+    dbdomain(env, test),
+    did,
+    cid,
+    meta || null,
+    kindphone,
+  );
+
+  if (out == null || out.success === false) {
+    return r500(`database error: ${ray}`);
+  }
+
+  log.d(ray, "register", did, "for c:", cid, "meta?", meta, "test?", test);
+  return new Response(`ok: ${ray}`, { status: 200 });
+}
+
+function r400(w) {
+  return new Response(w, { status: 400 }); // bad request
+}
+
+function r405(w) {
+  return new Response(w, { status: 405 }); // method not allowed
+}
+
+function r500(w) {
+  return new Response(w, { status: 500 }); // internal server error
+}
