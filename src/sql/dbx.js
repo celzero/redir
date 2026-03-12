@@ -145,7 +145,7 @@ export function db(env, cfg = null) {
   return out;
 }
 
-export function dbdomain(env, testdomain = true) {
+export function dbdomain(env, testdomain = false) {
   let out = testdomain ? env.DBTEST : env.DB;
   if (out == null) {
     throw new Error("database binding missing");
@@ -278,7 +278,7 @@ export async function playActive(db, cid) {
     "SELECT * FROM playorders p WHERE p.cid=?" +
     " AND p.meta IS NOT NULL" +
     " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
-    " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_EXPIRED' )" +
+    " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_ACTIVE' )" +
     " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
     " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_CONSUMED' ) ) )" +

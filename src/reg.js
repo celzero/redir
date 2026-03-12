@@ -43,7 +43,12 @@ export async function registerDevice(env, req) {
     return r400(`${ray} invalid identifiers`);
   }
 
-  const meta = await req.json();
+  let meta = null;
+  try {
+    meta = await req.json();
+  } catch (_) {
+    // body missing or not valid JSON; proceed with null meta
+  }
   const out = await upsertDevice(
     dbdomain(env, test),
     did,
@@ -58,7 +63,7 @@ export async function registerDevice(env, req) {
 
   log.d(ray, "register", did, "for c:", cid, "meta?", meta, "test?", test);
   // return new Response(`ok: ${ray}`, { status: 200 });
-  return retrieveDevices(env, cid, test);
+  return retrieveDevices(env, cid, test, ray);
 }
 
 /**
@@ -66,9 +71,7 @@ export async function registerDevice(env, req) {
  * @param {string} cid - Client identifier
  * @param {boolean} test - Test domain?
  */
-export async function retrieveDevices(env, cid, test) {
-  const ray = glog.rayid(req);
-
+export async function retrieveDevices(env, cid, test, ray = "") {
   if (
     emptyString(cid) ||
     cid.length <= mincidlength ||
