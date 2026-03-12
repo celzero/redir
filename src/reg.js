@@ -9,7 +9,7 @@
 import { emptyString } from "./buf.js";
 import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
-import { dbdomain, getDevices, upsertDevice } from "./sql/dbx.js";
+import * as dbx from "./sql/dbx.js";
 
 const kindphone = 0;
 const log = new glog.Log("reg");
@@ -22,7 +22,7 @@ export async function registerDevice(env, req) {
   if (req.method !== "POST") {
     return r405("method not allowed");
   }
-  if (req.headers.get("Content-Type") !== "application/json") {
+  if (!req.headers.get("Content-Type")?.includes("application/json")) {
     return r400("unsupported content type");
   }
 
@@ -49,13 +49,8 @@ export async function registerDevice(env, req) {
   } catch (_) {
     // body missing or not valid JSON; proceed with null meta
   }
-  const out = await upsertDevice(
-    dbdomain(env, test),
-    did,
-    cid,
-    meta || null,
-    kindphone,
-  );
+  const db = dbx.db2(env, test);
+  const out = await dbx.upsertDevice(db, did, cid, meta || null, kindphone);
 
   if (out == null || !out.success) {
     return r500(`database error: ${ray}`);
@@ -80,15 +75,16 @@ export async function retrieveDevices(env, cid, test, ray = "") {
     return r400("invalid cid");
   }
 
-  const out = await getDevices(dbdomain(env, test), cid);
+  const db = dbx.db2(env, test);
+  const out = await dbx.getDevices(db, cid);
 
-  log.d(ray, "getDevices for c:", cid, "test?", test, "found", out.success);
+  log.d(ray, "get dev for c:", cid, "test?", test, "found", out.success);
 
   if (out == null || !out.success) {
     return r500(`database error: ${ray}`);
   }
   if (out.results == null || out.results.length <= 0) {
-    return r400("no devices found");
+    return r404("no devices found");
   }
 
   const json = [];
@@ -116,6 +112,10 @@ function r200j(j) {
 
 function r400(w) {
   return new Response(w, { status: 400 }); // bad request
+}
+
+function r404(w) {
+  return new Response(w, { status: 404 }); // not found
 }
 
 function r405(w) {

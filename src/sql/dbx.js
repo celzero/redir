@@ -145,7 +145,7 @@ export function db(env, cfg = null) {
   return out;
 }
 
-export function dbdomain(env, testdomain = false) {
+export function db2(env, testdomain = false) {
   let out = testdomain ? env.DBTEST : env.DB;
   if (out == null) {
     throw new Error("database binding missing");
