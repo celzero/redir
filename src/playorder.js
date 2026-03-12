@@ -2182,7 +2182,12 @@ export async function cancelSubscription(env, req) {
     logd(`cancel: ${cid}; ${sku} for ${cid} / tok: ${obstoken}; test? ${test}`);
 
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
-    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+    if (
+      dbres == null ||
+      !dbres.success ||
+      dbres.results == null ||
+      dbres.results.length <= 0
+    ) {
       loge(`cancel: not in db ${cid} / tok: ${obstoken}; test? ${test}`);
       return r400j({
         error: "subscription not found",
@@ -2348,7 +2353,12 @@ export async function revokeSubscription(env, req) {
     logd(`sub: revoke for ${cid}; test? ${test} ${sku} for ${obstoken}`);
 
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
-    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+    if (
+      dbres == null ||
+      !dbres.success ||
+      dbres.results == null ||
+      dbres.results.length <= 0
+    ) {
       loge(`sub: revoke not found in db ${cid} / tok: ${obstoken}`);
       return r400j({
         error: "subscription not found",
@@ -2811,6 +2821,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
         if (
           dbres == null ||
+          !dbres.success ||
           dbres.results == null ||
           dbres.results.length <= 0
         ) {
@@ -3025,6 +3036,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
         if (
           dbres == null ||
+          !dbres.success ||
           dbres.results == null ||
           dbres.results.length <= 0
         ) {
@@ -3317,7 +3329,12 @@ export async function googlePlayConsumePurchase(env, req) {
 
     return await als.run(new ExecCtx(env, test, obstoken), async () => {
       const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
-      if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+      if (
+        dbres == null ||
+        !dbres.success ||
+        dbres.results == null ||
+        dbres.results.length <= 0
+      ) {
         return r400j({
           error: "purchase not found",
           cid: cid,
@@ -3762,7 +3779,12 @@ async function registerOrUpdateOnetimePurchase(
   if (!emptyString(linkedtoken)) {
     // cid for linkedtoken if supplied must match with existing db entry, if any
     const dbres = await dbx.playSub(dbx.db(env), linkedtoken);
-    if (dbres == null || dbres.results == null || dbres.results.length <= 0) {
+    if (
+      dbres == null ||
+      !dbres.success ||
+      dbres.results == null ||
+      dbres.results.length <= 0
+    ) {
       throw new Error(`linked token ${linkedtoken} not found for ${cid}`);
     }
     const linkedentry = dbres.results[0];
