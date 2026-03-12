@@ -140,9 +140,39 @@ export function db(env, cfg = null) {
     out = env.DBTEST;
   }
   if (out == null) {
-    throw new Error("cid: database binding unavailable");
+    throw new Error("database binding unavailable");
   }
   return out;
+}
+
+export function dbdomain(env, testdomain = true) {
+  let out = testdomain ? env.DBTEST : env.DB;
+  if (out == null) {
+    throw new Error("database binding missing");
+  }
+  return out;
+}
+
+/**
+ *
+ * @param {any} db - D1 binding
+ * @param {string} did - device identifier
+ * @param {string} cid - client identifier
+ * @param {object?} deviceinfo - raw json with device info
+ * @param {number} kind - device kind (0 for phone)
+ */
+export async function upsertDevice(db, did, cid, deviceinfo, kind) {
+  if (db == null || emptyString(did) || emptyString(cid) || kind == null) {
+    throw new Error("d1: upsertDevice: db/did/cid/kind missing");
+  }
+  const q =
+    "INSERT INTO devices(did, cid, meta, kind, mtime) VALUES(?, ?, ?, ?, ?)" +
+    " ON CONFLICT(did) DO UPDATE SET " +
+    "cid=excluded.cid, meta=COALESCE(excluded.meta, devices.meta), kind=excluded.kind, mtime=excluded.mtime";
+  const tx = db
+    .prepare(q)
+    .bind(did, cid, JSON.stringify(deviceinfo), kind, now());
+  return run(tx, q);
 }
 
 /**
@@ -350,7 +380,7 @@ async function run(tx, sql = "") {
   // TODO: retries?
   const out = D1Out.fromJson(await tx.run());
   log.d(
-    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`
+    `${sql} <> ${out.meta?.servedby} (${out.meta?.servedbyregion}) mod? ${out.meta?.changedb} r/w ${out.meta?.rowsread}/${out.meta?.rowswritten} - ${out.meta?.duration}ms`,
   );
   return out;
 }

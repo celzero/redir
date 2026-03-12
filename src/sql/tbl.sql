@@ -10,6 +10,21 @@ CREATE TABLE IF NOT EXISTS clients (
     mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS devices (
+    did TEXT PRIMARY KEY,
+    -- json blob representing this device
+    cid TEXT NOT NULL,
+    -- meta blob, sent by the client
+    meta TEXT,
+    -- 0 for phone, 1 for tv
+    kind INTEGER,
+    -- created at timestamp
+    ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- last updated at timestamp
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS playorders (
     purchasetoken TEXT PRIMARY KEY,
     -- json blob representing this order
@@ -59,3 +74,6 @@ ON playorders(linkedtoken);
 
 CREATE INDEX IF NOT EXISTS idx_playorders_cid
 ON playorders(cid);
+
+CREATE INDEX IF NOT EXISTS idx_devices_cid
+ON devices(cid);

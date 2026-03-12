@@ -8,6 +8,7 @@
 
 import { b64AsBytes, emptyBuf, emptyString } from "./buf.js";
 import * as d from "./d.js";
+import { rayid } from "./log.js";
 import {
   grabLinks,
   grabSupportedCountries,
@@ -22,6 +23,7 @@ import {
   googlePlayNotification,
   revokeSubscription,
 } from "./playorder.js";
+import { registerDevice } from "./reg.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
 import * as xc from "./xc.js";
@@ -33,6 +35,7 @@ const urlmoney2 = "mt"; // unused? generate token
 const urlsproxy = "p"; // sproxy metadata
 const urlgplay = "g"; // redirect to play store
 const crosssvc = "x"; // cross-service calls
+const urldevice = "d"; // device registration
 const paramwsfwd = "rpn"; // if url param is present, forward to ws
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
@@ -86,6 +89,11 @@ async function handle(r, env, ctx) {
         return xc.certfile(env, r);
       }
       return r400(`x: ${ray} unknown resource ${p2}`);
+    } else if (p[1] === urldevice) {
+      // d; device registration
+      // d/?did=hex&cid=hex[&test]
+      // metadata as json in the body
+      return registerDevice(env, r);
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
@@ -317,15 +325,6 @@ function country(req) {
     return req.cf.country.toLowerCase();
   }
   return "us";
-}
-
-/**
- * Get the CF Ray ID from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|""} - CF Ray ID, if any.
- */
-function rayid(req) {
-  return req.headers.get("Cf-Ray") || "";
 }
 
 /**

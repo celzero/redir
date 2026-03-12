@@ -88,7 +88,8 @@ const knownOnetimeProductsAndPlans = new Set([
 /** @type Map<string, GEntitlement> - basePlanId => Entitlement */
 const knownBasePlans = new Map();
 
-const mincidlength = 32; // ideally 64 hex chars
+export const mincidlength = 32; // ideally 64 hex chars
+export const mindidlength = 16; // ideally 32 hex chars
 
 /**
  * Memoization cache for Google tokens.
