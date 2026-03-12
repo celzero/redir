@@ -5,6 +5,7 @@ import { emptyString } from "./buf.js";
 import { als, appendRayId, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
+import { mincidlength } from "./playorder.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");
@@ -194,7 +195,8 @@ async function bearerAndCidForWs(env, req) {
   const authVals = authHeader ? authHeader.split(" ") : [];
   const needsAuth = forwardToWsWithAuth(url);
   let cid = q.get("cid"); // may be null
-  const validcid = cid != null && cid.length > 0 && /^[0-9a-f]{64}$/.test(cid);
+  const validcid =
+    cid != null && cid.length >= mincidlength && /^[a-fA-F0-9]+$/.test(cid);
   if (!validcid) cid = null; // ensure cid is null if invalid
 
   if (!needsAuth) {
@@ -216,7 +218,12 @@ async function bearerAndCidForWs(env, req) {
   }
 
   if (!validcid || emptyString(enctoken)) {
-    log.d("bearerAndCidForWs: no cid", cid, "or token", emptyString(enctoken));
+    log.d(
+      "bearerAndCidForWs: no cid",
+      cid,
+      "or token empty?",
+      emptyString(enctoken),
+    );
     return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false]; // no cid or token
   }
 
