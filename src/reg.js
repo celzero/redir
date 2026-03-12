@@ -9,7 +9,7 @@
 import { emptyString } from "./buf.js";
 import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
-import { dbdomain, upsertDevice } from "./sql/dbx.js";
+import { dbdomain, getDevices, upsertDevice } from "./sql/dbx.js";
 
 const kindphone = 0;
 const log = new glog.Log("reg");
@@ -40,7 +40,7 @@ export async function registerDevice(env, req) {
     cid.length <= mincidlength ||
     !/^[a-fA-F0-9]+$/.test(cid)
   ) {
-    return r400("invalid identifiers");
+    return r400(`${ray} invalid identifiers`);
   }
 
   const meta = await req.json();
@@ -52,12 +52,63 @@ export async function registerDevice(env, req) {
     kindphone,
   );
 
-  if (out == null || out.success === false) {
+  if (out == null || !out.success) {
     return r500(`database error: ${ray}`);
   }
 
   log.d(ray, "register", did, "for c:", cid, "meta?", meta, "test?", test);
-  return new Response(`ok: ${ray}`, { status: 200 });
+  // return new Response(`ok: ${ray}`, { status: 200 });
+  return retrieveDevices(env, cid, test);
+}
+
+/**
+ * @param {any} env - Workers environment
+ * @param {string} cid - Client identifier
+ * @param {boolean} test - Test domain?
+ */
+export async function retrieveDevices(env, cid, test) {
+  const ray = glog.rayid(req);
+
+  if (
+    emptyString(cid) ||
+    cid.length <= mincidlength ||
+    !/^[a-fA-F0-9]+$/.test(cid)
+  ) {
+    return r400("invalid cid");
+  }
+
+  const out = await getDevices(dbdomain(env, test), cid);
+
+  log.d(ray, "getDevices for c:", cid, "test?", test, "found", out.success);
+
+  if (out == null || !out.success) {
+    return r500(`database error: ${ray}`);
+  }
+  if (out.results == null || out.results.length <= 0) {
+    return r400("no devices found");
+  }
+
+  const json = [];
+  for (const entry of out.results) {
+    const did = entry.did || "";
+    const meta = entry.meta != null ? JSON.parse(entry.meta) : null;
+    const ctime =
+      entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
+    const mtime =
+      entry.mtime != null ? new Date(entry.mtime).toISOString() : null;
+    json.push({
+      did: did.substring(0, 8), // partial
+      meta: meta,
+      created: ctime,
+      updated: mtime,
+    });
+  }
+  return r200j({ devices: json });
+}
+
+function r200j(j) {
+  const h = { "content-type": "application/json" };
+  return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
 }
 
 function r400(w) {

@@ -176,6 +176,20 @@ export async function upsertDevice(db, did, cid, deviceinfo, kind) {
 }
 
 /**
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @returns {Promise<D1Out>} - D1Out object
+ */
+export async function getDevices(db, cid) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: getDevices: db/cid missing");
+  }
+  const q = "SELECT * FROM devices WHERE cid = ?";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
  * Insert client data into the clients table if not already present.
  * @param {any} db - D1 binding
  * @param {string} cid - client identifier
