@@ -1548,15 +1548,29 @@ async function handleOneTimeProductNotification(env, notif) {
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     const ackd = isOnetimeAck2(purchase2);
     const consumed = isOnetimeAllConsumed2(purchase2);
+    const orderId = purchase2.orderId || "";
     const productIds = allProducts2(purchase2);
     const unconsumedProductIds = unconsumedProducts2(purchase2);
     const paid = isOnetimePaid2(purchase2);
     const cancelled = isOnetimeCancelled2(notif, purchase2);
     const pending = isOnetimeUnpaid2(purchase2);
     const onetimeState = onetimePurchaseStateStr2(purchase2);
-    // register purchase rightaway regardless of its veracity;
-    // so it can be later revoke/refunded, as needed.
-    const cid = await getCidThenPersistProduct(env, purchase2);
+
+    /** @type {string?} */
+    let cid = null;
+
+    try {
+      // register purchase rightaway regardless of its veracity;
+      // so it can be later revoke/refunded, as needed.
+      cid = await getCidThenPersistProduct(env, purchase2);
+    } catch (err) {
+      loge(
+        `onetime: no cid ${cid} / tok: ${obstoken} ${sku}/${productIds}: ${err.message}; test? ${test}`,
+      );
+      // TODO: leave upto the client to trigger a refund like done for subs?
+      // refund the purchase as we have no way to link it to a user; otherwise it will be "lost" and unrevokable forever.
+      return refundOrder(env, orderId);
+    }
 
     /** @type {ProductPurchaseV2?} */
     let linkedPurchase2 = null;
@@ -1705,9 +1719,21 @@ async function handleSubscriptionNotification(env, notif, test) {
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     logi(`sub: ${typ} for ${obstoken} test? ${test}`);
 
-    const cid = await getCidThenPersist(env, sub);
+    /** @type {string?} */
+    let cid = null;
 
-    return await processSubscription(env, cid, sub, purchasetoken, revoked);
+    try {
+      cid = await getCidThenPersist(env, sub);
+    } catch (err) {
+      loge(
+        `sub: no cid ${cid} / tok: ${obstoken} for ${typ}: ${err.message}; test? ${test}`,
+      );
+      // the client would attempt to acknowledge the purchase as we haven't
+      // via googlePlayAcknowledgePurchase; and failing to persist cid
+      // should prompt the client (if we return 409) to trigger a refund
+    }
+
+    return processSubscription(env, cid, sub, purchasetoken, revoked);
   });
 }
 
@@ -2830,7 +2856,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // return error as there can be atmost 2 active onetime purchases allowed
           // the first purchase is assumed to be expiring soonish (like in 90d)
           // while the second one is assumed to be "taking over" when the first one does.
-          // TODO: attempt refund?
+          // client that sees 409 should attempt refund.
           return r409j({
             error: "cannot link purchase",
             details: err.message,
@@ -3113,14 +3139,16 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               allProducts: productIds,
               test: test,
               state: state,
-              error: `cid ${cid} not registered with purchase token`,
+              error: "cid mismatch",
             });
           }
         } catch (e) {
           loge(`ack: err validating cid (${cid}): ${e.message}`);
-          return r400j({
+          // returning 409 should trigger a refund workflow on the client
+          // ref: handleSubscriptionNotification
+          return r409j({
             purchaseId: test ? purchasetoken : obstoken,
-            error: "cid validation failed",
+            error: "invalid cid; cannot acknowledge",
             details: e.message,
             cid: cid,
             sku: sku,
