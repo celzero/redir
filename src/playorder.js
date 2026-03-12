@@ -2124,7 +2124,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
 export async function cancelSubscription(env, req) {
   // Only allow POST requests
   if (req.method !== "POST") {
-    return r400j({ error: "method not allowed" });
+    return r405j({ error: "method not allowed" });
   }
 
   const url = new URL(req.url);
@@ -2289,7 +2289,7 @@ export async function cancelSubscription(env, req) {
 export async function revokeSubscription(env, req) {
   // Only allow POST requests
   if (req.method !== "POST") {
-    return r400j({ error: "method not allowed" });
+    return r405j({ error: "method not allowed" });
   }
 
   const url = new URL(req.url);
@@ -2751,7 +2751,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
   try {
     if (req.method !== "POST") {
-      return r400j({ error: "method not allowed" });
+      return r405j({ error: "method not allowed" });
     }
     // Parse request body to get purchase token
     const url = new URL(req.url);
@@ -3250,7 +3250,7 @@ export async function googlePlayConsumePurchase(env, req) {
 
   try {
     if (req.method !== "POST") {
-      return r400j({ error: "method not allowed" });
+      return r405j({ error: "method not allowed" });
     }
 
     const url = new URL(req.url);
@@ -3470,7 +3470,7 @@ export async function googlePlayGetEntitlements(env, req) {
   try {
     // Only allow GET requests
     if (req.method !== "GET") {
-      return r400j({ error: "method not allowed" });
+      return r405j({ error: "method not allowed" });
     }
 
     const url = new URL(req.url);
@@ -4316,6 +4316,12 @@ function r400j(j) {
   const h = { "content-type": "application/json" };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
   return new Response(JSON.stringify(payload), { status: 400, headers: h }); // bad request
+}
+
+function r405j(j) {
+  const h = { "content-type": "application/json" };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 405, headers: h }); // method not allowed
 }
 
 function r409j(j) {

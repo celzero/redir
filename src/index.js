@@ -126,28 +126,32 @@ async function handle(r, env, ctx) {
       }
 
       if (p2 === "ack") {
-        // TODO: must be a POST request
         // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku&test]
+        if (r.method !== "POST")
+          return r405(`g/ack: ${ray} method not allowed`);
         return googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "con") {
-        // TODO: must be a POST request
         // g/con/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        if (r.method !== "POST")
+          return r405(`g/con: ${ray} method not allowed`);
         return googlePlayConsumePurchase(env, r);
       } else if (p2 === "ent") {
-        // TODO: must be a GET request
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
         // g/entitlements/[vcode]?cid&vcode&test[&sku]
+        if (r.method !== "GET") return r405(`g/ent: ${ray} method not allowed`);
         return googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
-        // TODO: must be a POST request
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        if (r.method !== "POST")
+          return r405(`g/stop: ${ray} method not allowed`);
         return cancelSubscription(env, r);
       } else if (p2 === "refund") {
-        // TODO: must be a POST request
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        if (r.method !== "POST")
+          return r405(`g/refund: ${ray} method not allowed`);
         return revokeSubscription(env, r);
       }
       return r400(`g: ${ray} unknown resource ${p2}`);
@@ -480,10 +484,15 @@ function r429(w) {
 }
 
 function r302(where) {
+  if (!where) return r500("missing redirect target");
   return new Response("Redirecting...", {
     status: 302, // redirect
     headers: { location: where },
   });
+}
+
+function r405(w) {
+  return new Response(w, { status: 405 }); // method not allowed
 }
 
 function r200j(j) {
