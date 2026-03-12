@@ -232,8 +232,8 @@ function redirect(req, url, p, home) {
     if (allLinks.has(k)) {
       // redirect to where tx wants us to
       const redirurl = new URL(allLinks.get(k));
-      for (const p of defaultparams(k)) {
-        redirurl.searchParams.set(...p);
+      for (const param of defaultparams(k)) {
+        redirurl.searchParams.set(...param);
       }
       for (const paramsin of url.searchParams) {
         redirurl.searchParams.set(...paramsin);
@@ -519,12 +519,12 @@ function rsapubmodulus(env) {
       const r = parseInt(b.slice(pubprefix.length));
       return r - l;
     });
-  // two recent keys
+  // two recent keys; descend already contains full key names, do not re-add prefix
   if (descend.length > 0) {
-    kpub0 = pubprefix + descend[0];
+    kpub0 = descend[0];
   }
   if (descend.length > 1) {
-    kpub1 = pubprefix + descend[1];
+    kpub1 = descend[1];
   }
   /*
     {
@@ -566,7 +566,7 @@ function rsapubkey(env) {
     if (k.startsWith(pubprefix)) {
       const timestamp = k.slice(pubprefix.length);
       // convert timestamp to number
-      const t = parseInt(timestamp);
+      const t = parseInt(timestamp, 10);
       if (t > max) {
         kpub = pubprefix + timestamp;
         max = t;
@@ -598,8 +598,9 @@ async function admit(env, r) {
   const ac1000 = env.THOUSAND_10s_AC;
   const noac10 = !ac10;
   const noac1000 = !ac1000;
-  const noac10func = typeof ac10.limit !== "function";
-  const noac1000func = typeof ac1000.limit !== "function";
+  // guard against null/undefined before accessing .limit to avoid TypeError
+  const noac10func = !noac10 && typeof ac10.limit !== "function";
+  const noac1000func = !noac1000 && typeof ac1000.limit !== "function";
   if (noac10 || noac1000 || noac10func || noac1000func) {
     console.warn(
       `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 10f? ${noac10func}, 1000f? ${noac1000func}`,
