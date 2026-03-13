@@ -55,11 +55,11 @@ namespace_id = "7777"
   limit = 1000
   period = 10
 
-[[env.prod.ratelimits]]
+[[ratelimits]]
 name = "TWO_10s_AC"
 namespace_id = "5353"
 
-  [env.prod.ratelimits.simple]
+  [ratelimits.simple]
   limit = 2
   period = 10
 
