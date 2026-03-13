@@ -200,7 +200,7 @@ async function bearerAndCidForWs(env, req) {
   if (!validcid) cid = null; // ensure cid is null if invalid
 
   if (!needsAuth) {
-    return [null, null, null, /*needsAuth*/ false, /*mustEncrypt*/ false];
+    return [cid, null, null, /*needsAuth*/ false, /*mustEncrypt*/ false];
   }
 
   if (authVals.length < 2 || authVals[0] !== "Bearer") {

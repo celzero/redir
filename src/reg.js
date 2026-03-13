@@ -203,6 +203,7 @@ function r500(w) {
  * @returns {Promise<Response|null>} null if authorized, a (denied) Response if not.
  */
 export async function authorizeDevice(env, req) {
+  const ray = rayid(req);
   const url = new URL(req.url);
   const cid = url.searchParams.get("cid");
   const did = url.searchParams.get("did");
@@ -221,6 +222,8 @@ export async function authorizeDevice(env, req) {
   } catch (ex) {
     return r500(`db err: ${ex.message}`);
   }
+
+  log.d(ray, "authorize:", cid, ":", did, "t?", test, "ok?", devres?.success);
 
   // getDevice excludes banned devices (kind != -1) and matches both cid+did;
   // no result means the device is unregistered or banned.

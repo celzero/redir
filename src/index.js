@@ -66,6 +66,10 @@ async function handle(r, env, ctx) {
       if ((await ac.admit(env, r)) === false) {
         return r429(`wsf: ${ray} rate limited`);
       }
+
+      const denied = await authorizeDevice(env, r);
+      if (denied) return denied;
+
       return await forwardToWs(env, r);
     }
 
@@ -141,15 +145,17 @@ async function handle(r, env, ctx) {
 
       if (p2 === "ack") {
         // g/ack/[vcode]?cid&did&purchaseToken&vcode[&force&sku&test]
-        if (r.method !== "POST")
+        if (r.method !== "POST") {
           return r405(`g/ack: ${ray} method not allowed`);
+        }
         const denied = await authorizeDevice(env, r);
         if (denied) return denied;
         return await googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "con") {
         // g/con/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
-        if (r.method !== "POST")
+        if (r.method !== "POST") {
           return r405(`g/con: ${ray} method not allowed`);
+        }
         const denied = await authorizeDevice(env, r);
         if (denied) return denied;
         return await googlePlayConsumePurchase(env, r);
@@ -164,16 +170,18 @@ async function handle(r, env, ctx) {
       } else if (p2 === "stop") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
-        if (r.method !== "POST")
+        if (r.method !== "POST") {
           return r405(`g/stop: ${ray} method not allowed`);
+        }
         const denied = await authorizeDevice(env, r);
         if (denied) return denied;
         return await cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
-        if (r.method !== "POST")
+        if (r.method !== "POST") {
           return r405(`g/refund: ${ray} method not allowed`);
+        }
         const denied = await authorizeDevice(env, r);
         if (denied) return denied;
         return await revokeSubscription(env, r);
