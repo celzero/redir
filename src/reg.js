@@ -34,10 +34,10 @@ export async function registerDevice(env, req) {
 
   if (
     emptyString(did) ||
-    did.length <= mindidlength ||
+    did.length < mindidlength ||
     !/^[a-fA-F0-9]+$/.test(did) ||
     emptyString(cid) ||
-    cid.length <= mincidlength ||
+    cid.length < mincidlength ||
     !/^[a-fA-F0-9]+$/.test(cid)
   ) {
     return r400(`${ray} invalid identifiers`);
@@ -49,11 +49,18 @@ export async function registerDevice(env, req) {
   } catch (_) {
     // body missing or not valid JSON; proceed with null meta
   }
-  const db = dbx.db2(env, test);
-  const out = await dbx.upsertDevice(db, did, cid, meta || null, kindphone);
 
-  if (out == null || !out.success) {
-    return r500(`database error: ${ray}`);
+  try {
+    const db = dbx.db2(env, test);
+    const out = await dbx.upsertDevice(db, did, cid, meta || null, kindphone);
+
+    if (out == null || !out.success) {
+      return r500(`database error: ${ray}`);
+    }
+  } catch (e) {
+    // ex: Error: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
+    log.e(ray, "registerDevice error:", e);
+    return r500(`db error: ${e.message}`);
   }
 
   log.d(ray, "register", did, "for c:", cid, "meta?", meta, "test?", test);
@@ -95,6 +102,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
       entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
     const mtime =
       entry.mtime != null ? new Date(entry.mtime).toISOString() : null;
+    // TODO: define json as class
     json.push({
       did: did.substring(0, 8), // partial
       meta: meta,

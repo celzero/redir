@@ -65,7 +65,7 @@ async function handle(r, env, ctx) {
       if ((await admit(env, r)) === false) {
         return r429(`wsf: ${ray} rate limited`);
       }
-      return forwardToWs(env, r);
+      return await forwardToWs(env, r);
     }
 
     if (path == null || path.length === 0) return r302(home);
@@ -97,14 +97,14 @@ async function handle(r, env, ctx) {
       // d; device registration
       // d/?did=hex&cid=hex[&test]
       // metadata as json in the body
-      return registerDevice(env, r);
+      return await registerDevice(env, r);
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
       const apikey = env.STRIPE_API_KEY;
       const db = env.DB;
       // opt: p[2] === "checkout"
-      return stripeCheckout(r, db, apikey, whsec);
+      return await stripeCheckout(r, db, apikey, whsec);
     } else if (p[1] === urlgplay) {
       // g; play store subs rtdn at g/rtdn
       const p2 = p[2] ? p[2].toLowerCase() : "";
@@ -113,7 +113,7 @@ async function handle(r, env, ctx) {
       }
 
       if (p2 === "rtdn") {
-        return googlePlayNotification(env, r);
+        return await googlePlayNotification(env, r);
       }
 
       const vcode = url.searchParams.get("vcode");
@@ -133,30 +133,30 @@ async function handle(r, env, ctx) {
         // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku&test]
         if (r.method !== "POST")
           return r405(`g/ack: ${ray} method not allowed`);
-        return googlePlayAcknowledgePurchase(env, r);
+        return await googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "con") {
         // g/con/[vcode]?cid&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/con: ${ray} method not allowed`);
-        return googlePlayConsumePurchase(env, r);
+        return await googlePlayConsumePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
         // g/entitlements/[vcode]?cid&vcode&test[&sku]
         if (r.method !== "GET") return r405(`g/ent: ${ray} method not allowed`);
-        return googlePlayGetEntitlements(env, r);
+        return await googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop/[vcode]?cid&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/stop: ${ray} method not allowed`);
-        return cancelSubscription(env, r);
+        return await cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund/[vcode]?cid&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/refund: ${ray} method not allowed`);
-        return revokeSubscription(env, r);
+        return await revokeSubscription(env, r);
       }
       return r400(`g: ${ray} unknown resource ${p2}`);
     } else if (p[1] === urlmoney1) {
@@ -165,13 +165,13 @@ async function handle(r, env, ctx) {
       const db = env.DB;
       const pubkeys = rsapubmodulus(env);
       // blindMsg
-      return finalizeOrder(r, psk, pubkeys, db);
+      return await finalizeOrder(r, psk, pubkeys, db);
     } else if (p[1] === urlmoney2) {
       // mt; token
       const psk = env.PRE_SHARED_KEY_SVC;
       const db = env.DB;
       // msg:rsaSig:sha256(rsaSig):hashedtoken(rand)
-      return generateToken(r, psk, db);
+      return await generateToken(r, psk, db);
     } else if (p[1] === urlsproxy) {
       // p; proxy metadata
       const clientVCode = p[2];
@@ -202,6 +202,7 @@ async function handle(r, env, ctx) {
         }
       }
       const svcs = svcstatus(env);
+      // TODO: move json to class
       return r200j({
         vcode: clientVCode,
         minvcode: minVCodeNeeded,
@@ -591,8 +592,8 @@ function mustWsFwd(url) {
 }
 
 /**
- * @param {any} env
- * @param {Request} r
+ * @param {any} env - Worker environment
+ * @param {Request} r - The incoming request
  * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
  */
 async function admit2(env, r) {
