@@ -37,7 +37,7 @@ export async function decryptAesGcm(aeskey, iv, taggedciphertext, aad) {
   const plaintext = await crypto.subtle.decrypt(
     params,
     aeskey,
-    taggedciphertext
+    taggedciphertext,
   );
   return byt(plaintext);
 }
@@ -63,7 +63,7 @@ export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
   const taggedciphertext = await crypto.subtle.encrypt(
     params,
     aeskey,
-    plaintext
+    plaintext,
   );
   return byt(taggedciphertext);
 }
@@ -108,7 +108,7 @@ export function importAes256Key(raw) {
       length: 256,
     },
     false,
-    ["encrypt", "decrypt"]
+    ["encrypt", "decrypt"],
   );
 }
 
@@ -125,7 +125,7 @@ export function importHmacKey(raw) {
     raw,
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["sign"],
   );
 }
 
@@ -151,7 +151,7 @@ export async function importRsaPssPubKey(pubjwkstr) {
       hash: { name: "SHA-384" },
     },
     true,
-    ["verify"]
+    ["verify"],
   );
 }
 
@@ -194,7 +194,7 @@ export function crandHex(n = 64) {
   }
   // b as hex string
   return Array.from(crand(n / 2), (byt) =>
-    byt.toString(16).padStart(2, "0")
+    byt.toString(16).padStart(2, "0"),
   ).join("");
 }
 
@@ -248,6 +248,18 @@ export async function importRsaSsa256Key(pem) {
       hash: { name: "SHA-256" },
     },
     false,
-    ["sign"]
+    ["sign"],
   );
+}
+
+/**
+ * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
+ * then hashes it to a hex string.
+ * @param {string} str - input string to obfuscate.
+ * @returns {Promise<string>} - sha256 hash of the input as hex.
+ */
+export async function obfuscate(str) {
+  const hex = str2byt2hex(str);
+  const hash = await sha256hex(hex);
+  return hash;
 }

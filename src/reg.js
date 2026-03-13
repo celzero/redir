@@ -98,6 +98,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
   const json = [];
   for (const entry of out.results) {
     const did = entry.did || "";
+    const obs = !emptyString(did) ? await obfuscate(did) : "";
     const meta = entry.meta != null ? JSON.parse(entry.meta) : null;
     const ctime =
       entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
@@ -105,7 +106,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
       entry.mtime != null ? new Date(entry.mtime).toISOString() : null;
     // TODO: define json as class
     json.push({
-      did: did.substring(0, 8), // partial
+      did: obs,
       meta: meta,
       created: ctime,
       updated: mtime,

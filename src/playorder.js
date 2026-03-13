@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { emptyString, str2byt2hex } from "./buf.js";
+import { emptyString } from "./buf.js";
 import {
   accountIdentifiersImmutable,
   als,
@@ -19,7 +19,7 @@ import {
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import * as dbx from "./sql/dbx.js";
-import { crandHex, sha256hex } from "./webcrypto.js";
+import { crandHex, obfuscate } from "./webcrypto.js";
 import {
   creds,
   deleteWsEntitlement,
@@ -4443,18 +4443,6 @@ async function gerror(r) {
     // If JSON parsing fails, return the response text
     return `err getting gerr: ${e.message}, code: ${r.status}`;
   }
-}
-
-/**
- * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
- * then hashes it to a hex string.
- * @param {string} str - input string to obfuscate.
- * @returns {Promise<string>} - sha256 hash of the input as hex.
- */
-async function obfuscate(str) {
-  const hex = str2byt2hex(str);
-  const hash = await sha256hex(hex);
-  return hash;
 }
 
 async function sleep(sec) {
