@@ -50,24 +50,25 @@ export async function admit(env, r, rate = 10) {
   }
 
   const ip = rcf.clientIp(r);
-  const { success } = await ac1000.limit({ key: ip });
+  const { ok } = await ac1000.limit({ key: ip });
 
   // TODO: strictly determine paths that may bypass cid rate limits.
   const u = new URL(r.url);
   const cid = u.searchParams.get("cid");
+  const did = u.searchParams.get("did") || ""; // may be empty
   if (!emptyString(cid)) {
     // ignore cid based rate limit if no cid provided.
     // some url paths do not require cid.
     if (rate === 2) {
-      const { success } = await ac2.limit({ key: cid });
+      const { success } = await ac2.limit({ key: cid + ":" + did });
       if (!success) return false; // rate limit by cid at 2 per 10s
     } else {
-      const { success } = await ac10.limit({ key: cid });
+      const { success } = await ac10.limit({ key: cid + ":" + did });
       if (!success) return false; // rate limit by cid
     }
   }
 
-  log.d(`admit: ${ray} ok?`, success, "for", ip, "; c:", cid);
+  log.d(`admit: ${ray} ok?`, ok, "for", ip, "; c:", cid, ":", did);
 
-  return success;
+  return ok;
 }
