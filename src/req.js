@@ -100,3 +100,12 @@ export function postalcode(req) {
   }
   return unknown;
 }
+
+/**
+ * Get the CF Ray ID from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|""} - CF Ray ID, if any.
+ */
+export function rayid(req) {
+  return req.headers.get("Cf-Ray") || "";
+}

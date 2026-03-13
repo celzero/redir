@@ -9,6 +9,7 @@
 import { emptyString } from "./buf.js";
 import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
+import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 
 const kindphone = 0;
@@ -26,7 +27,7 @@ export async function registerDevice(env, req) {
     return r400("unsupported content type");
   }
 
-  const ray = glog.rayid(req);
+  const ray = rayid(req);
   const url = new URL(req.url);
   const did = url.searchParams.get("did");
   const cid = url.searchParams.get("cid");

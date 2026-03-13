@@ -9,7 +9,6 @@
 import * as ac from "./ac.js";
 import { b64AsBytes, emptyBuf } from "./buf.js";
 import * as d from "./d.js";
-import { rayid } from "./log.js";
 import {
   grabLinks,
   grabSupportedCountries,
@@ -58,7 +57,7 @@ const allLinks = grabLinks();
 async function handle(r, env, ctx) {
   env = d.wrap(env, r);
   const home = env.REDIR_CATCHALL;
-  const ray = rayid(r);
+  const ray = rcf.rayid(r);
   try {
     const url = new URL(r.url);
     const path = url.pathname;

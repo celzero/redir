@@ -30,6 +30,7 @@ export async function admit2(env, r) {
  * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
  */
 export async function admit(env, r, rate = 10) {
+  const ray = rcf.rayid(r);
   const ac10 = env.TEN_10s_AC;
   const ac1000 = env.THOUSAND_10s_AC;
   const ac2 = env.TWO_10s_AC;
@@ -42,8 +43,8 @@ export async function admit(env, r, rate = 10) {
   const noac1000func = !noac1000 && typeof ac1000.limit !== "function";
   const noac2func = !noac2 && typeof ac2.limit !== "function";
   if (noac10 || noac1000 || noac2 || noac10func || noac1000func || noac2func) {
-    console.warn(
-      `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 2? ${noac2}, 10f? ${noac10func}, 1000f? ${noac1000func}, 2f? ${noac2func}`,
+    log.w(
+      `admit: ${ray} missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 2? ${noac2}, 10f? ${noac10func}, 1000f? ${noac1000func}, 2f? ${noac2func}`,
     );
     return true; // fail open
   }
@@ -66,7 +67,7 @@ export async function admit(env, r, rate = 10) {
     }
   }
 
-  log.d(`admit: ${rayid(r)} ok?`, success, "for", ip, "; c:", cid);
+  log.d(`admit: ${ray} ok?`, success, "for", ip, "; c:", cid);
 
   return success;
 }
