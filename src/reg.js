@@ -77,7 +77,7 @@ export async function registerDevice(env, req) {
 export async function retrieveDevices(env, cid, test, ray = "") {
   if (
     emptyString(cid) ||
-    cid.length <= mincidlength ||
+    cid.length < mincidlength ||
     !/^[a-fA-F0-9]+$/.test(cid)
   ) {
     return r400("invalid cid");
