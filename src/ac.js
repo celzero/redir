@@ -7,8 +7,8 @@
  */
 
 import { emptyString } from "./buf.js";
-import { clientIp } from "./d.js";
 import * as glog from "./log.js";
+import * as rcf from "./req.js";
 
 const log = new glog.Log("ac");
 
@@ -48,7 +48,7 @@ export async function admit(env, r, rate = 10) {
     return true; // fail open
   }
 
-  const ip = clientIp(r);
+  const ip = rcf.clientIp(r);
   const { success } = await ac1000.limit({ key: ip });
 
   // TODO: strictly determine paths that may bypass cid rate limits.

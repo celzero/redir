@@ -25,6 +25,7 @@ import {
   revokeSubscription,
 } from "./playorder.js";
 import { registerDevice } from "./reg.js";
+import * as rcf from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
 import * as xc from "./xc.js";
@@ -186,13 +187,13 @@ async function handle(r, env, ctx) {
 
       const minVCodeNeeded = minvcode(env, "paid-features");
       const cansell = greaterThanEqCmp(clientVCode, minVCodeNeeded);
-      const clientip = clientIp(r);
-      const clientCountry = country(r);
-      const clientAsOrg = asorg(r);
-      const clientCity = city(r);
-      const clientColo = colo(r);
-      const clientRegion = region(r);
-      const clientPostalCode = postalcode(r);
+      const clientip = rcf.clientIp(r);
+      const clientCountry = rcf.country(r);
+      const clientAsOrg = rcf.asorg(r);
+      const clientCity = rcf.city(r);
+      const clientColo = rcf.colo(r);
+      const clientRegion = rcf.region(r);
+      const clientPostalCode = rcf.postalcode(r);
       const withaddrs = p[3] === "wa" || p[3] === "withaddrs";
       let clientAddrs = [];
       if (cansell && withaddrs) {
@@ -233,7 +234,7 @@ async function handle(r, env, ctx) {
 function redirect(req, url, p, home) {
   if (p.length >= 3 && p[2].length > 0) {
     const w = p[2];
-    const c = country(req);
+    const c = rcf.country(req);
     const k = key(w, c);
     if (allLinks.has(k)) {
       // redirect to where tx wants us to
@@ -322,97 +323,6 @@ function defaultparams(k) {
     ];
   }
   return [];
-}
-
-/**
- * Get the country from the request headers.
- * developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
- * @param {Request} req - The incoming request object.
- * @returns {string|"us"} - Country, if any.
- */
-function country(req) {
-  if (req.cf && req.cf.country) {
-    return req.cf.country.toLowerCase();
-  }
-  return "us";
-}
-
-/**
- * Get the client IP address from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - The client IP address, if available.
- */
-function clientIp(req) {
-  const cfclient6 = req.headers.get("CF-Connecting-IPv6");
-  const cfclient4 = req.headers.get("CF-Connecting-IP");
-  // prefer IPv6 if available as IPv4 may be Cloudflare's pseudo-IPv4
-  // developers.cloudflare.com/fundamentals/reference/http-headers/#cf-connecting-ipv6
-  if (cfclient6) {
-    return cfclient6;
-  }
-  if (cfclient4) {
-    return cfclient4; // fallback to IPv4
-  }
-  return "unknown";
-}
-
-/**
- * Get the AS Organization from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - AS Organization, if any.
- */
-function asorg(req) {
-  if (req.cf && req.cf.asOrganization) {
-    return req.cf.asOrganization;
-  }
-  return "unknown";
-}
-
-/**
- * Get the city from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - City, if any.
- */
-function city(req) {
-  if (req.cf && req.cf.city) {
-    return req.cf.city;
-  }
-  return "unknown";
-}
-
-/**
- * Get the Cloudflare colo from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - Colo, if any.
- */
-function colo(req) {
-  if (req.cf && req.cf.colo) {
-    return req.cf.colo;
-  }
-  return "unknown";
-}
-
-/**
- * Get the region from the request headers.
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - Region, if any.
- */
-function region(req) {
-  if (req.cf && req.cf.region) {
-    return req.cf.region;
-  }
-  return "unknown";
-}
-
-/**
- * @param {Request} req - The incoming request object.
- * @returns {string|"unknown"} - Postal code, if any.
- */
-function postalcode(req) {
-  if (req.cf && req.cf.postalCode) {
-    return req.cf.postalCode;
-  }
-  return "unknown";
 }
 
 /**
