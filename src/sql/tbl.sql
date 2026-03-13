@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS devices (
     cid TEXT NOT NULL,
     -- meta blob, sent by the client
     meta TEXT,
-    -- 0 for phone, 1 for tv
+    -- 0 for phone, 1 for tv; -1 for banned, -2 for removed
     kind INTEGER,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

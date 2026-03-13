@@ -14,6 +14,8 @@ import * as dbx from "./sql/dbx.js";
 import { obfuscateHex } from "./webcrypto.js";
 
 const kindphone = 0;
+// const kindbanned = -1;
+const kindremoved = -2;
 const log = new glog.Log("reg");
 
 /**
@@ -62,7 +64,7 @@ export async function registerDevice(env, req) {
   } catch (e) {
     // ex: Error: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
     log.e(ray, "registerDevice error:", e);
-    return r500(`db error: ${e.message}`);
+    return r500(`db error: ${ray}: ${e.message}`);
   }
 
   log.d(ray, "register", did, "for c:", cid, "meta?", meta, "test?", test);
@@ -93,7 +95,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
     return r500(`database error: ${ray}`);
   }
   if (out.results == null || out.results.length <= 0) {
-    return r404("no devices found");
+    return r404(`no devices found: ${ray}`);
   }
 
   const json = [];
@@ -133,6 +135,103 @@ function r405(w) {
   return new Response(w, { status: 405 }); // method not allowed
 }
 
+/**
+ * Removes (soft-deletes) a device for the given client.
+ * Sets kind = -2 on the device row so it is no longer active or enumerable.
+ * @param {any} env - Workers environment
+ * @param {Request} req - Incoming request with cid and did as query params
+ * @returns {Promise<Response>}
+ */
+export async function removeDevice(env, req) {
+  if (req.method !== "DELETE" && req.method !== "POST") {
+    return r405("method not allowed");
+  }
+
+  const ray = rayid(req);
+  const url = new URL(req.url);
+  const cid = url.searchParams.get("cid");
+  const did = url.searchParams.get("did");
+  const test = url.searchParams.has("test");
+
+  if (
+    emptyString(did) ||
+    did.length < mindidlength ||
+    !/^[a-fA-F0-9]+$/.test(did) ||
+    emptyString(cid) ||
+    cid.length < mincidlength ||
+    !/^[a-fA-F0-9]+$/.test(cid)
+  ) {
+    return r400(`${ray} invalid identifiers`);
+  }
+
+  try {
+    const db = dbx.db2(env, test);
+    // kind = -2 marks device as removed (soft-delete)
+    const out = await dbx.modifyDeviceKind(db, cid, did, kindremoved);
+    if (out == null || !out.success || out.meta?.rowswritten === 0) {
+      log.w(
+        `${ray} removeDevice: no device found for c:${cid} d:${did} test?${test}; out: ${JSON.stringify(out)}`,
+      );
+      return r404(`device not found: ${ray}`);
+    }
+  } catch (e) {
+    log.e(ray, "removeDevice error:", e);
+    return r500(`db error: ${ray}: ${e.message}`);
+  }
+
+  log.d(ray, "remove", did, "for c:", cid, "test?", test);
+  return r204(); // no content
+}
+
+function r204() {
+  return new Response(null, { status: 204 }); // no content
+}
+
+function r401(w) {
+  return new Response(w, { status: 401 }); // unauthorized
+}
+
 function r500(w) {
   return new Response(w, { status: 500 }); // internal server error
+}
+
+/**
+ * Verifies that the device (did) is registered for the client (cid) and isn't banned.
+ * Uses the appropriate database (test vs prod) based on the ?test query param.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request containing cid and did query parameters
+ * @returns {Promise<Response|null>} null if authorized, a (denied) Response if not.
+ */
+export async function authorizeDevice(env, req) {
+  const url = new URL(req.url);
+  const cid = url.searchParams.get("cid");
+  const did = url.searchParams.get("did");
+  const test = url.searchParams.has("test");
+
+  if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    return r400("missing/invalid client id");
+  }
+  if (!did || did.length < mindidlength || !/^[a-fA-F0-9]+$/.test(did)) {
+    return r400("missing/invalid device id");
+  }
+
+  let devres;
+  try {
+    devres = await dbx.getDevice(dbx.db2(env, test), cid, did);
+  } catch (ex) {
+    return r500(`db err: ${ex.message}`);
+  }
+
+  // getDevice excludes banned devices (kind != -1) and matches both cid+did;
+  // no result means the device is unregistered or banned.
+  if (
+    devres == null ||
+    !devres.success ||
+    devres.results == null ||
+    devres.results.length <= 0
+  ) {
+    return r401("device not found or banned");
+  }
+
+  return null; // authorized
 }

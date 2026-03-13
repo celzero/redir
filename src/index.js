@@ -23,7 +23,7 @@ import {
   googlePlayNotification,
   revokeSubscription,
 } from "./playorder.js";
-import { registerDevice } from "./reg.js";
+import { authorizeDevice, registerDevice, removeDevice } from "./reg.js";
 import * as rcf from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
@@ -96,9 +96,18 @@ async function handle(r, env, ctx) {
       }
 
       // d; device registration
-      // d/?did=hex&cid=hex[&test]
-      // metadata as json in the body
-      return await registerDevice(env, r);
+      const p2 = p[2] ? p[2].toLowerCase() : "";
+
+      if (p2 === "rem") {
+        // d/rem?cid=hex&did=hex[&test]
+        if (r.method !== "DELETE" && r.method !== "POST")
+          return r405(`d/rem: ${ray} method not allowed`);
+        return await removeDevice(env, r);
+      } else if (!p2 || p2.length === 0 || p2 === "reg") {
+        // d/reg?did=hex&cid=hex&vcode=[&test]
+        // metadata as json in the body
+        return await registerDevice(env, r);
+      }
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
       const whsec = env.STRIPE_WEBHOOK_SECRET;
@@ -131,32 +140,42 @@ async function handle(r, env, ctx) {
       }
 
       if (p2 === "ack") {
-        // g/ack/[vcode]?cid&purchaseToken&vcode[&force&sku&test]
+        // g/ack/[vcode]?cid&did&purchaseToken&vcode[&force&sku&test]
         if (r.method !== "POST")
           return r405(`g/ack: ${ray} method not allowed`);
+        const denied = await authorizeDevice(env, r);
+        if (denied) return denied;
         return await googlePlayAcknowledgePurchase(env, r);
       } else if (p2 === "con") {
-        // g/con/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        // g/con/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/con: ${ray} method not allowed`);
+        const denied = await authorizeDevice(env, r);
+        if (denied) return denied;
         return await googlePlayConsumePurchase(env, r);
       } else if (p2 === "ent") {
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
-        // g/entitlements/[vcode]?cid&vcode&test[&sku]
+        // g/entitlements/[vcode]?cid&did&vcode&test[&sku]
         if (r.method !== "GET") return r405(`g/ent: ${ray} method not allowed`);
+        const denied = await authorizeDevice(env, r);
+        if (denied) return denied;
         return await googlePlayGetEntitlements(env, r);
       } else if (p2 === "stop") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
-        // g/stop/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        // g/stop/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/stop: ${ray} method not allowed`);
+        const denied = await authorizeDevice(env, r);
+        if (denied) return denied;
         return await cancelSubscription(env, r);
       } else if (p2 === "refund") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
-        // g/refund/[vcode]?cid&purchaseToken&vcode[&sku&test]
+        // g/refund/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST")
           return r405(`g/refund: ${ray} method not allowed`);
+        const denied = await authorizeDevice(env, r);
+        if (denied) return denied;
         return await revokeSubscription(env, r);
       }
       return r400(`g: ${ray} unknown resource ${p2}`);

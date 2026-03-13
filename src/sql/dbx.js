@@ -57,7 +57,8 @@ export class D1Out {
   }
 }
 
-/*
+/**
+ * ```
   "meta": {
     "served_by": "miniflare.db",
     served_by_region: string,
@@ -72,7 +73,8 @@ export class D1Out {
     "size_after": 8192,
     "rows_read": 4,
     "rows_written": 0
-  },
+  }
+* ```
 */
 class D1OutMeta {
   constructor(meta) {
@@ -184,8 +186,40 @@ export async function getDevices(db, cid) {
   if (db == null || emptyString(cid)) {
     throw new Error("d1: getDevices: db/cid missing");
   }
-  const q = "SELECT * FROM devices WHERE cid = ?";
+  const q = "SELECT * FROM devices WHERE cid = ? AND kind != -1";
   const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @param {string} did - device identifier
+ * @returns {Promise<D1Out>} - D1Out with a single row if the device exists and isn't banned
+ */
+export async function getDevice(db, cid, did) {
+  if (db == null || emptyString(cid) || emptyString(did)) {
+    throw new Error("d1: getDevice: db/cid/did missing");
+  }
+  const q = "SELECT * FROM devices WHERE cid = ? AND did = ? AND kind >= 0";
+  const tx = db.prepare(q).bind(cid, did);
+  return run(tx, q);
+}
+
+/**
+ *
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @param {string} did - device identifier
+ * @param {number} kind - device kind (-1 for banned, -2 for removed)
+ * @returns {Promise<D1Out>} - D1Out object
+ */
+export async function modifyDeviceKind(db, cid, did, kind = -1) {
+  if (db == null || emptyString(cid) || emptyString(did) || kind == null) {
+    throw new Error("d1: modifyDeviceKind: db/cid/did/kind missing");
+  }
+  const q = "UPDATE devices SET kind=? WHERE cid = ? AND did = ?";
+  const tx = db.prepare(q).bind(kind, cid, did);
   return run(tx, q);
 }
 
