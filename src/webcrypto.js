@@ -216,7 +216,7 @@ export async function rsaSsaSign(content, signingKey) {
 
   const buf = str2ab(content);
   const key = await importRsaSsa256Key(signingKey);
-  return await crypto.subtle.sign({ name: "RSASSA-PKCS1-V1_5" }, key, buf);
+  return crypto.subtle.sign({ name: "RSASSA-PKCS1-V1_5" }, key, buf);
 }
 
 /**
@@ -261,6 +261,15 @@ export async function importRsaSsa256Key(pem) {
  */
 export async function obfuscate(str) {
   const hex = str2byt2hex(str);
-  const hash = await sha256hex(hex);
-  return hash;
+  return obfuscateHex(hex);
+}
+
+/**
+ * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
+ * then hashes it to a hex string.
+ * @param {string} hex - input shex string to obfuscate.
+ * @returns {Promise<string>} - sha256 hash of the input as hex.
+ */
+export async function obfuscateHex(hexstr) {
+  return sha256hex(hexstr);
 }

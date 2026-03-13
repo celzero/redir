@@ -11,7 +11,7 @@ import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
 import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
-import { obfuscate } from "./webcrypto.js";
+import { obfuscateHex } from "./webcrypto.js";
 
 const kindphone = 0;
 const log = new glog.Log("reg");
@@ -99,7 +99,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
   const json = [];
   for (const entry of out.results) {
     const did = entry.did || "";
-    const obs = !emptyString(did) ? await obfuscate(did) : "";
+    const obs = !emptyString(did) ? await obfuscateHex(did) : "";
     const meta = entry.meta != null ? JSON.parse(entry.meta) : null;
     const ctime =
       entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
