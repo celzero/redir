@@ -11,6 +11,7 @@ import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
 import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
+import { obfuscate } from "./webcrypto.js";
 
 const kindphone = 0;
 const log = new glog.Log("reg");
