@@ -6,7 +6,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { b64AsBytes, emptyBuf, emptyString } from "./buf.js";
+import * as ac from "./ac.js";
+import { b64AsBytes, emptyBuf } from "./buf.js";
 import * as d from "./d.js";
 import { rayid } from "./log.js";
 import {
@@ -62,7 +63,7 @@ async function handle(r, env, ctx) {
     const path = url.pathname;
 
     if (mustWsFwd(url)) {
-      if ((await admit(env, r)) === false) {
+      if ((await ac.admit(env, r)) === false) {
         return r429(`wsf: ${ray} rate limited`);
       }
       return await forwardToWs(env, r);
@@ -90,7 +91,7 @@ async function handle(r, env, ctx) {
       }
       return r400(`x: ${ray} unknown resource ${p2}`);
     } else if (p[1] === urldevice) {
-      if ((await admit2(env, r)) === false) {
+      if ((await ac.admit2(env, r)) === false) {
         return r429(`g: ${ray} rate limited`);
       }
 
@@ -125,7 +126,7 @@ async function handle(r, env, ctx) {
         }
       }
 
-      if ((await admit(env, r)) === false) {
+      if ((await ac.admit(env, r)) === false) {
         return r429(`g: ${ray} rate limited`);
       }
 
@@ -589,60 +590,6 @@ function mustWsFwd(url) {
   const q = url.searchParams;
   const w = q.get(paramwsfwd);
   return w != null && w.length > 0 && w.startsWith("ws");
-}
-
-/**
- * @param {any} env - Worker environment
- * @param {Request} r - The incoming request
- * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
- */
-async function admit2(env, r) {
-  return admit(env, r, 2);
-}
-
-/**
- * Check if the request is allowed based on rate limiting.
- * developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit
- * @param {any} env - Worker environment.
- * @param {Request} r - The incoming request.
- * @param {number} rate - The rate limit to apply (2 per 10s or 10 per 10s).
- * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
- */
-async function admit(env, r, rate = 10) {
-  const ac10 = env.TEN_10s_AC;
-  const ac1000 = env.THOUSAND_10s_AC;
-  const ac2 = env.TWO_10s_AC;
-
-  const noac10 = !ac10;
-  const noac1000 = !ac1000;
-  const noac2 = !ac2;
-  // guard against null/undefined before accessing .limit to avoid TypeError
-  const noac10func = !noac10 && typeof ac10.limit !== "function";
-  const noac1000func = !noac1000 && typeof ac1000.limit !== "function";
-  const noac2func = !noac2 && typeof ac2.limit !== "function";
-  if (noac10 || noac1000 || noac2 || noac10func || noac1000func || noac2func) {
-    console.warn(
-      `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 2? ${noac2}, 10f? ${noac10func}, 1000f? ${noac1000func}, 2f? ${noac2func}`,
-    );
-    return true; // fail open
-  }
-
-  // TODO: strictly determine paths that may bypass cid rate limits.
-  const u = new URL(r.url);
-  const cid = u.searchParams.get("cid");
-  if (!emptyString(cid)) {
-    // ignore cid based rate limit if no cid provided.
-    // some url paths do not require cid.
-    if (rate === 2) {
-      const { success } = await ac2.limit({ key: cid });
-      if (!success) return false; // rate limit by cid at 2 per 10s
-    } else {
-      const { success } = await ac10.limit({ key: cid });
-      if (!success) return false; // rate limit by cid
-    }
-  }
-  const { success } = await ac1000.limit({ key: clientIp(r) });
-  return success;
 }
 
 export default {
