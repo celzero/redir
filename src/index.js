@@ -613,8 +613,6 @@ async function admit(env, r, rate = 10) {
   const ac1000 = env.THOUSAND_10s_AC;
   const ac2 = env.TWO_10s_AC;
 
-  const accid = rate === 2 ? ac2 : ac10;
-
   if (false) {
     const noac10 = !ac10;
     const noac1000 = !ac1000;
@@ -643,8 +641,12 @@ async function admit(env, r, rate = 10) {
   if (!emptyString(cid)) {
     // ignore cid based rate limit if no cid provided.
     // some url paths do not require cid.
+    if (rate === 2) {
+      const { success } = await ac2.limit({ key: cid });
+      if (!success) return false; // rate limit by cid at 2 per 10s
+    }
     // TODO: strictly determine paths that may bypass cid rate limits.
-    const { success } = await accid.limit({ key: cid });
+    const { success } = await ac10.limit({ key: cid });
     if (!success) return false; // rate limit by cid
   }
   const { success } = await ac1000.limit({ key: clientIp(r) });
