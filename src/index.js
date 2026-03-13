@@ -613,29 +613,21 @@ async function admit(env, r, rate = 10) {
   const ac1000 = env.THOUSAND_10s_AC;
   const ac2 = env.TWO_10s_AC;
 
-  if (false) {
-    const noac10 = !ac10;
-    const noac1000 = !ac1000;
-    const noac2 = !ac2;
-    // guard against null/undefined before accessing .limit to avoid TypeError
-    const noac10func = !noac10 && typeof ac10.limit !== "function";
-    const noac1000func = !noac1000 && typeof ac1000.limit !== "function";
-    const noac2func = !noac2 && typeof ac2.limit !== "function";
-    if (
-      noac10 ||
-      noac1000 ||
-      noac2 ||
-      noac10func ||
-      noac1000func ||
-      noac2func
-    ) {
-      console.warn(
-        `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 2? ${noac2}, 10f? ${noac10func}, 1000f? ${noac1000func}, 2f? ${noac2func}`,
-      );
-      return true; // fail open
-    }
+  const noac10 = !ac10;
+  const noac1000 = !ac1000;
+  const noac2 = !ac2;
+  // guard against null/undefined before accessing .limit to avoid TypeError
+  const noac10func = !noac10 && typeof ac10.limit !== "function";
+  const noac1000func = !noac1000 && typeof ac1000.limit !== "function";
+  const noac2func = !noac2 && typeof ac2.limit !== "function";
+  if (noac10 || noac1000 || noac2 || noac10func || noac1000func || noac2func) {
+    console.warn(
+      `admit: missing rate limiters: 10? ${noac10}, 1000? ${noac1000}, 2? ${noac2}, 10f? ${noac10func}, 1000f? ${noac1000func}, 2f? ${noac2func}`,
+    );
+    return true; // fail open
   }
 
+  // TODO: strictly determine paths that may bypass cid rate limits.
   const u = new URL(r.url);
   const cid = u.searchParams.get("cid");
   if (!emptyString(cid)) {
@@ -644,10 +636,10 @@ async function admit(env, r, rate = 10) {
     if (rate === 2) {
       const { success } = await ac2.limit({ key: cid });
       if (!success) return false; // rate limit by cid at 2 per 10s
+    } else {
+      const { success } = await ac10.limit({ key: cid });
+      if (!success) return false; // rate limit by cid
     }
-    // TODO: strictly determine paths that may bypass cid rate limits.
-    const { success } = await ac10.limit({ key: cid });
-    if (!success) return false; // rate limit by cid
   }
   const { success } = await ac1000.limit({ key: clientIp(r) });
   return success;

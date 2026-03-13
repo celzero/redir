@@ -130,6 +130,7 @@ export function wrap(env, r) {
   else env.DBTEST = env.REDIRDBTEST; // "rpn-test"
 
   if (env.TEN_10s_AC == null) env.TEN_10s_AC = null;
+  if (env.TWO_10s_AC == null) env.TWO_10s_AC = null;
   if (env.THOUSAND_10s_AC == null) env.THOUSAND_10s_AC = null;
 
   // secrets
