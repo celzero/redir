@@ -55,6 +55,14 @@ namespace_id = "7777"
   limit = 1000
   period = 10
 
+[[env.prod.ratelimits]]
+name = "TWO_10s_AC"
+namespace_id = "5353"
+
+  [env.prod.ratelimits.simple]
+  limit = 2
+  period = 10
+
 ##################
 #------PROD------#
 ##################
@@ -116,6 +124,14 @@ namespace_id = "77"
 
   [env.prod.ratelimits.simple]
   limit = 1000
+  period = 10
+
+[[env.prod.ratelimits]]
+name = "TWO_10s_AC"
+namespace_id = "53"
+
+  [env.prod.ratelimits.simple]
+  limit = 2
   period = 10
 
 ##################
