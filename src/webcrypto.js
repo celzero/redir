@@ -14,6 +14,7 @@ import {
   emptyBuf,
   hex2buf,
   str2ab,
+  str2byt2hex,
 } from "./buf.js";
 
 /**
