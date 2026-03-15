@@ -2,6 +2,7 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import * as bin from "./buf.js";
+import { workersEnv } from "./d.js";
 import { aesivsz, hkdfaes, hkdfalgkeysz, sha512 } from "./hmac.js";
 import * as glog from "./log.js";
 import { crand, decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
