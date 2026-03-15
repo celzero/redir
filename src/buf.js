@@ -89,6 +89,25 @@ export function cat(...args) {
 }
 
 /**
+ * @param {BufferSource} a
+ * @param {BufferSource} b
+ * @returns {boolean}
+ */
+export function eq(a, b) {
+  const aempty = emptyBuf(a);
+  const bempty = emptyBuf(b);
+  if (aempty && bempty) return true; // both empty
+  if (aempty || bempty) return false; // one is empty, the other
+  if (a.byteLength !== b.byteLength) return false;
+  const av = byt(a);
+  const bv = byt(b);
+  for (let i = 0; i < av.byteLength; i++) {
+    if (bv[i] !== av[i]) return false;
+  }
+  return true;
+}
+
+/**
  * @param {string} b64 - base64 (standard)
  * @returns {ArrayBuffer} - returns an ArrayBuffer
  */
@@ -110,7 +129,7 @@ export function b64AsBytes(b64url) {
     return new Uint8Array(
       atob(b64)
         .split("")
-        .map((c) => c.charCodeAt(0))
+        .map((c) => c.charCodeAt(0)),
     );
   } catch (e) {
     log.e(`b64AsBytes: failed to decode ${b64url} base64url: ${e.message}`, e);

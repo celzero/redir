@@ -249,6 +249,36 @@ export async function insertClient(db, cid, clientinfo, kind) {
 }
 
 /**
+ * Upsert client data: update kind, meta, and mtime if the client already exists.
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @param {object?} clientinfo - raw json
+ * @param {number} kind - 0 for playclient, 1 for playserver, 2 for stripe
+ * @returns {Promise<D1Out>} - D1Out object
+ * @throws {Error} - if db or cid is null
+ */
+export async function upsertClient(db, cid, clientinfo, kind) {
+  if (db == null || emptyString(cid) || kind == null) {
+    throw new Error("d1: upsertClient: db/cid/kind missing");
+  }
+  if (clientinfo != null) {
+    const q =
+      "INSERT INTO clients(cid, meta, kind, mtime) VALUES(?, ?, ?, ?)" +
+      " ON CONFLICT(cid) DO UPDATE SET" +
+      " meta=COALESCE(excluded.meta, clients.meta), kind=excluded.kind, mtime=excluded.mtime";
+    const tx = db.prepare(q).bind(cid, JSON.stringify(clientinfo), kind, now());
+    return run(tx, q);
+  } else {
+    const q =
+      "INSERT INTO clients(cid, kind, mtime) VALUES(?, ?, ?)" +
+      " ON CONFLICT(cid) DO UPDATE SET" +
+      " kind=excluded.kind, mtime=excluded.mtime";
+    const tx = db.prepare(q).bind(cid, kind, now());
+    return run(tx, q);
+  }
+}
+
+/**
  * @param {any} db - D1 binding
  * @param {string} cid - Client ID (hex string)
  * @param {string} token - purchase token (google play)
