@@ -11,6 +11,15 @@ const log = new glog.Log("dbenc");
 
 const ctx2 = bin.str2byte("encryptforclient");
 
+const clienthmackeyctx2 = bin.str2byte("clienthmacauthkey");
+
+const clienthmackeysalt = new Uint8Array([
+  38, 160, 252, 182, 155, 213, 11, 24, 145, 181, 17, 50, 5, 186, 88, 121, 253,
+  55, 234, 238, 24, 15, 54, 144, 176, 249, 180, 142, 66, 88, 52, 80, 219, 142,
+  247, 220, 54, 75, 237, 134, 44, 2, 31, 80, 76, 177, 111, 187, 224, 138, 103,
+  165, 189, 33, 159, 131, 15, 166, 191, 201, 219, 161, 3, 144,
+]);
+
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
@@ -106,14 +115,23 @@ async function clientkey(env, ctx1, ctx2) {
     log.e("key: ctx missing");
     return null;
   }
+
+  return aesclientkey(skseed(env), ctx1, ctx2);
+}
+
+/**
+ * @param {any} env - Worker environment
+ * @returns {Uint8Array} - client secret seed
+ */
+function skseed(env) {
   env = !env ? workersEnv() : env;
+  // same secret across test domain and regular domain
   const seed = env.KDF_SECRET_CLIENT;
   if (!seed) {
     log.e("key: KDF_SECRET_CLIENT missing");
     return null;
   }
-  const skm = bin.hex2buf(seed);
-  return aesclientkey(skm, ctx1, ctx2);
+  return bin.hex2buf(seed);
 }
 
 /**
@@ -140,5 +158,52 @@ async function aesclientkey(sk, ctx1, ctx2) {
     }
   }
   log.d("keygen: invalid seed/ctx");
+  return null;
+}
+
+/**
+ * Generates an HMAC client key using the provided context and environment.
+ * @param {any} env - Worker environment
+ * @param {BufferSource} ctx1 - keying context 1 (from client)
+ * @param {boolean} test - whether to use the test key or production key
+ * @returns {Promise<CryptoKey?>}
+ */
+export async function hmacclientkey(env, ctx1, test = false) {
+  const seed = test ? env.KDF_SECRET_CLIENT_TEST : env.KDF_SECRET_CLIENT;
+  if (!seed) {
+    log.e("key: KDF_SECRET_CLIENT missing; test?", test);
+    return null;
+  }
+  const ikm = bin.hex2buf(seed);
+  return importhmacclientkey(ikm, ctx1, clienthmackeyctx2);
+}
+
+/**
+ * @param {ArrayBufferLike} sk - secret keying material
+ * @param {BufferSource} ctx1 - key context 1
+ * @param {BufferSource} ctx2 - key context 2
+ * @returns {Promise<CryptoKey?>}
+ */
+async function importhmacclientkey(sk, ctx1, ctx2) {
+  if (bin.emptyBuf(sk) || bin.emptyBuf(ctx1) || bin.emptyBuf(ctx2)) {
+    log.d("keygen: hmac: invalid seed/ctx");
+    return null;
+  }
+
+  try {
+    if (sk.length < hkdfalgkeysz) {
+      log.e("keygen: hmac: seed too short", sk.length, hkdfalgkeysz);
+      return null;
+    }
+
+    const sk256 = sk.slice(0, hkdfalgkeysz);
+    // info must always of a fixed size for ALL KDF calls
+    const info512 = await sha512(bin.cat(ctx1, ctx2));
+    // exportable: crypto.subtle.exportKey("raw", key);
+    return hkdfhmac(sk256, info512, clienthmackeysalt);
+  } catch (ignore) {
+    log.d("keygen: hmac: err", ignore);
+  }
+
   return null;
 }

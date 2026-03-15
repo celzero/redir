@@ -6,17 +6,87 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { emptyString } from "./buf.js";
+import { buf2hex, cat, emptyString, str2byte } from "./buf.js";
+import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import { mincidlength, mindidlength } from "./playorder.js";
 import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
-import { obfuscateHex } from "./webcrypto.js";
+import { crand, obfuscateHex } from "./webcrypto.js";
+
+const kindplaystoreclient = 0;
 
 const kindphone = 0;
 // const kindbanned = -1;
 const kindremoved = -2;
 const log = new glog.Log("reg");
+
+/**
+ * @param {any} env - Workers environment
+ * @param {Request} req - Incoming request
+ */
+export async function registerClient(env, req) {
+  if (req.method !== "POST") {
+    return r405("method not allowed");
+  }
+  const ray = rayid(req);
+  const url = new URL(req.url);
+  const test = url.searchParams.has("test");
+  const clientkind = url.searchParams.get("clientkind") || "0";
+  const devicekind = url.searchParams.get("devicekind") || "0";
+  const meta = await req.json();
+
+  const clientkindint = parseInt(clientkind, 10) || kindplaystoreclient;
+  const devicekindint = parseInt(devicekind, 10) || kindphone;
+
+  try {
+    const rand = crand(24);
+    const rand16 = rand.slice(0, 16);
+    const rand8 = rand.slice(16, 24);
+
+    const k = await hmacclientkey(env, rand16, test);
+
+    const cidmsg = cat(rand16, str2byte("rethinkappclient"));
+    const didmsg = cat(rand8, str2byte("rethinkappdevice"));
+
+    const allsigs = await Promise.all(hmacsign(k, cidmsg), hmacsign(k, didmsg));
+
+    const cidsigbuffer = allsigs[0];
+    const cidsig16 = new Uint8Array(cidsigbuffer).slice(0, 16);
+
+    const didsigbuffer = allsigs[1];
+    const didsig8 = new Uint8Array(didsigbuffer).slice(0, 8);
+
+    const cid = buf2hex(cat(rand16, cidsig16));
+    const did = buf2hex(cat(rand8, didsig8));
+
+    const clientmeta = meta?.client ?? null;
+    const devicemeta = meta?.device ?? null;
+
+    const db = dbx.db2(env, test);
+    const cout = await dbx.insertClient(db, cid, clientmeta, clientkindint);
+    if (cout == null || !cout.success) {
+      return r500(`client insert failed: ${ray}`);
+    }
+    const dout = await dbx.upsertDevice(
+      db,
+      did,
+      cid,
+      devicemeta,
+      devicekindint,
+    );
+    if (dout == null || !dout.success) {
+      // TODO: delete cid from clients table since device insert failed,
+      // to avoid orphaned client record
+      return r500(`device insert failed: ${ray}`);
+    }
+    log.d(ray, "registerClient cid:", cid, "did:", did, "test?", test);
+    return r200j({ cid: cid, did: did });
+  } catch (e) {
+    log.e(ray, "registerClient error:", e);
+    return r500(`db error: ${ray}: ${e.message}`);
+  }
+}
 
 /**
  * @param {any} env - Workers environment

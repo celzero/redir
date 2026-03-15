@@ -23,7 +23,12 @@ import {
   googlePlayNotification,
   revokeSubscription,
 } from "./playorder.js";
-import { authorizeDevice, registerDevice, removeDevice } from "./reg.js";
+import {
+  authorizeDevice,
+  registerClient,
+  registerDevice,
+  removeDevice,
+} from "./reg.js";
 import * as rcf from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
@@ -104,10 +109,21 @@ async function handle(r, env, ctx) {
 
       if (p2 === "rem") {
         // d/rem?cid=hex&did=hex[&test]
-        if (r.method !== "DELETE" && r.method !== "POST")
+        if (r.method !== "DELETE" && r.method !== "POST") {
           return r405(`d/rem: ${ray} method not allowed`);
+        }
         return await removeDevice(env, r);
+      } else if (p2 === "acc") {
+        if (r.method !== "POST") {
+          return r405(`d/acc: ${ray} method not allowed`);
+        }
+        // d/acc?kind=[0|1|2|-1|-2]&vcode=[&test]
+        // metadata as json in the body
+        return await registerClient(env, r);
       } else if (!p2 || p2.length === 0 || p2 === "reg") {
+        if (r.method !== "POST") {
+          return r405(`d/reg: ${ray} method not allowed`);
+        }
         // d/reg?did=hex&cid=hex&vcode=[&test]
         // metadata as json in the body
         return await registerDevice(env, r);

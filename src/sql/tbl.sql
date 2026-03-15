@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS clients (
     cid TEXT PRIMARY KEY,
     -- json blob representing this client
     meta TEXT,
-    -- 0 for playclient, 1 playserver, 2 for stripe
+    -- 0 for playclient, 1 playserver, 2 for stripe; -1 for banned, -2 for removed
     kind INTEGER,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
