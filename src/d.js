@@ -141,6 +141,9 @@ export function wrap(env, r) {
   if (env.GMAPS_API_KEY == null) env.GMAPS_API_KEY = null;
   if (env.GCP_REDIR_SVC_CREDS == null) env.GCP_REDIR_SVC_CREDS = null;
   if (env.KDF_SECRET_D1 == null) env.KDF_SECRET_D1 = null;
+  if (env.KDF_SECRET_D1_TEST == null) env.KDF_SECRET_D1_TEST = null;
+  if (env.KDF_SECRET_CLIENT == null) env.KDF_SECRET_CLIENT = null;
+  if (env.KDF_SECRET_CLIENT_TEST == null) env.KDF_SECRET_CLIENT_TEST = null;
   if (env.WS_WL_ID == null) env.WS_WL_ID = null;
   if (env.WS_WL_ID_TEST == null) env.WS_WL_ID_TEST = null;
   if (env.WS_WL_TOKEN == null) env.WS_WL_TOKEN = null;
