@@ -22,6 +22,9 @@ const kindphone = 0;
 const kindremoved = -2;
 const log = new glog.Log("reg");
 
+const clientmsg = str2byte("rethinkappclient");
+const devicemsg = str2byte("rethinkappdevice");
+
 /**
  * @param {any} env - Workers environment
  * @param {Request} req - Incoming request
@@ -60,7 +63,7 @@ export async function registerClient(env, req) {
       if (!k) {
         return r500(`k unavailable: ${ray}`);
       }
-      const cidmsg = cat(rand16, str2byte("rethinkappclient"));
+      const cidmsg = cat(rand16, clientmsg);
       const cidsigbuf = await hmacsign(k, cidmsg);
       const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
 
@@ -107,19 +110,16 @@ export async function registerClient(env, req) {
       return r500(`k unavailable: ${ray}`);
     }
 
-    const cidmsg = cat(rand16, str2byte("rethinkappclient"));
-    const didmsg = cat(rand8, str2byte("rethinkappdevice"));
+    const cidmsg = cat(rand16, clientmsg);
+    const didmsg = cat(rand8, devicemsg);
 
     const allsigs = await Promise.all([
       hmacsign(k, cidmsg),
       hmacsign(k, didmsg),
     ]);
 
-    const cidsigbuffer = allsigs[0];
-    const cidsig16 = new Uint8Array(cidsigbuffer).slice(0, 16);
-
-    const didsigbuffer = allsigs[1];
-    const didsig8 = new Uint8Array(didsigbuffer).slice(0, 8);
+    const cidsig16 = new Uint8Array(allsigs[0]).slice(0, 16);
+    const didsig8 = new Uint8Array(allsigs[1]).slice(0, 8);
 
     const cid = buf2hex(cat(rand16, cidsig16));
     const did = buf2hex(cat(rand8, didsig8));
@@ -188,7 +188,7 @@ export async function registerDevice(env, req) {
     k = await hmacclientkey(env, rand16, test);
     if (!k) return r500(`k unavailable: ${ray}`);
 
-    const cidmsg = cat(rand16, str2byte("rethinkappclient"));
+    const cidmsg = cat(rand16, clientmsg);
     const cidsigbuf = await hmacsign(k, cidmsg);
     const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
 
@@ -223,7 +223,7 @@ export async function registerDevice(env, req) {
     const didsig8claimed = didBytes.slice(8, 16);
 
     try {
-      const didmsg = cat(rand8, str2byte("rethinkappdevice"));
+      const didmsg = cat(rand8, devicemsg);
       const didsigbuf = await hmacsign(k, didmsg);
       const didsig8expected = new Uint8Array(didsigbuf).slice(0, 8);
 
@@ -263,7 +263,7 @@ export async function registerDevice(env, req) {
   // only cid provided: generate a new did
   try {
     const rand8 = crand(8);
-    const didmsg = cat(rand8, str2byte("rethinkappdevice"));
+    const didmsg = cat(rand8, devicemsg);
     const didsigbuf = await hmacsign(k, didmsg);
     const didsig8 = new Uint8Array(didsigbuf).slice(0, 8);
     const newdid = buf2hex(cat(rand8, didsig8));
