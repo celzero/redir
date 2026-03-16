@@ -7,12 +7,14 @@
  */
 
 import {
+  ZEROBUF,
   b642buf,
   buf2hex,
   byt,
   cat,
   emptyBuf,
   hex2buf,
+  lcat,
   str2ab,
   str2byt2hex,
 } from "./buf.js";
@@ -78,9 +80,6 @@ export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
  * @returns {Promise<[Uint8Array]>} - The encrypted data with authentication tag
  */
 export async function encryptAesCbcHmac(aeskey, hmackey, iv, plaintext, aad) {
-  if (!aad || emptyBuf(aad)) {
-    aad = undefined; // ZEROBUF is not the same as null?
-  }
   /** @type {AesCbcParams} */
   const params = {
     name: "AES-CBC",
@@ -89,9 +88,18 @@ export async function encryptAesCbcHmac(aeskey, hmackey, iv, plaintext, aad) {
 
   // auto-adds PKCS#7 padding to plaintext
   const ciphertext = await crypto.subtle.encrypt(params, aeskey, plaintext);
-  // IV must be included in the MAC so an attacker cannot flip IV bits to
-  // silently alter the decryption of the first block (CBC malleability).
-  const mac = await hmacsign(hmackey, cat(iv, ciphertext, aad)); // 32 bytes
+  // lcat (length-prefixed concatenation) is required here because both
+  // ciphertext and aad are variable-length. With plain cat(), an attacker
+  // could shift bytes between ciphertext and aad and produce a different
+  // (ciphertext', aad') pair with an identical flat MAC input, forging
+  // authentication for data they did not encrypt.
+  // IV is bound into the MAC to prevent CBC IV-flipping: flipping IV bits
+  // silently corrupts the first plaintext block but would not fail the MAC
+  // unless the IV is authenticated here.
+  // Absent aad is treated as zero-length bytes so the MAC is always well-formed
+  // (passing undefined to cat() crashes in the reduce; lcat avoids that too).
+  const aadBytes = !aad || emptyBuf(aad) ? ZEROBUF : byt(aad);
+  const mac = await hmacsign(hmackey, lcat(iv, ciphertext, aadBytes)); // 32 bytes
 
   return [ciphertext, mac];
 }

@@ -76,14 +76,51 @@ export function buf2b64url(buffer) {
 export function cat(...args) {
   if (args.length === 0) return ZEROBUF;
   if (args.length === 1) return byt(args[0]);
-  const totalLength = args.reduce((sum, arg) => sum + arg.byteLength, 0);
+  const totalLength = args.reduce((sum, arg) => sum + (arg?.byteLength ?? 0), 0);
   const result = new Uint8Array(totalLength);
   let offset = 0;
   for (const arg of args) {
-    if (emptyBuf(arg)) continue; // skip empty buffers
+    if (emptyBuf(arg)) continue; // skip empty/null/undefined buffers
     const view = byt(arg);
     result.set(view, offset);
     offset += view.byteLength;
+  }
+  return result;
+}
+
+/**
+ * Length-prefixed concatenation for cryptographic operations.
+ * Encodes each argument as [4-byte big-endian length][bytes], then concatenates.
+ *
+ *   lcat(A, B, …) = len(A)[4BE] ‖ A ‖ len(B)[4BE] ‖ B ‖ …
+ *
+ * Unlike cat(), this guarantees that distinct variable-length inputs always
+ * produce distinct outputs, preventing length-confusion (canonicalization)
+ * attacks on MACs, hashes, and HKDF info strings:
+ *
+ *   cat("AB",  "CD")  == cat("ABC",  "D")   // same bytes → same hash/MAC
+ *   lcat("AB", "CD")  != lcat("ABC", "D")   // always different
+ *
+ * Use lcat (not cat) whenever two or more variable-length inputs are
+ * concatenated as input to a cryptographic primitive.
+ * @param {...BufferSource} args
+ * @returns {Uint8Array}
+ */
+export function lcat(...args) {
+  if (args.length === 0) return ZEROBUF;
+  const parts = args.map((a) => byt(a)); // byt handles null/undefined → ZEROBUF
+  // 4-byte length prefix per part + the part itself
+  const totalLength = parts.reduce((sum, p) => sum + 4 + p.byteLength, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const p of parts) {
+    const len = p.byteLength;
+    result[offset++] = (len >>> 24) & 0xff;
+    result[offset++] = (len >>> 16) & 0xff;
+    result[offset++] = (len >>> 8) & 0xff;
+    result[offset++] = len & 0xff;
+    result.set(p, offset);
+    offset += len;
   }
   return result;
 }
