@@ -56,7 +56,7 @@ export async function hkdfaes(skmac, usectx, salt = bin.ZEROBUF) {
     hkdf256(salt, usectx),
     dk,
     aesgcm256opts(),
-    true, // extractable? can be true for sign, verify
+    false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["encrypt", "decrypt"] // usage
   );
 }
@@ -67,7 +67,7 @@ export async function hkdfaescbc(skmac, usectx, salt = bin.ZEROBUF) {
     hkdf256(salt, usectx),
     dk,
     aescbc256opts(),
-    true, // extractable? can be true for sign, verify
+    false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["encrypt", "decrypt"] // usage
   );
 }
@@ -78,7 +78,7 @@ export async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
     hkdf256(salt, usectx),
     dk,
     hmac256opts(),
-    true, // extractable? can be true for sign, verify
+    false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["sign", "verify"] // usage
   );
 }

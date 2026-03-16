@@ -108,6 +108,31 @@ export function eq(a, b) {
 }
 
 /**
+ * Always inspects every byte regardless of where the first difference is,
+ * so the execution time does not leak information about the compared values.
+ * Use this whenever comparing security-sensitive values such as HMAC tags.
+ * @param {BufferSource} a
+ * @param {BufferSource} b
+ * @returns {boolean}
+ */
+export function safeEq(a, b) {
+  const aempty = emptyBuf(a);
+  const bempty = emptyBuf(b);
+  if (aempty && bempty) return true;
+  if (aempty || bempty) return false;
+
+  const av = byt(a);
+  const bv = byt(b);
+
+  let diff = av.byteLength ^ bv.byteLength;
+  const len = Math.min(av.byteLength, bv.byteLength);
+  for (let i = 0; i < len; i++) {
+    diff |= av[i] ^ bv[i]; // never short-circuits
+  }
+  return diff === 0;
+}
+
+/**
  * @param {string} b64 - base64 (standard)
  * @returns {ArrayBuffer} - returns an ArrayBuffer
  */

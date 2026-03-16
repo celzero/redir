@@ -5,7 +5,7 @@ import { emptyString } from "./buf.js";
 import { als, appendRayId, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
-import { mincidlength } from "./playorder.js";
+import { mincidlength } from "./reg.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");

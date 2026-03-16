@@ -6,14 +6,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { buf2hex, cat, emptyString, eq, hex2buf, str2byte } from "./buf.js";
+import { buf2hex, cat, emptyString, hex2buf, safeEq, str2byte } from "./buf.js";
 import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { mincidlength, mindidlength } from "./playorder.js";
 import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
+
+export const mincidlength = 32; // ideally 64 hex chars
+export const mindidlength = 16; // ideally 32 hex chars
 
 const kindplaystoreclient = 0;
 
@@ -67,7 +69,7 @@ export async function registerClient(env, req) {
       const cidsigbuf = await hmacsign(k, cidmsg);
       const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
 
-      if (!eq(cidsig16claimed, cidsig16expected)) {
+      if (!safeEq(cidsig16claimed, cidsig16expected)) {
         log.w(ray, "registerClient: cid invalid", existingCid);
         return r401(`cid verification failed: ${ray}`);
       } // else: ok
@@ -192,7 +194,7 @@ export async function registerDevice(env, req) {
     const cidsigbuf = await hmacsign(k, cidmsg);
     const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
 
-    if (!eq(cidsig16claimed, cidsig16expected)) {
+    if (!safeEq(cidsig16claimed, cidsig16expected)) {
       log.w(ray, "registerDevice: cid invalid", cid);
       return r401(`cid verification failed: ${ray}`);
     }
@@ -227,7 +229,7 @@ export async function registerDevice(env, req) {
       const didsigbuf = await hmacsign(k, didmsg);
       const didsig8expected = new Uint8Array(didsigbuf).slice(0, 8);
 
-      if (!eq(didsig8claimed, didsig8expected)) {
+      if (!safeEq(didsig8claimed, didsig8expected)) {
         log.w(ray, "registerDevice: did invalid", did);
         return r401(`did verification failed: ${ray}`);
       }

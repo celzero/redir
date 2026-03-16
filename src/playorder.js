@@ -18,6 +18,7 @@ import {
 } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
+import { mincidlength } from "./reg.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
 import {
@@ -87,9 +88,6 @@ const knownOnetimeProductsAndPlans = new Set([
 
 /** @type Map<string, GEntitlement> - basePlanId => Entitlement */
 const knownBasePlans = new Map();
-
-export const mincidlength = 32; // ideally 64 hex chars
-export const mindidlength = 16; // ideally 32 hex chars
 
 /**
  * Memoization cache for Google tokens.
