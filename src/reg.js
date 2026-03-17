@@ -6,7 +6,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { buf2hex, cat, emptyString, hex2buf, safeEq, str2byte } from "./buf.js";
+import {
+  buf2hex,
+  cat,
+  emptyString,
+  hex2buf,
+  lcat,
+  safeEq,
+  str2byte,
+} from "./buf.js";
 import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
@@ -456,7 +464,12 @@ async function generateDidToken(
 ) {
   try {
     const expiry = Math.floor(Date.now() / 1000) + validitySecs;
-    const msg = cat(didTokenCtx, hex2buf(cid), hex2buf(did), epoch2buf(expiry));
+    const msg = lcat(
+      didTokenCtx,
+      hex2buf(cid),
+      hex2buf(did),
+      epoch2buf(expiry),
+    );
     const sigbuf = await hmacsign(k, msg);
     const sig = buf2hex(new Uint8Array(sigbuf));
     return `${sig}:${expiry}`;
@@ -486,7 +499,7 @@ async function verifyDidToken(k, cid, did, token) {
     ) {
       return false; // expired or unparseable
     }
-    const msg = cat(
+    const msg = lcat(
       didTokenCtx,
       hex2buf(cid),
       hex2buf(did),
