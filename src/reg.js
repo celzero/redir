@@ -27,6 +27,11 @@ const log = new glog.Log("reg");
 const clientmsg = str2byte("rethinkappclient");
 const devicemsg = str2byte("rethinkappdevice");
 
+export const didTokenHeader = "x-rethink-app-did-token";
+// Adjustable validity period for the did token; default 3 days
+const didTokenValiditySecs = 3 * 24 * 60 * 60;
+const didTokenCtx = str2byte("rethinkappdidtoken");
+
 /**
  * @param {any} env - Workers environment
  * @param {Request} req - Incoming request
@@ -185,21 +190,50 @@ export async function registerDevice(env, req) {
   const rand16 = cidBytes.slice(0, 16);
   const cidsig16claimed = cidBytes.slice(16, 32);
 
+  // pre-parse did bytes (when provided) so cid+did sigs can run in parallel
+  let rand8 = null;
+  let didsig8claimed = null;
+  if (!emptyString(did)) {
+    if (did.length < mindidlength || !/^[a-fA-F0-9]+$/.test(did)) {
+      return r400(`${ray} invalid did`);
+    }
+    const didBytes = hex2buf(did);
+    rand8 = didBytes.slice(0, 8);
+    didsig8claimed = didBytes.slice(8, 16);
+  }
+
   let k;
   try {
     k = await hmacclientkey(env, rand16, test);
     if (!k) return r500(`k unavailable: ${ray}`);
+  } catch (e) {
+    log.e(ray, "registerDevice: key error:", e);
+    return r500(`${ray} error: ${e.message}`);
+  }
 
+  // verify cid and did (when provided) sigs in parallel
+  try {
     const cidmsg = cat(rand16, clientmsg);
-    const cidsigbuf = await hmacsign(k, cidmsg);
-    const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
+    const sigs = await Promise.all([
+      hmacsign(k, cidmsg),
+      ...(rand8 != null ? [hmacsign(k, cat(rand8, devicemsg))] : []),
+    ]);
 
+    const cidsig16expected = new Uint8Array(sigs[0]).slice(0, 16);
     if (!safeEq(cidsig16claimed, cidsig16expected)) {
       log.w(ray, "registerDevice: cid invalid", cid);
       return r401(`cid verification failed: ${ray}`);
     }
+
+    if (rand8 != null) {
+      const didsig8expected = new Uint8Array(sigs[1]).slice(0, 8);
+      if (!safeEq(didsig8claimed, didsig8expected)) {
+        log.w(ray, "registerDevice: did invalid", did);
+        return r401(`did verification failed: ${ray}`);
+      }
+    }
   } catch (e) {
-    log.e(ray, "registerDevice: cid verify error:", e);
+    log.e(ray, "registerDevice: sig verify error:", e);
     return r500(`${ray} error: ${e.message}`);
   }
 
@@ -214,30 +248,7 @@ export async function registerDevice(env, req) {
   const devicemeta = meta?.device ?? null;
 
   if (!emptyString(did)) {
-    // both cid and did provided: verify did, then upsert both tables
-    if (did.length < mindidlength || !/^[a-fA-F0-9]+$/.test(did)) {
-      return r400(`${ray} invalid did`);
-    }
-
-    // verify did: didBytes[0:8] is rand8, didBytes[8:16] is the claimed sig
-    const didBytes = hex2buf(did);
-    const rand8 = didBytes.slice(0, 8);
-    const didsig8claimed = didBytes.slice(8, 16);
-
-    try {
-      const didmsg = cat(rand8, devicemsg);
-      const didsigbuf = await hmacsign(k, didmsg);
-      const didsig8expected = new Uint8Array(didsigbuf).slice(0, 8);
-
-      if (!safeEq(didsig8claimed, didsig8expected)) {
-        log.w(ray, "registerDevice: did invalid", did);
-        return r401(`did verification failed: ${ray}`);
-      }
-    } catch (e) {
-      log.e(ray, "registerDevice: did verify error:", e);
-      return r500(`${ray} error: ${e.message}`);
-    }
-
+    // both cid and did provided: upsert both tables (sigs already verified above)
     try {
       const db = dbx.db2(env, test);
       const cout = await dbx.upsertClient(
@@ -418,11 +429,101 @@ function r500(w) {
 }
 
 /**
+ * Encodes an epoch (seconds) as a 4-byte big-endian Uint8Array.
+ * @param {number} epochSecs
+ * @returns {Uint8Array}
+ */
+function epoch2buf(epochSecs) {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, epochSecs >>> 0, false);
+  return b;
+}
+
+/**
+ * Generates a HMAC token binding cid and did with an expiry timestamp.
+ * Token format: "<hmac_hex>:<expiry_epoch_secs>"
+ * @param {CryptoKey} k - HMAC key (derived from cid's rand16 via hmacclientkey)
+ * @param {string} cid - client id (hex)
+ * @param {string} did - device id (hex)
+ * @param {number} [validitySecs] - validity in seconds (default: didTokenValiditySecs)
+ * @returns {Promise<string|null>} - token string or null on error
+ */
+async function generateDidToken(
+  k,
+  cid,
+  did,
+  validitySecs = didTokenValiditySecs,
+) {
+  try {
+    const expiry = Math.floor(Date.now() / 1000) + validitySecs;
+    const msg = cat(didTokenCtx, hex2buf(cid), hex2buf(did), epoch2buf(expiry));
+    const sigbuf = await hmacsign(k, msg);
+    const sig = buf2hex(new Uint8Array(sigbuf));
+    return `${sig}:${expiry}`;
+  } catch (e) {
+    log.e("generateDidToken err:", e);
+    return null;
+  }
+}
+
+/**
+ * Verifies a did token. Returns true only if the HMAC is valid and the token hasn't expired.
+ * @param {CryptoKey} k - HMAC key (derived from cid's rand16 via hmacclientkey)
+ * @param {string} cid - client id (hex)
+ * @param {string} did - device id (hex)
+ * @param {string} token - token string "<hmac_hex>:<expiry_epoch_secs>"
+ * @returns {Promise<boolean>}
+ */
+async function verifyDidToken(k, cid, did, token) {
+  try {
+    const sep = token.lastIndexOf(":");
+    if (sep < 0) return false;
+    const claimedSigHex = token.slice(0, sep);
+    const claimedExpiry = parseInt(token.slice(sep + 1), 10);
+    if (
+      isNaN(claimedExpiry) ||
+      claimedExpiry <= Math.floor(Date.now() / 1000)
+    ) {
+      return false; // expired or unparseable
+    }
+    const msg = cat(
+      didTokenCtx,
+      hex2buf(cid),
+      hex2buf(did),
+      epoch2buf(claimedExpiry),
+    );
+    const expectedSigBuf = await hmacsign(k, msg);
+    const expectedSig = new Uint8Array(expectedSigBuf);
+    const claimedSig = hex2buf(claimedSigHex);
+    return safeEq(claimedSig, expectedSig);
+  } catch (e) {
+    log.e("verifyDidToken err:", e);
+    return false;
+  }
+}
+
+/**
+ * 204 No Content response with the did token header set.
+ * @param {string} token
+ * @returns {Response}
+ */
+function r204token(token) {
+  return new Response(null, {
+    status: 204,
+    headers: { [didTokenHeader]: token },
+  });
+}
+
+/**
  * Verifies that the device (did) is registered for the client (cid) and isn't banned.
- * Uses the appropriate database (test vs prod) based on the ?test query param.
+ * First verifies cid and did were generated by us (via the HMAC flow) before touching the DB.
+ * If the request carries a valid "x-rethink-app-did-token" header the database check is
+ * skipped entirely. On a successful database check a fresh token is minted and returned in
+ * the "x-rethink-app-did-token" response header.
+ * Callers should check resp.ok: false means the request is denied.
  * @param {any} env - Worker environment
  * @param {Request} req - The incoming request containing cid and did query parameters
- * @returns {Promise<Response|null>} null if authorized, a (denied) Response if not.
+ * @returns {Promise<Response>} 204 if authorized (token in header on new issue), error Response otherwise.
  */
 export async function authorizeDevice(env, req) {
   const ray = rayid(req);
@@ -438,6 +539,63 @@ export async function authorizeDevice(env, req) {
     return r400("missing/invalid device id");
   }
 
+  // fast path: verify cid was generated by us before touching the database
+  const cidBytes = hex2buf(cid);
+  const rand16 = cidBytes.slice(0, 16);
+  const cidsig16claimed = cidBytes.slice(16, 32);
+
+  // pre-parse did bytes so both sigs can be computed in parallel
+  const didBytes = hex2buf(did);
+  const rand8 = didBytes.slice(0, 8);
+  const didsig8claimed = didBytes.slice(8, 16);
+
+  let k;
+  try {
+    k = await hmacclientkey(env, rand16, test);
+    if (!k) return r500(`k unavailable: ${ray}`);
+  } catch (e) {
+    log.e(ray, "authorizeDevice: key error:", e);
+    return r500(`${ray} err: ${e.message}`);
+  }
+
+  // verify cid and did sigs in parallel
+  let cidsigbuf, didsigbuf;
+  try {
+    const cidmsg = cat(rand16, clientmsg);
+    const didmsg = cat(rand8, devicemsg);
+    [cidsigbuf, didsigbuf] = await Promise.all([
+      hmacsign(k, cidmsg),
+      hmacsign(k, didmsg),
+    ]);
+  } catch (e) {
+    log.e(ray, "authorizeDevice: sig error:", e);
+    return r500(`${ray} err: ${e.message}`);
+  }
+
+  const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
+  if (!safeEq(cidsig16claimed, cidsig16expected)) {
+    log.w(ray, "authorizeDevice: cid invalid", cid);
+    return r401("missing/invalid client id");
+  }
+
+  const didsig8expected = new Uint8Array(didsigbuf).slice(0, 8);
+  if (!safeEq(didsig8claimed, didsig8expected)) {
+    log.w(ray, "authorizeDevice: did invalid", did);
+    return r401(`${ray} missing/invalid device id`);
+  }
+
+  // token fast path: skip the database if the client presents a valid did token
+  const incomingToken = req.headers.get(didTokenHeader);
+  if (!emptyString(incomingToken)) {
+    const valid = await verifyDidToken(k, cid, did, incomingToken);
+    if (valid) {
+      log.d(ray, "authorizeDevice: token ok for", cid, ":", did);
+      return r204(); // authorized; existing token still valid, no re-issue needed
+    }
+    log.d(ray, "authorizeDevice: token invalid/expired", cid, ":", did);
+  }
+
+  // fallback: verify via database
   let devres;
   try {
     devres = await dbx.getDevice(dbx.db2(env, test), cid, did);
@@ -455,8 +613,14 @@ export async function authorizeDevice(env, req) {
     devres.results == null ||
     devres.results.length <= 0
   ) {
-    return r401("device not found or banned");
+    return r401(`${ray} device not found`);
   }
 
-  return null; // authorized
+  // device authorized via db: mint and return a fresh token
+  const token = await generateDidToken(k, cid, did);
+  if (emptyString(token)) {
+    log.w(ray, "authorizeDevice: token gen err for", cid, ":", did);
+    return r204(); // authorized but token issuance failed; proceed without it
+  }
+  return r204token(token);
 }

@@ -25,6 +25,7 @@ import {
 } from "./playorder.js";
 import {
   authorizeDevice,
+  didTokenHeader,
   registerClient,
   registerDevice,
   removeDevice,
@@ -72,10 +73,10 @@ async function handle(r, env, ctx) {
         return r429(`wsf: ${ray} rate limited`);
       }
 
-      const denied = await authorizeDevice(env, r);
-      if (denied) return denied;
+      const auth = await authorizeDevice(env, r);
+      if (!auth.ok) return auth;
 
-      return await forwardToWs(env, r);
+      return respond(forwardToWs(env, r), auth);
     }
 
     if (path == null || path.length === 0) return r302(home);
@@ -164,43 +165,43 @@ async function handle(r, env, ctx) {
         if (r.method !== "POST") {
           return r405(`g/ack: ${ray} method not allowed`);
         }
-        const denied = await authorizeDevice(env, r);
-        if (denied) return denied;
-        return await googlePlayAcknowledgePurchase(env, r);
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(googlePlayAcknowledgePurchase(env, r), auth);
       } else if (p2 === "con") {
         // g/con/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
           return r405(`g/con: ${ray} method not allowed`);
         }
-        const denied = await authorizeDevice(env, r);
-        if (denied) return denied;
-        return await googlePlayConsumePurchase(env, r);
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(googlePlayConsumePurchase(env, r), auth);
       } else if (p2 === "ent") {
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
         // g/entitlements/[vcode]?cid&did&vcode&test[&sku]
         if (r.method !== "GET") return r405(`g/ent: ${ray} method not allowed`);
-        const denied = await authorizeDevice(env, r);
-        if (denied) return denied;
-        return await googlePlayGetEntitlements(env, r);
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(googlePlayGetEntitlements(env, r), auth);
       } else if (p2 === "stop") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
           return r405(`g/stop: ${ray} method not allowed`);
         }
-        const denied = await authorizeDevice(env, r);
-        if (denied) return denied;
-        return await cancelSubscription(env, r);
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(cancelSubscription(env, r), auth);
       } else if (p2 === "refund") {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
           return r405(`g/refund: ${ray} method not allowed`);
         }
-        const denied = await authorizeDevice(env, r);
-        if (denied) return denied;
-        return await revokeSubscription(env, r);
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(revokeSubscription(env, r), auth);
       }
       return r400(`g: ${ray} unknown resource ${p2}`);
     } else if (p[1] === urlmoney1) {
@@ -542,6 +543,24 @@ function mustWsFwd(url) {
   const q = url.searchParams;
   const w = q.get(paramwsfwd);
   return w != null && w.length > 0 && w.startsWith("ws");
+}
+
+/**
+ * Copies the did token header from an auth response to the business response.
+ * Since Response is immutable, a new Response is created with the token header added.
+ * @param {Promise<Response>} promisedResponse - the business response
+ * @param {Response} authr - the 204 auth response possibly carrying a token header
+ * @returns {Promise<Response>}
+ */
+async function respond(promisedResponse, authr) {
+  const token = authr.headers.get(didTokenHeader);
+  if (!token) return resp;
+
+  const r = await promisedResponse;
+  // developers.cloudflare.com/workers/examples/alter-headers/
+  const newr = new Response(r.body, r);
+  newr.headers.append(didTokenHeader, token);
+  return newr;
 }
 
 export default {
