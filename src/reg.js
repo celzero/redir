@@ -23,6 +23,9 @@ import { rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
 
+// TODO: set it to false once all test clients have migrated to the new registration flow
+const allowAuthorizationBypassForTest = true;
+
 export const mincidlength = 32; // ideally 64 hex chars
 export const mindidlength = 16; // ideally 32 hex chars
 
@@ -666,10 +669,18 @@ export async function authorizeDevice(env, req) {
 
   if (cachedCidSig === signotok) {
     log.w(ray, "authorizeDevice: cid sig cached invalid", cid);
+    if (allowAuthorizationBypassForTest && test) {
+      log.w(ray, "authorizeDevice: TEST bypass cid sig invalid");
+      return r204();
+    }
     return r401("missing/invalid client id");
   }
   if (cachedDidSig === signotok) {
     log.w(ray, "authorizeDevice: did sig cached invalid", did);
+    if (allowAuthorizationBypassForTest && test) {
+      log.w(ray, "authorizeDevice: TEST bypass did sig invalid");
+      return r204();
+    }
     return r401(`${ray} missing/invalid device id`);
   }
 
@@ -723,6 +734,10 @@ export async function authorizeDevice(env, req) {
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
           log.w(ray, "authorizeDevice: cid invalid", cid);
+          if (allowAuthorizationBypassForTest && test) {
+            log.w(ray, "authorizeDevice: TEST bypass cid invalid");
+            return r204();
+          }
           return r401("missing/invalid client id");
         }
       }
@@ -732,6 +747,10 @@ export async function authorizeDevice(env, req) {
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
           log.w(ray, "authorizeDevice: did invalid", did);
+          if (allowAuthorizationBypassForTest && test) {
+            log.w(ray, "authorizeDevice: TEST bypass did invalid");
+            return r204();
+          }
           return r401(`${ray} missing/invalid device id`);
         }
       }
@@ -770,6 +789,12 @@ export async function authorizeDevice(env, req) {
     devres.results == null ||
     devres.results.length <= 0
   ) {
+    if (allowAuthorizationBypassForTest && test) {
+      log.w(
+        `${ray} authorizeDevice: TEST bypass device not found ${cid}: ${did}`,
+      );
+      return r204();
+    }
     return r401(`${ray} device not found`);
   }
 
