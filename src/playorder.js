@@ -19,6 +19,7 @@ import {
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
+import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
 import {
@@ -1479,6 +1480,7 @@ class VanityCode {
  * @param {any} env
  * @param {Request} r
  * @returns {Promise<Response>}
+ * @throws {Error} if the notification cannot be processed for any reason.
  */
 export async function googlePlayNotification(env, r) {
   // developer.android.com/google/play/billing/rtdn-reference#encoding
@@ -1927,7 +1929,7 @@ async function getSubscription(env, purchaseToken) {
     const gmsg = await gerror(r);
     throw new Error(`err getting sub: ${r.status} ${gmsg}`);
   }
-  const json = await r.json();
+  const json = await consumejson(r);
   if (json != null && json.kind === "androidpublisher#subscriptionPurchaseV2") {
     if (log.debug) logd("sub: get product", env.CF_RAY, JSON.stringify(json));
     return new SubscriptionPurchaseV2(json);
@@ -1961,7 +1963,7 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
     const gmsg = await gerror(r);
     throw new Error(`oneetime: get err: ${r.status} ${gmsg}`);
   }
-  const json = await r.json();
+  const json = await consumejson(r);
   if (json != null && !emptyString(json.kind)) {
     if (log.debug) {
       logd(`onetime: getproduct ${env.CF_RAY} ${JSON.stringify(json)}`);
@@ -1995,7 +1997,7 @@ async function getOnetimeProductV2(env, purchaseToken) {
     const gmsg = await gerror(r);
     throw new Error(`onetime: get v2 err: ${r.status} ${gmsg}`);
   }
-  const json = await r.json();
+  const json = await consumejson(r);
   if (json != null && !emptyString(json.kind)) {
     if (log.debug) {
       logd(`onetime: get product v2 ${env.CF_RAY} ${JSON.stringify(json)}`);
@@ -4428,7 +4430,7 @@ async function gerror(r) {
     //     ]
     // }
     // }
-    const msg = await r.json();
+    const msg = await consumejson(r);
     if (msg == null || typeof msg !== "object") {
       return "unknown msg: " + msg;
     }

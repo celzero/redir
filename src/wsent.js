@@ -11,6 +11,7 @@ import { als, ExecCtx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
 import * as glog from "./log.js";
+import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 
 const resourceuser = "Users";
@@ -480,7 +481,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
       };
       const r = await fetch(url, { method: "PUT", headers });
       if (!r.ok) {
-        const err = await r.json();
+        const err = await consumejson(r);
         const errstr = JSON.stringify(err);
         log.e(
           `update creds: ${i}/${execCount}/${tries}; ${r.status} forbidden: ${errstr}`,
@@ -506,7 +507,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
         }
       }
     */
-      const data = await r.json();
+      const data = await consumejson(r);
       if (!data || typeof data !== "object") {
         log.e(
           `update creds: ${i}/${execCount}/${tries}; invalid response from WS server`,
@@ -631,7 +632,7 @@ async function newCreds(env, expiry, requestedPlan) {
   };
   const r = await fetch(url, { method: "POST", headers });
   if (!r.ok) {
-    const err = await r.json();
+    const err = await consumejson(r);
     const errstr = JSON.stringify(err);
     log.w(
       `new creds: ${url}, ${r.status}; test? ${testing}, forbidden: ${errstr}`,
@@ -639,7 +640,7 @@ async function newCreds(env, expiry, requestedPlan) {
     throw new Error(`could not create new creds: ${r.status} ${errstr}`);
   }
   // data = { data: { ... }, metadata: { ... } }
-  const data = await r.json();
+  const data = await consumejson(r);
   if (!data || typeof data !== "object" || data.data == null) {
     log.e(
       `new creds: invalid response ${data} from WS (url: ${url}, test? ${testing})`,
@@ -683,7 +684,7 @@ async function newCreds(env, expiry, requestedPlan) {
       });
 
       if (!r2.ok) {
-        const err = await r2.json();
+        const err = await consumejson(r2);
         const errstr = JSON.stringify(err);
         log.e(
           `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
@@ -694,7 +695,7 @@ async function newCreds(env, expiry, requestedPlan) {
         continue;
       }
       // data = { data: { ... }, metadata: { ... } }
-      const data2 = await r2.json();
+      const data2 = await consumejson(r2);
       if (!data2 || typeof data2 !== "object") {
         log.e(
           `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
@@ -755,7 +756,7 @@ async function credsStatus(env, sessiontoken) {
   try {
     const r = await fetch(url, { method: "GET", headers });
     if (r.ok) {
-      const d = await r.json();
+      const d = await consumejson(r);
       if (d && d.data) {
         const wsuser = new WSUser(d.data);
         return [wsStatus(wsuser), wsuser];
@@ -770,7 +771,7 @@ async function credsStatus(env, sessiontoken) {
     }
     */
     if (r.status >= 400) {
-      const err = await r.json();
+      const err = await consumejson(r);
       log.w(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
       if (err.errorCode === 701) {
         return ["invalid", null]; // Session is invalid
@@ -858,7 +859,7 @@ async function deleteCreds(env, sessiontoken) {
       }
       */
       if (r.status === 403) {
-        const err = await r.json();
+        const err = await consumejson(r);
         const errstr = JSON.stringify(err);
         log.w(`deleteCreds: attempt ${tries} err: ${errstr}`);
         if (err.errorCode === 701) {

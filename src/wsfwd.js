@@ -6,6 +6,7 @@ import { als, appendRayId, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
 import { didTokenHeader, mincidlength } from "./reg.js";
+import { consumejson } from "./req.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");
@@ -99,7 +100,7 @@ export async function forwardToWs(env, r) {
         return r;
       }
       // j = { data: { ... }, metadata: { ... } }
-      const j = await r.json();
+      const j = await consumejson(r);
       const wsuser = new WSUser(j.data);
       const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
       const newSensitiveData =

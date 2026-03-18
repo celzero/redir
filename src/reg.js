@@ -19,7 +19,7 @@ import {
 import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { rayid } from "./req.js";
+import { consumejson, rayid } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
 
@@ -103,7 +103,7 @@ export async function registerClient(env, req) {
   const clientkind = url.searchParams.get("clientkind") || "0";
   const devicekind = url.searchParams.get("devicekind") || "0";
   const existingCid = url.searchParams.get("cid");
-  const meta = await req.json();
+  const meta = await consumejson(req);
 
   const clientkindint = parseInt(clientkind, 10) || kindplaystoreclient;
   const devicekindint = parseInt(devicekind, 10) || kindphone;
@@ -328,13 +328,7 @@ export async function registerDevice(env, req) {
     }
   }
 
-  let meta = null;
-  try {
-    meta = await req.json();
-  } catch (_) {
-    // body missing or not valid JSON; proceed with null meta
-  }
-
+  const meta = await consumejson(req);
   const clientmeta = meta?.client ?? null;
   const devicemeta = meta?.device ?? null;
 

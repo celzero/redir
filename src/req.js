@@ -109,3 +109,16 @@ export function postalcode(req) {
 export function rayid(req) {
   return req.headers.get("Cf-Ray") || "";
 }
+
+/**
+ * @param {Request} req - incoming unconsumed request
+ * @returns {Promise<any|null>} - parsed JSON object or null if body is missing/invalid
+ */
+export async function consumejson(req) {
+  try {
+    return await req.json();
+  } catch (e) {
+    log.d(rayid(req), "consumejson: no/invalid body", e);
+  }
+  return null;
+}

@@ -391,9 +391,14 @@ async function clientaddrs(apikey, req) {
   // developers.google.com/maps/documentation/geocoding/requests-reverse-geocoding
   const streetaddrs = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=${apikey}&result_type=street_address&language=en`;
   return fetch(streetaddrs)
-    .then((response) => response.json())
+    .then((response) => rcf.consumejson(response))
     .then((json) => {
-      if (json.status === "OK" && json.results && json.results.length > 0) {
+      if (
+        json != null &&
+        json.status === "OK" &&
+        json.results &&
+        json.results.length > 0
+      ) {
         const out = new Array();
         for (const res of json.results) {
           if (res.formatted_address) {
