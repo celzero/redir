@@ -5,7 +5,7 @@ import { emptyString } from "./buf.js";
 import { als, appendRayId, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
-import { mincidlength } from "./reg.js";
+import { didTokenHeader, mincidlength } from "./reg.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");
@@ -78,6 +78,7 @@ export async function forwardToWs(env, r) {
 
     withWsHostname(u, typ);
     tryAddAuthHeader(cloned, token);
+    removeHeader(cloned, didTokenHeader);
     removeCmds(u);
 
     if (test) {
@@ -160,6 +161,14 @@ function withWsHostname(u, typ) {
 function tryAddAuthHeader(req, token) {
   if (emptyString(token)) return;
   req.headers.set("Authorization", `Bearer ${token}`);
+}
+
+/**
+ * @param {Request} req
+ * @param {string} hdr - header name to remove
+ */
+function removeHeader(req, hdr) {
+  req.headers.delete(hdr);
 }
 
 /**
