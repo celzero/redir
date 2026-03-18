@@ -101,6 +101,9 @@ export async function forwardToWs(env, r) {
       }
       // j = { data: { ... }, metadata: { ... } }
       const j = await consumejson(r);
+      if (j == null || j.data == null) {
+        throw new Error(`wsf: empty/unexpected response (${r.status})`);
+      }
       const wsuser = new WSUser(j.data);
       const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
       const newSensitiveData =

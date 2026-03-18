@@ -114,7 +114,7 @@ export function rayid(req) {
 }
 
 /**
- * @param {Request} req - incoming unconsumed request
+ * @param {Request|Response} req - incoming unconsumed request or response
  * @returns {Promise<any|null>} - parsed JSON object or null if body is missing/invalid
  */
 export async function consumejson(req) {

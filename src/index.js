@@ -559,7 +559,7 @@ function mustWsFwd(url) {
  */
 async function respond(promisedResponse, authr) {
   const token = authr.headers.get(didTokenHeader);
-  if (!token) return resp;
+  if (!token) return await promisedResponse;
 
   const r = await promisedResponse;
   // developers.cloudflare.com/workers/examples/alter-headers/
