@@ -6,8 +6,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { Log } from "./log.js";
 export const defaultcc = "us";
 export const unknown = "unknown";
+
+const log = new Log("req");
 
 /**
  * Get the client IP address from the request headers.
