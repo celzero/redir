@@ -6,6 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { LfuCache } from "@serverless-dns/lfu-cache";
 import {
   buf2hex,
   cat,
@@ -34,6 +35,51 @@ const log = new glog.Log("reg");
 
 const clientmsg = str2byte("rethinkappclient");
 const devicemsg = str2byte("rethinkappdevice");
+
+// Sig cache: key = hex(rand16)[+hex(rand8)]+":t"/":p", value = "valid"|"invalid"
+// Caches whether a given cid (rand16) or did (rand16+rand8) HMAC signature passed.
+// get() returns false (boolean) on cache miss, so "valid"/"invalid" strings are
+// used to distinguish a cached result from a miss.
+const sigcache = new LfuCache("regsig", 6_000);
+
+// Token cache: key = cid+":"+did+":"+expiryEpoch, value = expected-sig-hex
+// Caches the HMAC sig computed for a did token so re-verification skips hmacsign.
+const didtokencache = new LfuCache("regtok", 3_000);
+
+const sigok = "valid";
+const signotok = "invalid";
+
+/**
+ * Cache key for the cid HMAC sig (covers rand16 component of a cid).
+ * @param {Uint8Array} rand16
+ * @param {boolean} test
+ * @returns {string}
+ */
+function sigkey1(rand16, test) {
+  return buf2hex(rand16) + (test ? ":t" : ":p");
+}
+
+/**
+ * Cache key for the did HMAC sig (covers rand16 from cid + rand8 from did).
+ * @param {Uint8Array} rand16
+ * @param {Uint8Array} rand8
+ * @param {boolean} test
+ * @returns {string}
+ */
+function sigkey2(rand16, rand8, test) {
+  return buf2hex(rand16) + buf2hex(rand8) + (test ? ":t" : ":p");
+}
+
+/**
+ * Cache key for a did token.
+ * @param {string} cid
+ * @param {string} did
+ * @param {number} expiry - epoch seconds
+ * @returns {string}
+ */
+function didtokkey(cid, did, expiry) {
+  return `${cid}:${did}:${expiry}`;
+}
 
 export const didTokenHeader = "x-rethink-app-did-token";
 // Adjustable validity period for the did token; default 3 days
@@ -73,22 +119,32 @@ export async function registerClient(env, req) {
     const rand16 = cidBytes.slice(0, 16);
     const cidsig16claimed = cidBytes.slice(16, 32);
 
-    try {
-      const k = await hmacclientkey(env, rand16, test);
-      if (!k) {
-        return r500(`k unavailable: ${ray}`);
+    // check sig cache before performing hmac
+    const cidkey = sigkey1(rand16, test);
+    const cachedCidSig = sigcache.get(cidkey);
+    if (cachedCidSig === signotok) {
+      log.w(ray, "registerClient: cid sig cached invalid", existingCid);
+      return r401(`cid verification failed: ${ray}`);
+    } else if (cachedCidSig !== sigok) {
+      // cache miss: run hmac and store result
+      try {
+        const k = await hmacclientkey(env, rand16, test);
+        if (!k) {
+          return r500(`k unavailable: ${ray}`);
+        }
+        const cidmsg = cat(rand16, clientmsg);
+        const cidsigbuf = await hmacsign(k, cidmsg);
+        const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
+        const valid = safeEq(cidsig16claimed, cidsig16expected);
+        sigcache.put(cidkey, valid ? sigok : signotok);
+        if (!valid) {
+          log.w(ray, "registerClient: cid invalid", existingCid);
+          return r401(`cid verification failed: ${ray}`);
+        }
+      } catch (e) {
+        log.e(ray, "registerClient: cid verify error:", e);
+        return r500(`${ray} error: ${e.message}`);
       }
-      const cidmsg = cat(rand16, clientmsg);
-      const cidsigbuf = await hmacsign(k, cidmsg);
-      const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
-
-      if (!safeEq(cidsig16claimed, cidsig16expected)) {
-        log.w(ray, "registerClient: cid invalid", existingCid);
-        return r401(`cid verification failed: ${ray}`);
-      } // else: ok
-    } catch (e) {
-      log.e(ray, "registerClient: cid verify error:", e);
-      return r500(`${ray} error: ${e.message}`);
     }
 
     const clientmeta = meta?.client ?? null;
@@ -210,6 +266,20 @@ export async function registerDevice(env, req) {
     didsig8claimed = didBytes.slice(8, 16);
   }
 
+  // check sig caches before hmac computation
+  const cidkey = sigkey1(rand16, test);
+  const didkey = rand8 != null ? sigkey2(rand16, rand8, test) : null;
+  const cachedCidSig = sigcache.get(cidkey);
+  const cachedDidSig = didkey != null ? sigcache.get(didkey) : null;
+
+  if (cachedCidSig === signotok) {
+    return r401(`cid verification failed: ${ray}`);
+  }
+  if (cachedDidSig === signotok) {
+    return r401(`did verification failed: ${ray}`);
+  }
+
+  // derive key (always needed: uncached sig verification and/or new did generation)
   let k;
   try {
     k = await hmacclientkey(env, rand16, test);
@@ -219,30 +289,40 @@ export async function registerDevice(env, req) {
     return r500(`${ray} error: ${e.message}`);
   }
 
-  // verify cid and did (when provided) sigs in parallel
-  try {
-    const cidmsg = cat(rand16, clientmsg);
-    const sigs = await Promise.all([
-      hmacsign(k, cidmsg),
-      ...(rand8 != null ? [hmacsign(k, cat(rand8, devicemsg))] : []),
-    ]);
+  // verify only the sigs not already cached
+  const needCidVerify = cachedCidSig !== sigok;
+  const needDidVerify = cachedDidSig !== sigok && rand8 != null;
 
-    const cidsig16expected = new Uint8Array(sigs[0]).slice(0, 16);
-    if (!safeEq(cidsig16claimed, cidsig16expected)) {
-      log.w(ray, "registerDevice: cid invalid", cid);
-      return r401(`cid verification failed: ${ray}`);
-    }
+  if (needCidVerify || needDidVerify) {
+    try {
+      const tasks = [];
+      if (needCidVerify) tasks.push(hmacsign(k, cat(rand16, clientmsg)));
+      if (needDidVerify) tasks.push(hmacsign(k, cat(rand8, devicemsg)));
+      const results = await Promise.all(tasks);
 
-    if (rand8 != null) {
-      const didsig8expected = new Uint8Array(sigs[1]).slice(0, 8);
-      if (!safeEq(didsig8claimed, didsig8expected)) {
-        log.w(ray, "registerDevice: did invalid", did);
-        return r401(`did verification failed: ${ray}`);
+      let idx = 0;
+      if (needCidVerify) {
+        const cidsig16expected = new Uint8Array(results[idx++]).slice(0, 16);
+        const valid = safeEq(cidsig16claimed, cidsig16expected);
+        sigcache.put(cidkey, valid ? sigok : signotok);
+        if (!valid) {
+          log.w(ray, "registerDevice: cid invalid", cid);
+          return r401(`cid verification failed: ${ray}`);
+        }
       }
+      if (needDidVerify) {
+        const didsig8expected = new Uint8Array(results[idx]).slice(0, 8);
+        const valid = safeEq(didsig8claimed, didsig8expected);
+        sigcache.put(didkey, valid ? sigok : signotok);
+        if (!valid) {
+          log.w(ray, "registerDevice: did invalid", did);
+          return r401(`did verification failed: ${ray}`);
+        }
+      }
+    } catch (e) {
+      log.e(ray, "registerDevice: sig verify error:", e);
+      return r500(`${ray} error: ${e.message}`);
     }
-  } catch (e) {
-    log.e(ray, "registerDevice: sig verify error:", e);
-    return r500(`${ray} error: ${e.message}`);
   }
 
   let meta = null;
@@ -437,6 +517,14 @@ function r500(w) {
 }
 
 /**
+ * Returns the current time as a positive integer (Unix epoch seconds).
+ * @returns {number}
+ */
+function unixsec() {
+  return (Date.now() / 1000) >>> 0;
+}
+
+/**
  * Encodes an epoch (seconds) as a 4-byte big-endian Uint8Array.
  * @param {number} epochSecs
  * @returns {Uint8Array}
@@ -463,7 +551,7 @@ async function generateDidToken(
   validitySecs = didTokenValiditySecs,
 ) {
   try {
-    const expiry = Math.floor(Date.now() / 1000) + validitySecs;
+    const expiry = unixsec() + validitySecs;
     const msg = lcat(
       didTokenCtx,
       hex2buf(cid),
@@ -472,6 +560,8 @@ async function generateDidToken(
     );
     const sigbuf = await hmacsign(k, msg);
     const sig = buf2hex(new Uint8Array(sigbuf));
+    // populate token cache so subsequent verifications skip hmacsign
+    didtokencache.put(didtokkey(cid, did, expiry), sig);
     return `${sig}:${expiry}`;
   } catch (e) {
     log.e("generateDidToken err:", e);
@@ -493,12 +583,17 @@ async function verifyDidToken(k, cid, did, token) {
     if (sep < 0) return false;
     const claimedSigHex = token.slice(0, sep);
     const claimedExpiry = parseInt(token.slice(sep + 1), 10);
-    if (
-      isNaN(claimedExpiry) ||
-      claimedExpiry <= Math.floor(Date.now() / 1000)
-    ) {
+    if (isNaN(claimedExpiry) || claimedExpiry <= unixsec()) {
       return false; // expired or unparseable
     }
+    // token cache fast path: if we've already computed the expected sig for
+    // this (cid, did, expiry), compare directly without another hmacsign
+    const tkey = didtokkey(cid, did, claimedExpiry);
+    const cachedSig = didtokencache.get(tkey);
+    if (cachedSig !== false) {
+      return cachedSig === claimedSigHex;
+    }
+    // cache miss: compute expected sig, store it, then compare
     const msg = lcat(
       didTokenCtx,
       hex2buf(cid),
@@ -507,6 +602,8 @@ async function verifyDidToken(k, cid, did, token) {
     );
     const expectedSigBuf = await hmacsign(k, msg);
     const expectedSig = new Uint8Array(expectedSigBuf);
+    const expectedSigHex = buf2hex(expectedSig);
+    didtokencache.put(tkey, expectedSigHex);
     const claimedSig = hex2buf(claimedSigHex);
     return safeEq(claimedSig, expectedSig);
   } catch (e) {
@@ -552,16 +649,53 @@ export async function authorizeDevice(env, req) {
     return r400("missing/invalid device id");
   }
 
-  // fast path: verify cid was generated by us before touching the database
+  // parse id bytes upfront so cache keys and sigs can be computed
   const cidBytes = hex2buf(cid);
   const rand16 = cidBytes.slice(0, 16);
   const cidsig16claimed = cidBytes.slice(16, 32);
 
-  // pre-parse did bytes so both sigs can be computed in parallel
   const didBytes = hex2buf(did);
   const rand8 = didBytes.slice(0, 8);
   const didsig8claimed = didBytes.slice(8, 16);
 
+  // check sig caches before any crypto
+  const cidkey = sigkey1(rand16, test);
+  const didkey = sigkey2(rand16, rand8, test);
+  const cachedCidSig = sigcache.get(cidkey);
+  const cachedDidSig = sigcache.get(didkey);
+
+  if (cachedCidSig === signotok) {
+    log.w(ray, "authorizeDevice: cid sig cached invalid", cid);
+    return r401("missing/invalid client id");
+  }
+  if (cachedDidSig === signotok) {
+    log.w(ray, "authorizeDevice: did sig cached invalid", did);
+    return r401(`${ray} missing/invalid device id`);
+  }
+
+  // ultra-fast path: both sigs cached valid + matching token in tokenCache →
+  // authorized with no key derivation or hmacsign at all
+  if (cachedCidSig === sigok && cachedDidSig === sigok) {
+    const incomingToken = req.headers.get(didTokenHeader);
+    if (!emptyString(incomingToken)) {
+      const sep = incomingToken.lastIndexOf(":");
+      if (sep >= 0) {
+        const claimedSigHex = incomingToken.slice(0, sep);
+        const claimedExpiry = parseInt(incomingToken.slice(sep + 1), 10);
+        if (!isNaN(claimedExpiry) && claimedExpiry > unixsec()) {
+          const cachedTokSig = didtokencache.get(
+            didtokkey(cid, did, claimedExpiry),
+          );
+          if (cachedTokSig === claimedSigHex) {
+            log.d(ray, "authorizeDevice: sig+token cached ok", cid, ":", did);
+            return r204();
+          }
+        }
+      }
+    }
+  }
+
+  // derive key (needed for: uncached sig verification, verifyDidToken, generateDidToken)
   let k;
   try {
     k = await hmacclientkey(env, rand16, test);
@@ -571,30 +705,40 @@ export async function authorizeDevice(env, req) {
     return r500(`${ray} err: ${e.message}`);
   }
 
-  // verify cid and did sigs in parallel
-  let cidsigbuf, didsigbuf;
-  try {
-    const cidmsg = cat(rand16, clientmsg);
-    const didmsg = cat(rand8, devicemsg);
-    [cidsigbuf, didsigbuf] = await Promise.all([
-      hmacsign(k, cidmsg),
-      hmacsign(k, didmsg),
-    ]);
-  } catch (e) {
-    log.e(ray, "authorizeDevice: sig error:", e);
-    return r500(`${ray} err: ${e.message}`);
-  }
+  // verify only the sigs not already cached
+  const needCidVerify = cachedCidSig !== sigok;
+  const needDidVerify = cachedDidSig !== sigok;
 
-  const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
-  if (!safeEq(cidsig16claimed, cidsig16expected)) {
-    log.w(ray, "authorizeDevice: cid invalid", cid);
-    return r401("missing/invalid client id");
-  }
+  if (needCidVerify || needDidVerify) {
+    try {
+      const tasks = [];
+      if (needCidVerify) tasks.push(hmacsign(k, cat(rand16, clientmsg)));
+      if (needDidVerify) tasks.push(hmacsign(k, cat(rand8, devicemsg)));
+      const results = await Promise.all(tasks);
 
-  const didsig8expected = new Uint8Array(didsigbuf).slice(0, 8);
-  if (!safeEq(didsig8claimed, didsig8expected)) {
-    log.w(ray, "authorizeDevice: did invalid", did);
-    return r401(`${ray} missing/invalid device id`);
+      let idx = 0;
+      if (needCidVerify) {
+        const cidsig16expected = new Uint8Array(results[idx++]).slice(0, 16);
+        const valid = safeEq(cidsig16claimed, cidsig16expected);
+        sigcache.put(cidkey, valid ? sigok : signotok);
+        if (!valid) {
+          log.w(ray, "authorizeDevice: cid invalid", cid);
+          return r401("missing/invalid client id");
+        }
+      }
+      if (needDidVerify) {
+        const didsig8expected = new Uint8Array(results[idx]).slice(0, 8);
+        const valid = safeEq(didsig8claimed, didsig8expected);
+        sigcache.put(didkey, valid ? sigok : signotok);
+        if (!valid) {
+          log.w(ray, "authorizeDevice: did invalid", did);
+          return r401(`${ray} missing/invalid device id`);
+        }
+      }
+    } catch (e) {
+      log.e(ray, "authorizeDevice: sig error:", e);
+      return r500(`${ray} err: ${e.message}`);
+    }
   }
 
   // token fast path: skip the database if the client presents a valid did token
