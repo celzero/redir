@@ -12,14 +12,20 @@ import {
   als,
   ExecCtx,
   obsToken,
-  PlayErr,
-  PlayOk,
   testmode,
 } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
-import { consumejson } from "./req.js";
+import {
+  consumejson,
+  r200play,
+  r200t,
+  r400j,
+  r405j,
+  r409j,
+  r500j,
+} from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
 import {
@@ -28,6 +34,9 @@ import {
   getOrGenWsEntitlement,
   WSEntitlement,
 } from "./wsent.js";
+
+// r200j wraps the payload in PlayOk before serialising (playorder-specific behaviour)
+const r200j = r200play;
 
 // setup: developers.google.com/android-publisher/getting_started
 // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
@@ -4354,41 +4363,6 @@ function replacing(sub) {
   const ctx = sub.canceledStateContext;
   if (ctx == null) return false;
   return ctx.replacementCancellation != null;
-}
-
-function r200j(j) {
-  const h = { "content-type": "application/json" };
-  const payload = j instanceof PlayOk ? j.json : new PlayOk(j).json;
-  return new Response(JSON.stringify(payload), { status: 200, headers: h }); // ok
-}
-
-function r400j(j) {
-  const h = { "content-type": "application/json" };
-  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
-  return new Response(JSON.stringify(payload), { status: 400, headers: h }); // bad request
-}
-
-function r405j(j) {
-  const h = { "content-type": "application/json" };
-  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
-  return new Response(JSON.stringify(payload), { status: 405, headers: h }); // method not allowed
-}
-
-function r409j(j) {
-  const h = { "content-type": "application/json" };
-  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
-  return new Response(JSON.stringify(payload), { status: 409, headers: h }); // conflict
-}
-
-function r500j(j) {
-  const h = { "content-type": "application/json" };
-  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
-  return new Response(JSON.stringify(payload), { status: 500, headers: h }); // internal server error
-}
-
-function r200t(txt) {
-  const h = { "content-type": "application/text" };
-  return new Response(txt, { status: 200, headers: h }); // ok
 }
 
 function logi(...args) {

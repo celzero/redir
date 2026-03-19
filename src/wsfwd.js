@@ -2,11 +2,11 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import { emptyString } from "./buf.js";
-import { als, appendRayId, ExecCtx } from "./d.js";
+import { als, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
-import { didTokenHeader, mincidlength } from "./reg.js";
-import { consumejson } from "./req.js";
+import { mincidlength } from "./reg.js";
+import { consumejson, didTokenHeader, r400t, r401t, r421t } from "./req.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");
@@ -29,30 +29,6 @@ const wsassetstestquery1 = "wsassetstest";
 const wsassetstestquery2 = "wstestassets";
 
 /**
- * unauthorized
- * @param {string} u
- */
-function r401(u) {
-  return new Response(appendRayId(u), { status: 401 });
-}
-
-/**
- * bad request
- * @param {string} u
- */
-function r400t(u) {
-  return new Response(appendRayId(u), { status: 400 });
-}
-
-/**
- * misdirected
- * @param {string} u
- */
-function r421t(u) {
-  return new Response(appendRayId(u), { status: 421 });
-}
-
-/**
  * @param {any} env - Worker environment
  * @param {Request} r
  * @returns {Promise<Response>}
@@ -69,9 +45,9 @@ export async function forwardToWs(env, r) {
     const [cid, token, enctoken, needsAuth, mustEncrypt] =
       await bearerAndCidForWs(env, r);
     if (needsAuth) {
-      if (emptyString(token)) return r401("wsf: needs cid or auth");
+      if (emptyString(token)) return r401t("wsf: needs cid or auth");
       if (mustEncrypt && emptyString(cid))
-        return r401("wsf: needs cid or auth");
+        return r401t("wsf: needs cid or auth");
     }
 
     const [typ, sensitive, test] = reqType(u);

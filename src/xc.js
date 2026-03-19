@@ -2,7 +2,7 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import * as bin from "./buf.js";
-import { als, appendRayId, ExecCtx, workersEnv } from "./d.js";
+import { als, ExecCtx, workersEnv } from "./d.js";
 import {
   aesivsz,
   hkdfaes,
@@ -12,29 +12,12 @@ import {
   sha512,
 } from "./hmac.js";
 import * as glog from "./log.js";
+import { r400t, r500t } from "./req.js";
 import { crand, encryptAesGcm } from "./webcrypto.js";
 
 const encctx = bin.str2byte("encryptcrossservice");
 const macctx = bin.str2byte("authorizecrossservice");
 const log = new glog.Log("xc");
-
-/**
- * bad request
- * @param {string} u - status message
- * @returns {Response} - Response with status 400
- */
-function r400t(u) {
-  return new Response(appendRayId(u), { status: 400 });
-}
-
-/**
- * internal server error
- * @param {string} u - status message
- * @returns {Response} - Response with status 500
- */
-function r500t(u) {
-  return new Response(appendRayId(u), { status: 500 });
-}
 
 /**
  *

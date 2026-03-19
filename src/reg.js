@@ -19,7 +19,19 @@ import {
 import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { consumejson, rayid } from "./req.js";
+import {
+  consumejson,
+  didTokenHeader,
+  r200j,
+  r204,
+  r204token,
+  r400,
+  r401,
+  r404,
+  r405,
+  r500,
+  rayid,
+} from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
 
@@ -84,7 +96,6 @@ function didtokkey(cid, did, expiry) {
   return `${cid}:${did}:${expiry}`;
 }
 
-export const didTokenHeader = "x-rethink-app-did-token";
 // Adjustable validity period for the did token; default 3 days
 const didTokenValiditySecs = 3 * 24 * 60 * 60;
 const didTokenCtx = str2byte("rethinkappdidtoken");
@@ -433,24 +444,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
       updated: mtime,
     });
   }
-  return r200j({ devices: json });
-}
-
-function r200j(j) {
-  const h = { "content-type": "application/json" };
-  return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
-}
-
-function r400(w) {
-  return new Response(w, { status: 400 }); // bad request
-}
-
-function r404(w) {
-  return new Response(w, { status: 404 }); // not found
-}
-
-function r405(w) {
-  return new Response(w, { status: 405 }); // method not allowed
+  return r200j({ devices: json, test: test });
 }
 
 /**
@@ -499,18 +493,6 @@ export async function removeDevice(env, req) {
 
   log.d(ray, "remove", did, "for c:", cid, "test?", test);
   return r204(); // no content
-}
-
-function r204() {
-  return new Response(null, { status: 204 }); // no content
-}
-
-function r401(w) {
-  return new Response(w, { status: 401 }); // unauthorized
-}
-
-function r500(w) {
-  return new Response(w, { status: 500 }); // internal server error
 }
 
 /**
@@ -607,18 +589,6 @@ async function verifyDidToken(k, cid, did, token) {
     log.e("verifyDidToken err:", e);
     return false;
   }
-}
-
-/**
- * 204 No Content response with the did token header set.
- * @param {string} token
- * @returns {Response}
- */
-function r204token(token) {
-  return new Response(null, {
-    status: 204,
-    headers: { [didTokenHeader]: token },
-  });
 }
 
 /**

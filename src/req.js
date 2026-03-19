@@ -6,9 +6,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+import { appendRayId, PlayErr, PlayOk } from "./d.js";
 import { Log } from "./log.js";
 export const defaultcc = "us";
 export const unknown = "unknown";
+export const didTokenHeader = "x-rethink-app-did-token";
 
 const log = new Log("req");
 
@@ -114,14 +116,148 @@ export function rayid(req) {
 }
 
 /**
- * @param {Request|Response} req - incoming unconsumed request or response
+ * @param {Request|Response} r - incoming unconsumed request or response
  * @returns {Promise<any|null>} - parsed JSON object or null if body is missing/invalid
  */
-export async function consumejson(req) {
+export async function consumejson(r) {
   try {
-    return await req.json();
+    return await r.json();
   } catch (e) {
-    log.d(rayid(req), "consumejson: no/invalid body", e);
+    log.d("consumejson: no/invalid body", e);
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// HTTP response helpers
+// ---------------------------------------------------------------------------
+
+/** 200 OK with JSON body */
+export function r200j(j) {
+  const h = { "content-type": "application/json" };
+  return new Response(JSON.stringify(j), { status: 200, headers: h });
+}
+
+/** 200 OK with JSON body, wrapping payload in PlayOk */
+export function r200play(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { message: j };
+  const payload = j instanceof PlayOk ? j.json : new PlayOk(j).json;
+  return new Response(JSON.stringify(payload), { status: 200, headers: h });
+}
+
+/** 200 OK with plain-text body */
+export function r200t(txt) {
+  const h = { "content-type": "text/plain" };
+  return new Response(txt, { status: 200, headers: h });
+}
+
+/** 204 No Content */
+export function r204() {
+  return new Response(null, { status: 204 });
+}
+
+/** 204 No Content with did-token response header */
+export function r204token(token) {
+  if (!token) return r204();
+  return new Response(null, {
+    status: 204,
+    headers: { [didTokenHeader]: token },
+  });
+}
+
+/** 302 Redirect */
+export function r302(where) {
+  if (!where) return r500("missing redirect target");
+  return new Response("Redirecting...", {
+    status: 302,
+    headers: { location: where },
+  });
+}
+
+/** 400 Bad Request */
+export function r400(w) {
+  return new Response(w, { status: 400 });
+}
+
+/** 400 Bad Request with JSON body, wrapping payload in PlayErr */
+export function r400j(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 400, headers: h });
+}
+
+/** 400 Bad Request with ray id appended to message */
+export function r400t(u) {
+  return new Response(appendRayId(u), { status: 400 });
+}
+
+/** 401 Unauthorized */
+export function r401(w) {
+  return new Response(w, { status: 401 });
+}
+
+/** 401 Unauthorized with ray id appended to message */
+export function r401t(u) {
+  return new Response(appendRayId(u), { status: 401 });
+}
+
+/** 404 Not Found */
+export function r404(w) {
+  return new Response(w, { status: 404 });
+}
+
+/** 405 Method Not Allowed */
+export function r405(w) {
+  return new Response(w, { status: 405 });
+}
+
+/** 405 Method Not Allowed with JSON body, wrapping payload in PlayErr */
+export function r405j(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 405, headers: h });
+}
+
+/** 409 Conflict with JSON body, wrapping payload in PlayErr */
+export function r409j(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 409, headers: h });
+}
+
+/** 421 Misdirected Request with ray id appended to message */
+export function r421t(u) {
+  return new Response(appendRayId(u), { status: 421 });
+}
+
+/** 429 Too Many Requests */
+export function r429(w) {
+  return new Response(w, { status: 429 });
+}
+
+/** 500 Internal Server Error */
+export function r500(w) {
+  return new Response(w, { status: 500 });
+}
+
+/** 500 Internal Server Error with JSON body, wrapping payload in PlayErr */
+export function r500j(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 500, headers: h });
+}
+
+/** 500 Internal Server Error with ray id appended to message */
+export function r500t(u) {
+  return new Response(appendRayId(u), { status: 500 });
+}
+
+/** 503 Service Unavailable */
+export function r503(w) {
+  return new Response(w, { status: 503 });
 }

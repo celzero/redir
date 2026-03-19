@@ -25,12 +25,29 @@ import {
 } from "./playorder.js";
 import {
   authorizeDevice,
-  didTokenHeader,
   registerClient,
   registerDevice,
   removeDevice,
 } from "./reg.js";
-import * as rcf from "./req.js";
+import {
+  asorg,
+  city,
+  clientIp,
+  colo,
+  consumejson,
+  country,
+  didTokenHeader,
+  postalcode,
+  r200j,
+  r302,
+  r400,
+  r405,
+  r429,
+  r500,
+  r503,
+  rayid,
+  region,
+} from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
 import * as xc from "./xc.js";
@@ -63,7 +80,7 @@ const allLinks = grabLinks();
 async function handle(r, env, ctx) {
   env = d.wrap(env, r);
   const home = env.REDIR_CATCHALL;
-  const ray = rcf.rayid(r);
+  const ray = rayid(r);
   try {
     const url = new URL(r.url);
     const path = url.pathname;
@@ -230,13 +247,13 @@ async function handle(r, env, ctx) {
 
       const minVCodeNeeded = minvcode(env, "paid-features");
       const cansell = greaterThanEqCmp(clientVCode, minVCodeNeeded);
-      const clientip = rcf.clientIp(r);
-      const clientCountry = rcf.country(r);
-      const clientAsOrg = rcf.asorg(r);
-      const clientCity = rcf.city(r);
-      const clientColo = rcf.colo(r);
-      const clientRegion = rcf.region(r);
-      const clientPostalCode = rcf.postalcode(r);
+      const clientip = clientIp(r);
+      const clientCountry = country(r);
+      const clientAsOrg = asorg(r);
+      const clientCity = city(r);
+      const clientColo = colo(r);
+      const clientRegion = region(r);
+      const clientPostalCode = postalcode(r);
       const withaddrs = p[3] === "wa" || p[3] === "withaddrs";
       let clientAddrs = [];
       if (cansell && withaddrs) {
@@ -277,7 +294,7 @@ async function handle(r, env, ctx) {
 function redirect(req, url, p, home) {
   if (p.length >= 3 && p[2].length > 0) {
     const w = p[2];
-    const c = rcf.country(req);
+    const c = country(req);
     const k = key(w, c);
     if (allLinks.has(k)) {
       // redirect to where tx wants us to
@@ -391,7 +408,7 @@ async function clientaddrs(apikey, req) {
   // developers.google.com/maps/documentation/geocoding/requests-reverse-geocoding
   const streetaddrs = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${long}&key=${apikey}&result_type=street_address&language=en`;
   return fetch(streetaddrs)
-    .then((response) => rcf.consumejson(response))
+    .then((response) => consumejson(response))
     .then((json) => {
       if (
         json != null &&
@@ -425,43 +442,6 @@ function greaterThanEqCmp(str1, str2) {
     return false; // invalid version code
   }
   return n1 >= n2;
-}
-
-function r401(w) {
-  return new Response(w, { status: 401 }); // unauthorized
-}
-
-function r503(w) {
-  return new Response(w, { status: 503 }); // service unavailable
-}
-
-function r500(w) {
-  return new Response(w, { status: 500 }); // internal server error
-}
-
-function r400(w) {
-  return new Response(w, { status: 400 }); // bad request
-}
-
-function r429(w) {
-  return new Response(w, { status: 429 }); // too many requests
-}
-
-function r302(where) {
-  if (!where) return r500("missing redirect target");
-  return new Response("Redirecting...", {
-    status: 302, // redirect
-    headers: { location: where },
-  });
-}
-
-function r405(w) {
-  return new Response(w, { status: 405 }); // method not allowed
-}
-
-function r200j(j) {
-  const h = { "content-type": "application/json" };
-  return new Response(JSON.stringify(j), { status: 200, headers: h }); // ok
 }
 
 /**
