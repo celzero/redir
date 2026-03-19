@@ -6,7 +6,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { appendRayId, PlayErr, PlayOk } from "./d.js";
+import { PlayErr, PlayOk, ResErr, ResOK } from "./d.js";
 import { Log } from "./log.js";
 export const defaultcc = "us";
 export const unknown = "unknown";
@@ -146,10 +146,18 @@ export function r200play(j) {
   return new Response(JSON.stringify(payload), { status: 200, headers: h });
 }
 
-/** 200 OK with plain-text body */
+/** 200 OK with plain-text body (use sparingly; prefer r200ok for JSON) */
 export function r200t(txt) {
   const h = { "content-type": "text/plain" };
   return new Response(txt, { status: 200, headers: h });
+}
+
+/** 200 OK with JSON body wrapping message in ResOK */
+export function r200ok(msg) {
+  const h = { "content-type": "application/json" };
+  if (typeof msg === "string") msg = { message: msg };
+  const payload = msg instanceof ResOK ? msg.json : new ResOK(msg).json;
+  return new Response(JSON.stringify(payload), { status: 200, headers: h });
 }
 
 /** 204 No Content */
@@ -175,9 +183,12 @@ export function r302(where) {
   });
 }
 
-/** 400 Bad Request */
+/** 400 Bad Request with JSON body */
 export function r400(w) {
-  return new Response(w, { status: 400 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 400, headers: h });
 }
 
 /** 400 Bad Request with JSON body, wrapping payload in PlayErr */
@@ -188,29 +199,38 @@ export function r400j(j) {
   return new Response(JSON.stringify(payload), { status: 400, headers: h });
 }
 
-/** 400 Bad Request with ray id appended to message */
+/** 400 Bad Request with JSON body (ray id auto-included via ResErr) */
 export function r400t(u) {
-  return new Response(appendRayId(u), { status: 400 });
+  return r400(u);
 }
 
-/** 401 Unauthorized */
+/** 401 Unauthorized with JSON body */
 export function r401(w) {
-  return new Response(w, { status: 401 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 401, headers: h });
 }
 
-/** 401 Unauthorized with ray id appended to message */
+/** 401 Unauthorized with JSON body (ray id auto-included via ResErr) */
 export function r401t(u) {
-  return new Response(appendRayId(u), { status: 401 });
+  return r401(u);
 }
 
-/** 404 Not Found */
+/** 404 Not Found with JSON body */
 export function r404(w) {
-  return new Response(w, { status: 404 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 404, headers: h });
 }
 
-/** 405 Method Not Allowed */
+/** 405 Method Not Allowed with JSON body */
 export function r405(w) {
-  return new Response(w, { status: 405 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 405, headers: h });
 }
 
 /** 405 Method Not Allowed with JSON body, wrapping payload in PlayErr */
@@ -229,19 +249,28 @@ export function r409j(j) {
   return new Response(JSON.stringify(payload), { status: 409, headers: h });
 }
 
-/** 421 Misdirected Request with ray id appended to message */
+/** 421 Misdirected Request with JSON body (ray id auto-included via ResErr) */
 export function r421t(u) {
-  return new Response(appendRayId(u), { status: 421 });
+  const h = { "content-type": "application/json" };
+  if (typeof u === "string") u = { error: u };
+  const payload = u instanceof ResErr ? u.json : new ResErr(u).json;
+  return new Response(JSON.stringify(payload), { status: 421, headers: h });
 }
 
-/** 429 Too Many Requests */
+/** 429 Too Many Requests with JSON body */
 export function r429(w) {
-  return new Response(w, { status: 429 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 429, headers: h });
 }
 
-/** 500 Internal Server Error */
+/** 500 Internal Server Error with JSON body */
 export function r500(w) {
-  return new Response(w, { status: 500 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 500, headers: h });
 }
 
 /** 500 Internal Server Error with JSON body, wrapping payload in PlayErr */
@@ -252,12 +281,15 @@ export function r500j(j) {
   return new Response(JSON.stringify(payload), { status: 500, headers: h });
 }
 
-/** 500 Internal Server Error with ray id appended to message */
+/** 500 Internal Server Error with JSON body (ray id auto-included via ResErr) */
 export function r500t(u) {
-  return new Response(appendRayId(u), { status: 500 });
+  return r500(u);
 }
 
-/** 503 Service Unavailable */
+/** 503 Service Unavailable with JSON body */
 export function r503(w) {
-  return new Response(w, { status: 503 });
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 503, headers: h });
 }

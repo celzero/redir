@@ -264,23 +264,24 @@ async function handle(r, env, ctx) {
         }
       }
       const svcs = svcstatus(env);
-      // TODO: move json to class
-      return r200j({
-        vcode: clientVCode,
-        minvcode: minVCodeNeeded,
-        cansell: cansell,
-        ip: clientip,
-        country: clientCountry,
-        asorg: clientAsOrg,
-        city: clientCity,
-        colo: clientColo,
-        region: clientRegion,
-        postalcode: clientPostalCode,
-        addrs: clientAddrs,
-        status: svcs,
-        pubkey: pk,
-        ray: ray,
-      });
+      return r200j(
+        new d.ResProxy({
+          vcode: clientVCode,
+          minvcode: minVCodeNeeded,
+          cansell: cansell,
+          ip: clientip,
+          country: clientCountry,
+          asorg: clientAsOrg,
+          city: clientCity,
+          colo: clientColo,
+          region: clientRegion,
+          postalcode: clientPostalCode,
+          addrs: clientAddrs,
+          status: svcs,
+          pubkey: pk,
+          ray: ray,
+        }).json,
+      );
     } else {
       console.warn(`p: ${ray} unknown path`, path);
     }

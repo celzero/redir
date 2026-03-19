@@ -7,15 +7,17 @@
  */
 
 import Stripe from "stripe";
-import { emptyBuf, bytcmp, buf2hex, hex2buf } from "./buf.js";
+import { buf2hex, bytcmp, emptyBuf, hex2buf } from "./buf.js";
+import { ResStripeWebhook } from "./d.js";
+import { r200j, r400, r401 } from "./req.js";
 import {
-  twentyFiveHoursMs,
-  thirtyDaysMs,
-  tokenStatusOf,
   errTokenStatus,
+  thirtyDaysMs,
   TokenStatus,
+  tokenStatusOf,
+  twentyFiveHoursMs,
 } from "./tok.js";
-import { importHmacKey, hmacsign, sha256 } from "./webcrypto.js";
+import { hmacsign, importHmacKey, sha256 } from "./webcrypto.js";
 
 // TODO: non-prod spurl endpoint for redir
 const spurl = "https://ken.rethinkdns.com/";
@@ -76,7 +78,7 @@ export async function stripeCheckout(req, db, apikey, whsec) {
   // github.com/stripe/stripe-node/blob/20db17f0802/testProjects/cloudflare-pages/functions/index.js#L7
   // github.com/stripe-samples/stripe-node-cloudflare-worker-template/commit/1cea05be7fee
   const stripe = new Stripe(
-    apikey /*{ httpClient: Stripe.createFetchHttpClient() }*/
+    apikey /*{ httpClient: Stripe.createFetchHttpClient() }*/,
   );
 
   // ref: github.com/stripe-samples/stripe-node-cloudflare-worker-template/blob/1cea05be7/src/index.js
@@ -92,7 +94,7 @@ export async function stripeCheckout(req, db, apikey, whsec) {
       whsig,
       whsec,
       undefined,
-      stripeCryptoProvider
+      stripeCryptoProvider,
     );
 
     // TODO: handle refunds: reddit.com/r/stripe/comments/u2ndf0/how_to_listen_to_refunded_event_webhook
@@ -127,9 +129,7 @@ export async function stripeCheckout(req, db, apikey, whsec) {
     console.error("stripe: err", ignore);
   }
 
-  return new Response(JSON.stringify({ received: processok(out) }), {
-    headers: { "Content-type": "application/json" },
-  });
+  return r200j(new ResStripeWebhook({ received: processok(out) }).json);
 }
 
 /**
@@ -203,7 +203,7 @@ async function fulfillOrder(stripe, session, db) {
       sess_stat,
       pay_stat,
       prodid,
-      stx
+      stx,
     );
     if (info.success) {
       console.debug("ff: db save", info, ref, sid, prodid, sess_stat, pay_stat);
@@ -249,7 +249,7 @@ async function insertPayee(db, ref, sid, sess_stat, pay_stat, prodid, stx) {
       // caveat: upsert v insert/replace: stackoverflow.com/a/4330694
       // Payees (sid, ref, sess_stat, pay_stat, prod TEXT, tx JSON, ts TIMESTAMP);
       // sid is the stripe session id as primary key
-      `INSERT OR REPLACE INTO Payees (id, ref, sess_stat, pay_stat, prod, tx) values (?1, ?2, ?3, ?4, ?5, ?6)`
+      `INSERT OR REPLACE INTO Payees (id, ref, sess_stat, pay_stat, prod, tx) values (?1, ?2, ?3, ?4, ?5, ?6)`,
     )
     .bind(sid, ref, sess_stat, pay_stat, prodid, stx)
     .run();
@@ -477,7 +477,7 @@ async function upsertTokenCount(sig, db) {
   // Issues (ref TEXT PRIMARY KEY, n INT DEFAULT 1, ts DateTime DEFAULT CURRENT_TIMESTAMP)
   const rec = await db
     .prepare(
-      `INSERT INTO Issues (ref) values (?1) ON CONFLICT(ref) DO UPDATE SET n = Issues.n + 1`
+      `INSERT INTO Issues (ref) values (?1) ON CONFLICT(ref) DO UPDATE SET n = Issues.n + 1`,
     )
     .bind(sighex)
     .run();

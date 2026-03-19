@@ -16,6 +16,7 @@ import {
   safeEq,
   str2byte,
 } from "./buf.js";
+import { ResClientReg, ResDevice, ResDeviceList } from "./d.js";
 import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
@@ -182,7 +183,7 @@ export async function registerClient(env, req) {
     }
 
     log.d(ray, "registerClient updated cid:", existingCid, "test?", test);
-    return r200j({ cid: existingCid });
+    return r200j(new ResClientReg({ cid: existingCid }).json);
   }
 
   try {
@@ -230,7 +231,7 @@ export async function registerClient(env, req) {
       return r500(`device insert failed: ${ray}`);
     }
     log.d(ray, "registerClient cid:", cid, "did:", did, "test?", test);
-    return r200j({ cid: cid, did: did });
+    return r200j(new ResClientReg({ cid, did }).json);
   } catch (e) {
     log.e(ray, "registerClient error:", e);
     return r500(`db error: ${ray}: ${e.message}`);
@@ -393,7 +394,7 @@ export async function registerDevice(env, req) {
     }
 
     log.d(ray, "registerDevice new did:", newdid, "for c:", cid, "test?", test);
-    return r200j({ cid: cid, did: newdid });
+    return r200j(new ResClientReg({ cid, did: newdid }).json);
   } catch (e) {
     // ex: Error: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
     log.e(ray, "registerDevice error:", e);
@@ -427,7 +428,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
     return r404(`no devices found: ${ray}`);
   }
 
-  const json = [];
+  const devices = [];
   for (const entry of out.results) {
     const did = entry.did || "";
     const obs = !emptyString(did) ? await obfuscateHex(did) : "";
@@ -436,15 +437,11 @@ export async function retrieveDevices(env, cid, test, ray = "") {
       entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
     const mtime =
       entry.mtime != null ? new Date(entry.mtime).toISOString() : null;
-    // TODO: define json as class
-    json.push({
-      did: obs,
-      meta: meta,
-      created: ctime,
-      updated: mtime,
-    });
+    devices.push(
+      new ResDevice({ did: obs, meta, created: ctime, updated: mtime }),
+    );
   }
-  return r200j({ devices: json, test: test });
+  return r200j(new ResDeviceList({ devices, test }).json);
 }
 
 /**

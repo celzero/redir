@@ -318,3 +318,212 @@ export class PlayOk {
     return out;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Generic REST response classes
+// ---------------------------------------------------------------------------
+
+export class ResOK {
+  /**
+   * @param {string|object} payload - success message string or object with message field
+   */
+  constructor(payload = {}) {
+    if (typeof payload === "string") payload = { message: payload };
+    /** @type {string|undefined} - success message */
+    this.message = payload.message;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    const out = {};
+    if (this.message != null) out.message = this.message;
+    if (this.ray) out.ray = this.ray;
+    return out;
+  }
+}
+
+export class ResErr {
+  /**
+   * @param {string|object} payload - error message string or object with error/message field
+   */
+  constructor(payload = {}) {
+    if (typeof payload === "string") payload = { error: payload };
+    /** @type {string} - error message */
+    this.error = payload.error || payload.message || "";
+    /** @type {string|undefined} - error details, if any */
+    this.details = payload.details;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    const out = {};
+    if (this.error) out.error = this.error;
+    if (this.details != null) out.details = this.details;
+    if (this.ray) out.ray = this.ray;
+    return out;
+  }
+}
+
+export class ResClientReg {
+  /**
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {string} - client identifier (hex) */
+    this.cid = payload.cid || "";
+    /** @type {string|undefined} - device identifier (hex), omitted on client-only re-registration */
+    this.did = payload.did;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    const out = {};
+    if (this.cid) out.cid = this.cid;
+    if (this.did != null) out.did = this.did;
+    if (this.ray) out.ray = this.ray;
+    return out;
+  }
+}
+
+export class ResDevice {
+  /**
+   * Sub-object representing a single registered device; used inside ResDeviceList.
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {string} - obfuscated device identifier */
+    this.did = payload.did || "";
+    /** @type {object|null} - device metadata */
+    this.meta = payload.meta ?? null;
+    /** @type {string|null} - creation time as ISO 8601 string */
+    this.created = payload.created ?? null;
+    /** @type {string|null} - last update time as ISO 8601 string */
+    this.updated = payload.updated ?? null;
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    return {
+      did: this.did,
+      meta: this.meta,
+      created: this.created,
+      updated: this.updated,
+    };
+  }
+}
+
+export class ResDeviceList {
+  /**
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {ResDevice[]} - list of registered devices */
+    this.devices = payload.devices || [];
+    /** @type {boolean} - test mode flag */
+    this.test = payload.test ?? false;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    const ds = this.devices.map((d) => (d instanceof ResDevice ? d.json : d));
+    const out = { devices: ds, test: this.test };
+    if (this.ray) out.ray = this.ray;
+    return out;
+  }
+}
+
+export class ResProxy {
+  /**
+   * Response for the proxy-metadata endpoint (p/<vcode>[/wa]).
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {string} - client version code */
+    this.vcode = payload.vcode || "";
+    /** @type {string} - minimum supported version code */
+    this.minvcode = payload.minvcode || "";
+    /** @type {boolean} - whether paid features are available for this client */
+    this.cansell = payload.cansell ?? false;
+    /** @type {string} - client IP address */
+    this.ip = payload.ip || "";
+    /** @type {string} - client country code (ISO 3166-1 alpha-2) */
+    this.country = payload.country || "";
+    /** @type {string} - AS organization */
+    this.asorg = payload.asorg || "";
+    /** @type {string} - client city */
+    this.city = payload.city || "";
+    /** @type {string} - Cloudflare colo */
+    this.colo = payload.colo || "";
+    /** @type {string} - client region */
+    this.region = payload.region || "";
+    /** @type {string} - client postal code */
+    this.postalcode = payload.postalcode || "";
+    /** @type {string[]} - resolved street addresses (geolocation) */
+    this.addrs = payload.addrs || [];
+    /** @type {string} - service status */
+    this.status = payload.status || "";
+    /** @type {object|undefined} - RSA-PSS public key (JWK), undefined when unavailable */
+    this.pubkey = payload.pubkey;
+    /** @type {string|undefined} - CF Ray ID */
+    this.ray = payload.ray || rayId();
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    const out = {
+      vcode: this.vcode,
+      minvcode: this.minvcode,
+      cansell: this.cansell,
+      ip: this.ip,
+      country: this.country,
+      asorg: this.asorg,
+      city: this.city,
+      colo: this.colo,
+      region: this.region,
+      postalcode: this.postalcode,
+      addrs: this.addrs,
+      status: this.status,
+    };
+    if (this.pubkey !== undefined) out.pubkey = this.pubkey;
+    if (this.ray) out.ray = this.ray;
+    return out;
+  }
+}
+
+export class ResStripeWebhook {
+  /**
+   * Acknowledgement response for Stripe webhook events.
+   * @param {object} payload
+   */
+  constructor(payload = {}) {
+    /** @type {boolean} - true when the event was processed (or skipped); false on retry-needed */
+    this.received = payload.received ?? false;
+  }
+
+  /**
+   * @returns {object}
+   */
+  get json() {
+    return { received: this.received };
+  }
+}
