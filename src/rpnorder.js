@@ -9,7 +9,7 @@
 import Stripe from "stripe";
 import { buf2hex, bytcmp, emptyBuf, hex2buf } from "./buf.js";
 import { ResStripeWebhook } from "./d.js";
-import { r200j, r400, r401 } from "./req.js";
+import { r200j, r400err, r401err } from "./req.js";
 import {
   errTokenStatus,
   thirtyDaysMs,
@@ -273,12 +273,12 @@ export async function generateToken(req, psk, db) {
   const msgsighashhthex = await req.text();
   if (!msgsighashhthex) {
     console.warn("gt: missing txt; no-op");
-    return r400("missing msg:sig:hash:htok? " + 0);
+    return r400err("missing msg:sig:hash:htok? " + 0);
   }
   const split = msgsighashhthex.split(adelim);
   if (split.length !== 4) {
     console.warn("gt: missing split; no-op");
-    return r400("missing msg:sig:hash:htok? " + split.length);
+    return r400err("missing msg:sig:hash:htok? " + split.length);
   }
 
   const msg = hex2buf(split[0]); // unblinded msg
@@ -287,20 +287,20 @@ export async function generateToken(req, psk, db) {
   const ht = hex2buf(split[3]); // hashed(data-token) to be signed
   if (emptyBuf(msg) || emptyBuf(sig) || emptyBuf(hash) || emptyBuf(ht)) {
     console.warn("gt: missing msg/sig/hash/htok; no-op");
-    return r400("missing msg:sig:hash:htok? " + split.length);
+    return r400err("missing msg:sig:hash:htok? " + split.length);
   }
   const sighash1 = await sha256(sig);
   const eqsig = bytcmp(sighash1, sighash0);
   if (!eqsig) {
     console.warn("gt: sig (hash) mismatch; no-op");
-    return r400("sig mismatch");
+    return r400err("sig mismatch");
   }
 
   // todo: bind tokenStatusFor and upsertTokenCount in a transaction
   const tokstat = await tokenStatusFor(sighash1, db);
   if (!tokstat.ok) {
     console.warn("gt: stat err", tokstat.err);
-    return r400(tokstat.err);
+    return r400err(tokstat.err);
   }
 
   const expiryMs = twentyFiveHoursMs;
@@ -333,7 +333,7 @@ export async function finalizeOrder(req, psk, pubmods, db) {
   const blindMsgHex = await req.text();
   if (!blindMsgHex) {
     console.warn("fo: missing txt; no-op");
-    return r400("missing blindmsg");
+    return r400err("missing blindmsg");
   }
   const blindMsg = hex2buf(blindMsgHex);
 
@@ -356,7 +356,7 @@ export async function finalizeOrder(req, psk, pubmods, db) {
       },
     });
   } else {
-    return r401(paystatus);
+    return r401err(paystatus);
   }
 }
 

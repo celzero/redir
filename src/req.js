@@ -128,9 +128,21 @@ export async function consumejson(r) {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// HTTP response helpers
-// ---------------------------------------------------------------------------
+/** @param {string} msg @returns {Response} */
+function r400txt(msg) {
+  return new Response(msg, {
+    status: 400,
+    headers: { "Content-Type": "text/plain" },
+  });
+}
+
+/** @param {string} msg @returns {Response} */
+function r500txt(msg) {
+  return new Response(msg, {
+    status: 500,
+    headers: { "Content-Type": "text/plain" },
+  });
+}
 
 /** 200 OK with JSON body */
 export function r200j(j) {
@@ -176,7 +188,7 @@ export function r204token(token) {
 
 /** 302 Redirect */
 export function r302(where) {
-  if (!where) return r500("missing redirect target");
+  if (!where) return r500txt("missing redirect target");
   return new Response("Redirecting...", {
     status: 302,
     headers: { location: where },
@@ -184,7 +196,7 @@ export function r302(where) {
 }
 
 /** 400 Bad Request with JSON body */
-export function r400(w) {
+export function r400err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
@@ -192,33 +204,23 @@ export function r400(w) {
 }
 
 /** 400 Bad Request with JSON body, wrapping payload in PlayErr */
-export function r400j(j) {
+export function r400play(j) {
   const h = { "content-type": "application/json" };
   if (typeof j === "string") j = { error: j };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
   return new Response(JSON.stringify(payload), { status: 400, headers: h });
 }
 
-/** 400 Bad Request with JSON body (ray id auto-included via ResErr) */
-export function r400t(u) {
-  return r400(u);
-}
-
 /** 401 Unauthorized with JSON body */
-export function r401(w) {
+export function r401err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
   return new Response(JSON.stringify(payload), { status: 401, headers: h });
 }
 
-/** 401 Unauthorized with JSON body (ray id auto-included via ResErr) */
-export function r401t(u) {
-  return r401(u);
-}
-
 /** 404 Not Found with JSON body */
-export function r404(w) {
+export function r404err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
@@ -226,7 +228,7 @@ export function r404(w) {
 }
 
 /** 405 Method Not Allowed with JSON body */
-export function r405(w) {
+export function r405err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
@@ -234,7 +236,7 @@ export function r405(w) {
 }
 
 /** 405 Method Not Allowed with JSON body, wrapping payload in PlayErr */
-export function r405j(j) {
+export function r405play(j) {
   const h = { "content-type": "application/json" };
   if (typeof j === "string") j = { error: j };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
@@ -242,15 +244,15 @@ export function r405j(j) {
 }
 
 /** 409 Conflict with JSON body, wrapping payload in PlayErr */
-export function r409j(j) {
+export function r409play(j) {
   const h = { "content-type": "application/json" };
   if (typeof j === "string") j = { error: j };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
   return new Response(JSON.stringify(payload), { status: 409, headers: h });
 }
 
-/** 421 Misdirected Request with JSON body (ray id auto-included via ResErr) */
-export function r421t(u) {
+/** 421 Misdirected Request with JSON body */
+export function r421err(u) {
   const h = { "content-type": "application/json" };
   if (typeof u === "string") u = { error: u };
   const payload = u instanceof ResErr ? u.json : new ResErr(u).json;
@@ -258,7 +260,7 @@ export function r421t(u) {
 }
 
 /** 429 Too Many Requests with JSON body */
-export function r429(w) {
+export function r429err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
@@ -266,7 +268,7 @@ export function r429(w) {
 }
 
 /** 500 Internal Server Error with JSON body */
-export function r500(w) {
+export function r500err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
@@ -274,20 +276,15 @@ export function r500(w) {
 }
 
 /** 500 Internal Server Error with JSON body, wrapping payload in PlayErr */
-export function r500j(j) {
+export function r500play(j) {
   const h = { "content-type": "application/json" };
   if (typeof j === "string") j = { error: j };
   const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
   return new Response(JSON.stringify(payload), { status: 500, headers: h });
 }
 
-/** 500 Internal Server Error with JSON body (ray id auto-included via ResErr) */
-export function r500t(u) {
-  return r500(u);
-}
-
 /** 503 Service Unavailable with JSON body */
-export function r503(w) {
+export function r503err(w) {
   const h = { "content-type": "application/json" };
   if (typeof w === "string") w = { error: w };
   const payload = w instanceof ResErr ? w.json : new ResErr(w).json;

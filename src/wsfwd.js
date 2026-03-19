@@ -6,7 +6,13 @@ import { als, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
-import { consumejson, didTokenHeader, r400t, r401t, r421t } from "./req.js";
+import {
+  consumejson,
+  didTokenHeader,
+  r400err,
+  r401err,
+  r421err,
+} from "./req.js";
 import { WSUser } from "./wsent.js";
 
 const log = new glog.Log("wsfwd");
@@ -39,15 +45,15 @@ export async function forwardToWs(env, r) {
 
     if (!allowlisted(u)) {
       log.w("forwardToWs: not allowlisted", u.pathname);
-      return r421t("wsf: lost");
+      return r421err("wsf: lost");
     }
 
     const [cid, token, enctoken, needsAuth, mustEncrypt] =
       await bearerAndCidForWs(env, r);
     if (needsAuth) {
-      if (emptyString(token)) return r401t("wsf: needs cid or auth");
+      if (emptyString(token)) return r401err("wsf: needs cid or auth");
       if (mustEncrypt && emptyString(cid))
-        return r401t("wsf: needs cid or auth");
+        return r401err("wsf: needs cid or auth");
     }
 
     const [typ, sensitive, test] = reqType(u);
@@ -115,7 +121,7 @@ export async function forwardToWs(env, r) {
       );
     } catch (err) {
       log.e("forwardToWs: failed", err);
-      return r400t(`wsf: remote: ${err.message}`);
+      return r400err(`wsf: remote: ${err.message}`);
     }
   });
 }

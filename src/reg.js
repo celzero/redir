@@ -26,11 +26,11 @@ import {
   r200j,
   r204,
   r204token,
-  r400,
-  r401,
-  r404,
-  r405,
-  r500,
+  r400err as r400,
+  r401err as r401,
+  r404err as r404,
+  r405err as r405,
+  r500err as r500,
   rayid,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
@@ -140,7 +140,8 @@ export async function registerClient(env, req) {
     if (cachedCidSig === signotok) {
       log.w(ray, "registerClient: cid sig cached invalid", existingCid);
       return r401(`cid verification failed: ${ray}`);
-    } else if (cachedCidSig !== sigok) {
+    }
+    if (cachedCidSig === false) {
       // cache miss: run hmac and store result
       try {
         const k = await hmacclientkey(env, rand16, test);
@@ -645,23 +646,26 @@ export async function authorizeDevice(env, req) {
     return r401(`${ray} missing/invalid device id`);
   }
 
+  const incomingToken = req.headers.get(didTokenHeader);
+
   // ultra-fast path: both sigs cached valid + matching token in tokenCache →
   // authorized with no key derivation or hmacsign at all
-  if (cachedCidSig === sigok && cachedDidSig === sigok) {
-    const incomingToken = req.headers.get(didTokenHeader);
-    if (!emptyString(incomingToken)) {
-      const sep = incomingToken.lastIndexOf(":");
-      if (sep >= 0) {
-        const claimedSigHex = incomingToken.slice(0, sep);
-        const claimedExpiry = parseInt(incomingToken.slice(sep + 1), 10);
-        if (!isNaN(claimedExpiry) && claimedExpiry > unixsec()) {
-          const cachedTokSig = didtokencache.get(
-            didtokkey(cid, did, claimedExpiry),
-          );
-          if (cachedTokSig === claimedSigHex) {
-            log.d(ray, "authorizeDevice: sig+token cached ok", cid, ":", did);
-            return r204();
-          }
+  if (
+    !emptyString(incomingToken) &&
+    cachedCidSig === sigok &&
+    cachedDidSig === sigok
+  ) {
+    const sep = incomingToken.lastIndexOf(":");
+    if (sep >= 0) {
+      const claimedSigHex = incomingToken.slice(0, sep);
+      const claimedExpiry = parseInt(incomingToken.slice(sep + 1), 10);
+      if (!isNaN(claimedExpiry) && claimedExpiry > unixsec()) {
+        const cachedTokSig = didtokencache.get(
+          didtokkey(cid, did, claimedExpiry),
+        );
+        if (cachedTokSig === claimedSigHex) {
+          log.d(ray, "authorizeDevice: sig+token cached ok", cid, ":", did);
+          return r204();
         }
       }
     }
@@ -712,17 +716,16 @@ export async function authorizeDevice(env, req) {
             log.w(ray, "authorizeDevice: TEST bypass did invalid");
             return r204();
           }
-          return r401(`${ray} missing/invalid device id`);
+          return r401(`missing/invalid device id`);
         }
       }
     } catch (e) {
       log.e(ray, "authorizeDevice: sig error:", e);
-      return r500(`${ray} err: ${e.message}`);
+      return r500(`${e.message}`);
     }
   }
 
   // token fast path: skip the database if the client presents a valid did token
-  const incomingToken = req.headers.get(didTokenHeader);
   if (!emptyString(incomingToken)) {
     const valid = await verifyDidToken(k, cid, did, incomingToken);
     if (valid) {

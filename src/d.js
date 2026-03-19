@@ -319,10 +319,6 @@ export class PlayOk {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Generic REST response classes
-// ---------------------------------------------------------------------------
-
 export class ResOK {
   /**
    * @param {string|object} payload - success message string or object with message field

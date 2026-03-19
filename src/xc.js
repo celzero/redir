@@ -12,7 +12,7 @@ import {
   sha512,
 } from "./hmac.js";
 import * as glog from "./log.js";
-import { r400t, r500t } from "./req.js";
+import { r400txt, r500txt } from "./req.js";
 import { crand, encryptAesGcm } from "./webcrypto.js";
 
 const encctx = bin.str2byte("encryptcrossservice");
@@ -27,19 +27,19 @@ const log = new glog.Log("xc");
  */
 export async function certfile(env, req) {
   if (env == null || req == null || req.method != "GET") {
-    return r400t("args missing");
+    return r400txt("args missing");
   }
   return als.run(new ExecCtx(env, env.TEST), async () => {
     const part0 = env.FLY_TLS_CERTKEY0;
     const part1 = env.FLY_TLS_CERTKEY1;
     if (bin.emptyString(part0) || bin.emptyString(part1)) {
-      return r400t("xc: cert parts not found");
+      return r400txt("xc: cert parts not found");
     }
     try {
       const crt = part0 + part1;
       const enccrthex = await encryptText(env, req, crt);
       if (bin.emptyString(enccrthex)) {
-        return r500t("xc: could not encrypt cert");
+        return r500txt("xc: could not encrypt cert");
       }
       return new Response(enccrthex, {
         headers: {
@@ -49,7 +49,7 @@ export async function certfile(env, req) {
       });
     } catch (err) {
       log.e("certfile: failed to encrypt cert", err);
-      return r500t(`xc: server error ${err.message}`);
+      return r500txt(`xc: server error ${err.message}`);
     }
   });
 }

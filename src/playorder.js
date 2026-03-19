@@ -21,10 +21,10 @@ import {
   consumejson,
   r200play,
   r200t,
-  r400j,
-  r405j,
-  r409j,
-  r500j,
+  r400play as r400j,
+  r405play as r405j,
+  r409play as r409j,
+  r500play as r500j,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
