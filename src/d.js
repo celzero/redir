@@ -37,14 +37,21 @@ export class OuterCtx extends ExecCtx {
   /**
    * @param {any} env - Worker environment
    * @param {Request} req - Incoming request object
-   * @param {boolean} test - Whether this is a test call
    */
-  constructor(env, req, test = false) {
+  constructor(env, req) {
+    const u = new URL(req.url);
+    const test = u.searchParams.has("test");
+
     super(env, test);
+
     /**
      * @type {Request} - Incoming request.
      */
     this.req = req;
+    /**
+     * @type {URL} - Incoming URL.
+     */
+    this.url = u;
   }
 }
 
@@ -139,13 +146,13 @@ export function hasctx() {
  * @returns {boolean} - Whether this execution is in test domain.
  */
 export function testmode() {
-  /** @type {ExecCtx} */
-  const cfg = als.getStore();
-  if (cfg != null) return cfg.test;
-
   /** @type {OuterCtx} */
   const ocfg = ols.getStore();
   if (ocfg != null) return ocfg.test;
+
+  /** @type {ExecCtx} */
+  const cfg = als.getStore();
+  if (cfg != null) return cfg.test;
 
   return false;
 }

@@ -2,7 +2,6 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import { emptyString } from "./buf.js";
-import { als, ExecCtx } from "./d.js";
 import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
@@ -40,90 +39,88 @@ const wsassetstestquery2 = "wstestassets";
  * @returns {Promise<Response>}
  */
 export async function forwardToWs(env, r) {
-  return als.run(new ExecCtx(env, env.TEST), async () => {
-    const u = new URL(r.url);
+  const u = new URL(r.url);
 
-    if (!allowlisted(u)) {
-      log.w("forwardToWs: not allowlisted", u.pathname);
-      return r421err("wsf: lost");
+  if (!allowlisted(u)) {
+    log.w("forwardToWs: not allowlisted", u.pathname);
+    return r421err("wsf: lost");
+  }
+
+  const [cid, token, enctoken, needsAuth, mustEncrypt] =
+    await bearerAndCidForWs(env, r);
+  if (needsAuth) {
+    if (emptyString(token)) return r401err("wsf: needs cid or auth");
+    if (mustEncrypt && emptyString(cid))
+      return r401err("wsf: needs cid or auth");
+  }
+
+  const [typ, sensitive, test] = reqType(u);
+  const cloned = new Request(r);
+
+  withWsHostname(u, typ);
+  tryAddAuthHeader(cloned, token);
+  removeHeader(cloned, didTokenHeader);
+  removeCmds(u);
+
+  if (test) {
+    log.d(u.href, typ, token, enctoken, "s/e:", sensitive, mustEncrypt);
+  } else {
+    log.d(u.href, typ, enctoken, "s/e:", sensitive, mustEncrypt);
+  }
+
+  if (!sensitive) {
+    // pipe non-sensitive as-is
+    return fetch(u, cloned);
+  }
+
+  try {
+    const r = await fetch(u, cloned);
+    if (!r.ok) {
+      log.w(`get session: ${r.status}`);
+      return r;
     }
-
-    const [cid, token, enctoken, needsAuth, mustEncrypt] =
-      await bearerAndCidForWs(env, r);
-    if (needsAuth) {
-      if (emptyString(token)) return r401err("wsf: needs cid or auth");
-      if (mustEncrypt && emptyString(cid))
-        return r401err("wsf: needs cid or auth");
+    // j = { data: { ... }, metadata: { ... } }
+    const j = await consumejson(r);
+    if (j == null || j.data == null) {
+      throw new Error(`wsf: empty/unexpected response (${r.status})`);
     }
+    const wsuser = new WSUser(j.data);
+    const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
+    const newSensitiveData =
+      hasSensitiveData && wsuser.sessionAuthHash != token;
 
-    const [typ, sensitive, test] = reqType(u);
-    const cloned = new Request(r);
-
-    withWsHostname(u, typ);
-    tryAddAuthHeader(cloned, token);
-    removeHeader(cloned, didTokenHeader);
-    removeCmds(u);
-
-    if (test) {
-      log.d(u.href, typ, token, enctoken, "s/e:", sensitive, mustEncrypt);
+    log.d(
+      `forwardToWs: enc/sen/diff? ${mustEncrypt} ${hasSensitiveData} ${newSensitiveData}`,
+    );
+    if (mustEncrypt && hasSensitiveData && newSensitiveData) {
+      const newenctokenhex = await encryptText(
+        env,
+        cid,
+        wsuser.sessionAuthHash,
+      );
+      if (emptyString(newenctokenhex)) {
+        throw new Error("wsf: encrypted new auth is empty");
+      }
+      wsuser.sessionAuthHash = newenctokenhex;
     } else {
-      log.d(u.href, typ, enctoken, "s/e:", sensitive, mustEncrypt);
+      wsuser.sessionAuthHash = enctoken; // retain original token
     }
 
-    if (!sensitive) {
-      // pipe non-sensitive as-is
-      return fetch(u, cloned);
-    }
-
-    try {
-      const r = await fetch(u, cloned);
-      if (!r.ok) {
-        log.w(`get session: ${r.status}`);
-        return r;
-      }
-      // j = { data: { ... }, metadata: { ... } }
-      const j = await consumejson(r);
-      if (j == null || j.data == null) {
-        throw new Error(`wsf: empty/unexpected response (${r.status})`);
-      }
-      const wsuser = new WSUser(j.data);
-      const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
-      const newSensitiveData =
-        hasSensitiveData && wsuser.sessionAuthHash != token;
-
-      log.d(
-        `forwardToWs: enc/sen/diff? ${mustEncrypt} ${hasSensitiveData} ${newSensitiveData}`,
-      );
-      if (mustEncrypt && hasSensitiveData && newSensitiveData) {
-        const newenctokenhex = await encryptText(
-          env,
-          cid,
-          wsuser.sessionAuthHash,
-        );
-        if (emptyString(newenctokenhex)) {
-          throw new Error("wsf: encrypted new auth is empty");
-        }
-        wsuser.sessionAuthHash = newenctokenhex;
-      } else {
-        wsuser.sessionAuthHash = enctoken; // retain original token
-      }
-
-      return new Response(
-        JSON.stringify({
-          data: wsuser.jsonable(),
-          metadata: j.metadata || {},
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
+    return new Response(
+      JSON.stringify({
+        data: wsuser.jsonable(),
+        metadata: j.metadata || {},
+      }),
+      {
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
-    } catch (err) {
-      log.e("forwardToWs: failed", err);
-      return r400err(`wsf: remote: ${err.message}`);
-    }
-  });
+      },
+    );
+  } catch (err) {
+    log.e("forwardToWs: failed", err);
+    return r400err(`wsf: remote: ${err.message}`);
+  }
 }
 
 /**

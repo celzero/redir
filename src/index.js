@@ -119,7 +119,7 @@ async function handle(r, env, ctx) {
       return r400(`x: unknown resource ${p2}`);
     } else if (p[1] === urldevice) {
       if ((await ac.admit3(env, r)) === false) {
-        return r429("g: rate limited");
+        return r429("d: rate limited");
       }
 
       // d; device registration
@@ -551,9 +551,6 @@ async function respond(promisedResponse, authr) {
 export default {
   async fetch(request, env, ctx) {
     env = d.wrap(env, request);
-    const test = new URL(request.url).searchParams.has("test");
-    return d.ols.run(new d.OuterCtx(env, request, test), () =>
-      handle(request, env, ctx),
-    );
+    return d.ols.run(new d.OuterCtx(env, request), handle, request, env, ctx);
   },
 };
