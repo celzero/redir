@@ -165,7 +165,7 @@ export async function registerClient(env, req) {
 
     const clientmeta = meta?.client ?? null;
     try {
-      const db = dbx.db2(env, test);
+      const db = dbx.db(env);
       const cout = await dbx.upsertClient(
         db,
         existingCid,
@@ -214,7 +214,7 @@ export async function registerClient(env, req) {
     const clientmeta = meta?.client ?? null;
     const devicemeta = meta?.device ?? null;
 
-    const db = dbx.db2(env, test);
+    const db = dbx.db(env);
     const cout = await dbx.insertClient(db, cid, clientmeta, clientkindint);
     if (cout == null || !cout.success) {
       return r500(`client insert failed: ${ray}`);
@@ -348,7 +348,7 @@ export async function registerDevice(env, req) {
   if (!emptyString(did)) {
     // both cid and did provided: upsert both tables (sigs already verified above)
     try {
-      const db = dbx.db2(env, test);
+      const db = dbx.db(env);
       const cout = await dbx.upsertClient(
         db,
         cid,
@@ -379,7 +379,7 @@ export async function registerDevice(env, req) {
     const didsig8 = new Uint8Array(didsigbuf).slice(0, 8);
     const newdid = buf2hex(cat(rand8, didsig8));
 
-    const db = dbx.db2(env, test);
+    const db = dbx.db(env);
     const cout = await dbx.upsertClient(
       db,
       cid,
@@ -417,7 +417,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
     return r400("invalid cid");
   }
 
-  const db = dbx.db2(env, test);
+  const db = dbx.db(env);
   const out = await dbx.getDevices(db, cid);
 
   log.d(ray, "get dev for c:", cid, "test?", test, "found", out.success);
@@ -475,7 +475,7 @@ export async function removeDevice(env, req) {
   }
 
   try {
-    const db = dbx.db2(env, test);
+    const db = dbx.db(env);
     // kind = -2 marks device as removed (soft-delete)
     const out = await dbx.modifyDeviceKind(db, cid, did, kindremoved);
     if (out == null || !out.success || out.meta?.rowswritten === 0) {
@@ -738,7 +738,7 @@ export async function authorizeDevice(env, req) {
   // fallback: verify via database
   let devres;
   try {
-    devres = await dbx.getDevice(dbx.db2(env, test), cid, did);
+    devres = await dbx.getDevice(dbx.db(env), cid, did);
   } catch (ex) {
     return r500(`db err: ${ex.message}`);
   }

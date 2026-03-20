@@ -40,15 +40,7 @@ export class OuterCtx extends ExecCtx {
    * @param {boolean} test - Whether this is a test call
    */
   constructor(env, req, test = false) {
-    /**
-     * @type {any} - The Workers environment.
-     */
-    this.env = env || null;
-    /**
-     * @type {boolean} - Whether this is a test call.
-     * @default false
-     */
-    this.test = test || false;
+    super(env, test);
     /**
      * @type {Request} - Incoming request.
      */

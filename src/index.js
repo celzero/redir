@@ -550,7 +550,10 @@ async function respond(promisedResponse, authr) {
 
 export default {
   async fetch(request, env, ctx) {
-    env = d.wrap(env, r);
-    return handle(request, env, ctx);
+    env = d.wrap(env, request);
+    const test = new URL(request.url).searchParams.has("test");
+    return d.ols.run(new d.OuterCtx(env, request, test), () =>
+      handle(request, env, ctx),
+    );
   },
 };
