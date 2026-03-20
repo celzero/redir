@@ -278,7 +278,6 @@ async function handle(r, env, ctx) {
           addrs: clientAddrs,
           status: svcs,
           pubkey: pk,
-          ray: ray,
         }).json,
       );
     } else {

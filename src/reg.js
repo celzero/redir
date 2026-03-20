@@ -138,7 +138,7 @@ export async function registerClient(env, req) {
     const cidkey = sigkey1(rand16, test);
     const cachedCidSig = sigcache.get(cidkey);
     if (cachedCidSig === signotok) {
-      log.w(ray, "registerClient: cid sig cached invalid", existingCid);
+      log.w("registerClient: cid sig cached invalid", existingCid);
       return r401(`cid verification failed: ${ray}`);
     }
     if (cachedCidSig === false) {
@@ -154,11 +154,11 @@ export async function registerClient(env, req) {
         const valid = safeEq(cidsig16claimed, cidsig16expected);
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
-          log.w(ray, "registerClient: cid invalid", existingCid);
+          log.w("registerClient: cid invalid", existingCid);
           return r401(`cid verification failed: ${ray}`);
         }
       } catch (e) {
-        log.e(ray, "registerClient: cid verify error:", e);
+        log.e("registerClient: cid verify error:", e);
         return r500(`${ray} error: ${e.message}`);
       }
     }
@@ -173,17 +173,15 @@ export async function registerClient(env, req) {
         clientkindint,
       );
       if (cout == null || !cout.success) {
-        log.w(
-          `${ray} registerClient upsert failed for ${existingCid}, test? ${test}`,
-        );
+        log.w(`registerClient upsert failed for ${existingCid}, test? ${test}`);
         return r500(`${ray} could not re-register`);
       }
     } catch (e) {
-      log.e(ray, "registerClient upsert error:", e);
+      log.e("registerClient upsert error:", e);
       return r500(`${ray} db err: ${e.message}`);
     }
 
-    log.d(ray, "registerClient updated cid:", existingCid, "test?", test);
+    log.d("registerClient updated cid:", existingCid, "test?", test);
     return r200j(new ResClientReg({ cid: existingCid }).json);
   }
 
@@ -231,10 +229,10 @@ export async function registerClient(env, req) {
       // to avoid orphaned client record
       return r500(`device insert failed: ${ray}`);
     }
-    log.d(ray, "registerClient cid:", cid, "did:", did, "test?", test);
+    log.d("registerClient cid:", cid, "did:", did, "test?", test);
     return r200j(new ResClientReg({ cid, did }).json);
   } catch (e) {
-    log.e(ray, "registerClient error:", e);
+    log.e("registerClient error:", e);
     return r500(`db error: ${ray}: ${e.message}`);
   }
 }
@@ -301,7 +299,7 @@ export async function registerDevice(env, req) {
     k = await hmacclientkey(env, rand16, test);
     if (!k) return r500(`k unavailable: ${ray}`);
   } catch (e) {
-    log.e(ray, "registerDevice: key error:", e);
+    log.e("registerDevice: key error:", e);
     return r500(`${ray} error: ${e.message}`);
   }
 
@@ -322,7 +320,7 @@ export async function registerDevice(env, req) {
         const valid = safeEq(cidsig16claimed, cidsig16expected);
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
-          log.w(ray, "registerDevice: cid invalid", cid);
+          log.w("registerDevice: cid invalid", cid);
           return r401(`cid verification failed: ${ray}`);
         }
       }
@@ -331,12 +329,12 @@ export async function registerDevice(env, req) {
         const valid = safeEq(didsig8claimed, didsig8expected);
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
-          log.w(ray, "registerDevice: did invalid", did);
+          log.w("registerDevice: did invalid", did);
           return r401(`did verification failed: ${ray}`);
         }
       }
     } catch (e) {
-      log.e(ray, "registerDevice: sig verify error:", e);
+      log.e("registerDevice: sig verify error:", e);
       return r500(`${ray} error: ${e.message}`);
     }
   }
@@ -363,11 +361,11 @@ export async function registerDevice(env, req) {
         return r500(`device upsert failed: ${ray}`);
       }
     } catch (e) {
-      log.e(ray, "registerDevice upsert error:", e);
+      log.e("registerDevice upsert error:", e);
       return r500(`db error: ${ray}: ${e.message}`);
     }
 
-    log.d(ray, "registerDevice updated cid:", cid, "did:", did, "test?", test);
+    log.d("registerDevice updated cid:", cid, "did:", did, "test?", test);
     return retrieveDevices(env, cid, test, ray);
   }
 
@@ -394,11 +392,11 @@ export async function registerDevice(env, req) {
       return r500(`device insert failed: ${ray}`);
     }
 
-    log.d(ray, "registerDevice new did:", newdid, "for c:", cid, "test?", test);
+    log.d("registerDevice new did:", newdid, "for c:", cid, "test?", test);
     return r200j(new ResClientReg({ cid, did: newdid }).json);
   } catch (e) {
     // ex: Error: D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT
-    log.e(ray, "registerDevice error:", e);
+    log.e("registerDevice error:", e);
     return r500(`db error: ${ray}: ${e.message}`);
   }
 }
@@ -420,7 +418,7 @@ export async function retrieveDevices(env, cid, test, ray = "") {
   const db = dbx.db(env);
   const out = await dbx.getDevices(db, cid);
 
-  log.d(ray, "get dev for c:", cid, "test?", test, "found", out.success);
+  log.d("get dev for c:", cid, "test?", test, "found", out.success);
 
   if (out == null || !out.success) {
     return r500(`database error: ${ray}`);
@@ -479,17 +477,15 @@ export async function removeDevice(env, req) {
     // kind = -2 marks device as removed (soft-delete)
     const out = await dbx.modifyDeviceKind(db, cid, did, kindremoved);
     if (out == null || !out.success || out.meta?.rowswritten === 0) {
-      log.w(
-        `${ray} removeDevice: no device found for c:${cid} d:${did} test?${test}; out: ${JSON.stringify(out)}`,
-      );
+      log.w(`removeDevice: no device found for c:${cid} d:${did} test?${test}; out: ${JSON.stringify(out)}`);
       return r404(`device not found: ${ray}`);
     }
   } catch (e) {
-    log.e(ray, "removeDevice error:", e);
+    log.e("removeDevice error:", e);
     return r500(`db error: ${ray}: ${e.message}`);
   }
 
-  log.d(ray, "remove", did, "for c:", cid, "test?", test);
+  log.d("remove", did, "for c:", cid, "test?", test);
   return r204(); // no content
 }
 
@@ -630,17 +626,17 @@ export async function authorizeDevice(env, req) {
   const cachedDidSig = sigcache.get(didkey);
 
   if (cachedCidSig === signotok) {
-    log.w(ray, "authorizeDevice: cid sig cached invalid", cid);
+    log.w("authorizeDevice: cid sig cached invalid", cid);
     if (allowAuthorizationBypassForTest && test) {
-      log.w(ray, "authorizeDevice: TEST bypass cid sig invalid");
+      log.w("authorizeDevice: TEST bypass cid sig invalid");
       return r204();
     }
     return r401("missing/invalid client id");
   }
   if (cachedDidSig === signotok) {
-    log.w(ray, "authorizeDevice: did sig cached invalid", did);
+    log.w("authorizeDevice: did sig cached invalid", did);
     if (allowAuthorizationBypassForTest && test) {
-      log.w(ray, "authorizeDevice: TEST bypass did sig invalid");
+      log.w("authorizeDevice: TEST bypass did sig invalid");
       return r204();
     }
     return r401(`${ray} missing/invalid device id`);
@@ -664,7 +660,7 @@ export async function authorizeDevice(env, req) {
           didtokkey(cid, did, claimedExpiry),
         );
         if (cachedTokSig === claimedSigHex) {
-          log.d(ray, "authorizeDevice: sig+token cached ok", cid, ":", did);
+          log.d("authorizeDevice: sig+token cached ok", cid, ":", did);
           return r204();
         }
       }
@@ -677,7 +673,7 @@ export async function authorizeDevice(env, req) {
     k = await hmacclientkey(env, rand16, test);
     if (!k) return r500(`k unavailable: ${ray}`);
   } catch (e) {
-    log.e(ray, "authorizeDevice: key error:", e);
+    log.e("authorizeDevice: key error:", e);
     return r500(`${ray} err: ${e.message}`);
   }
 
@@ -698,9 +694,9 @@ export async function authorizeDevice(env, req) {
         const valid = safeEq(cidsig16claimed, cidsig16expected);
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
-          log.w(ray, "authorizeDevice: cid invalid", cid);
+          log.w("authorizeDevice: cid invalid", cid);
           if (allowAuthorizationBypassForTest && test) {
-            log.w(ray, "authorizeDevice: TEST bypass cid invalid");
+            log.w("authorizeDevice: TEST bypass cid invalid");
             return r204();
           }
           return r401("missing/invalid client id");
@@ -711,16 +707,16 @@ export async function authorizeDevice(env, req) {
         const valid = safeEq(didsig8claimed, didsig8expected);
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
-          log.w(ray, "authorizeDevice: did invalid", did);
+          log.w("authorizeDevice: did invalid", did);
           if (allowAuthorizationBypassForTest && test) {
-            log.w(ray, "authorizeDevice: TEST bypass did invalid");
+            log.w("authorizeDevice: TEST bypass did invalid");
             return r204();
           }
           return r401(`missing/invalid device id`);
         }
       }
     } catch (e) {
-      log.e(ray, "authorizeDevice: sig error:", e);
+      log.e("authorizeDevice: sig error:", e);
       return r500(`${e.message}`);
     }
   }
@@ -729,10 +725,10 @@ export async function authorizeDevice(env, req) {
   if (!emptyString(incomingToken)) {
     const valid = await verifyDidToken(k, cid, did, incomingToken);
     if (valid) {
-      log.d(ray, "authorizeDevice: token ok for", cid, ":", did);
+      log.d("authorizeDevice: token ok for", cid, ":", did);
       return r204(); // authorized; existing token still valid, no re-issue needed
     }
-    log.d(ray, "authorizeDevice: token invalid/expired", cid, ":", did);
+    log.d("authorizeDevice: token invalid/expired", cid, ":", did);
   }
 
   // fallback: verify via database
@@ -743,7 +739,7 @@ export async function authorizeDevice(env, req) {
     return r500(`db err: ${ex.message}`);
   }
 
-  log.d(ray, "authorize:", cid, ":", did, "t?", test, "ok?", devres?.success);
+  log.d("authorize:", cid, ":", did, "t?", test, "ok?", devres?.success);
 
   // getDevice excludes banned devices (kind != -1) and matches both cid+did;
   // no result means the device is unregistered or banned.
@@ -754,9 +750,7 @@ export async function authorizeDevice(env, req) {
     devres.results.length <= 0
   ) {
     if (allowAuthorizationBypassForTest && test) {
-      log.w(
-        `${ray} authorizeDevice: TEST bypass device not found ${cid}: ${did}`,
-      );
+      log.w(`authorizeDevice: TEST bypass device not found ${cid}: ${did}`);
       return r204();
     }
     return r401(`${ray} device not found`);
@@ -765,7 +759,7 @@ export async function authorizeDevice(env, req) {
   // device authorized via db: mint and return a fresh token
   const token = await generateDidToken(k, cid, did);
   if (emptyString(token)) {
-    log.w(ray, "authorizeDevice: token gen err for", cid, ":", did);
+    log.w("authorizeDevice: token gen err for", cid, ":", did);
     return r204(); // authorized but token issuance failed; proceed without it
   }
   return r204token(token);
