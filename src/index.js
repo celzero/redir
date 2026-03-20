@@ -78,7 +78,6 @@ const allLinks = grabLinks();
  * @returns {Promise<Response>}
  */
 async function handle(r, env, ctx) {
-  env = d.wrap(env, r);
   const home = env.REDIR_CATCHALL;
   const ray = rayid(r);
   try {
@@ -135,7 +134,7 @@ async function handle(r, env, ctx) {
         if (r.method !== "POST") {
           return r405(`d/acc: ${ray} method not allowed`);
         }
-        // d/acc?kind=[0|1|2|-1|-2]&vcode=[&test]
+        // d/acc?kind=[0|1|2|-1|-2][&cid=][&did=]&vcode=[&test]
         // metadata as json in the body
         return await registerClient(env, r);
       } else if (!p2 || p2.length === 0 || p2 === "reg") {
@@ -551,6 +550,7 @@ async function respond(promisedResponse, authr) {
 
 export default {
   async fetch(request, env, ctx) {
+    env = d.wrap(env, r);
     return handle(request, env, ctx);
   },
 };
