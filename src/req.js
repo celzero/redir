@@ -120,7 +120,7 @@ export async function consumejson(r) {
 }
 
 /** @param {string} msg @returns {Response} */
-function r400txt(msg) {
+export function r400txt(msg) {
   return new Response(msg, {
     status: 400,
     headers: { "Content-Type": "text/plain" },
@@ -128,7 +128,7 @@ function r400txt(msg) {
 }
 
 /** @param {string} msg @returns {Response} */
-function r500txt(msg) {
+export function r500txt(msg) {
   return new Response(msg, {
     status: 500,
     headers: { "Content-Type": "text/plain" },
