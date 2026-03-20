@@ -7,7 +7,7 @@
  */
 
 import { emptyString } from "../buf.js";
-import { ExecCtx, als } from "../d.js";
+import { ExecCtx, hasctx, testmode } from "../d.js";
 import * as glog from "../log.js";
 
 const log = new glog.Log("dbx");
@@ -133,18 +133,15 @@ class D1OutMeta {
  * @throws {Error} - if the D1 binding is not available
  * */
 export function db(env, cfg = null) {
-  let out = env.DB;
-  cfg = cfg == null ? als.getStore() : cfg;
   if (cfg != null) {
-    // cfg.test overrides env.TEST
-    out = cfg.test ? env.DBTEST : env.DB;
-  } else if (env.TEST) {
-    out = env.DBTEST;
+    // cfg.test overrides testmode()
+    return db2(env, cfg.test);
+  } else if (hasctx()) {
+    // testmode() overrides env.TEST
+    return db2(env, testmode());
+  } else {
+    return db2(env, env.TEST);
   }
-  if (out == null) {
-    throw new Error("database binding unavailable");
-  }
-  return out;
 }
 
 export function db2(env, testdomain = false) {

@@ -33,8 +33,34 @@ export class ExecCtx {
   }
 }
 
+export class OuterCtx extends ExecCtx {
+  /**
+   * @param {any} env - Worker environment
+   * @param {Request} req - Incoming request object
+   * @param {boolean} test - Whether this is a test call
+   */
+  constructor(env, req, test = false) {
+    /**
+     * @type {any} - The Workers environment.
+     */
+    this.env = env || null;
+    /**
+     * @type {boolean} - Whether this is a test call.
+     * @default false
+     */
+    this.test = test || false;
+    /**
+     * @type {Request} - Incoming request.
+     */
+    this.req = req;
+  }
+}
+
 /** @type {AsyncLocalStorage<ExecCtx>} - nodejs.org/api/async_context.html*/
-export const als = new AsyncLocalStorage();
+export const als = new AsyncLocalStorage({ name: "execctx" });
+
+/** @type {AsyncLocalStorage<OuterCtx>} - nodejs.org/api/async_context.html*/
+export const ols = new AsyncLocalStorage({ name: "outerctx" });
 
 /**
  * @returns {string}
@@ -49,18 +75,42 @@ export function obsToken() {
  * @returns {any?} - The Workers environment.
  */
 export function workersEnv() {
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg?.env != null) return ocfg.env;
   /** @type {ExecCtx} */
   const cfg = als.getStore();
   return cfg?.env || null;
 }
 
 /**
+ * @returns {Request} - The captured incoming request.
+ */
+export function request() {
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg?.env != null) return ocfg.req;
+  return null;
+}
+
+/**
  * @returns {string} - CF Ray ID
  */
 export function rayId() {
-  /** @type {ExecCtx} */
-  const cfg = als.getStore();
-  return cfg?.env?.CF_RAY || "";
+  let ray = "";
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg?.req != null) {
+    ray = ocfg.req.headers.get("Cf-Ray");
+  }
+
+  if (ray == null || ray.length === 0) {
+    /** @type {ExecCtx} */
+    const cfg = als.getStore();
+    return cfg?.env?.CF_RAY || "";
+  }
+
+  return ray;
 }
 
 /**
@@ -77,12 +127,25 @@ export function appendRayId(s) {
 }
 
 /**
- * @returns {boolean} - Whether this ExecCtx is in test domain.
+ * @returns {boolean} - Whether any execution context available.
+ */
+export function hasctx() {
+  return ols.getStore() != null || als.getStore() != null;
+}
+
+/**
+ * @returns {boolean} - Whether this execution is in test domain.
  */
 export function testmode() {
   /** @type {ExecCtx} */
   const cfg = als.getStore();
-  return cfg?.test || false;
+  if (cfg != null) return cfg.test;
+
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg != null) return ocfg.test;
+
+  return false;
 }
 
 /**
