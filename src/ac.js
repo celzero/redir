@@ -52,11 +52,13 @@ export async function admit(env, r, rate = 10) {
   const ip = rcf.clientIp(r);
   const { success } = await ac1000.limit({ key: ip });
 
-  // TODO: strictly determine paths that may bypass cid rate limits.
+  // TODO: strictly determine paths that can safely bypass rate limits.
   const u = new URL(r.url);
   const cid = u.searchParams.get("cid");
   const did = u.searchParams.get("did") || ""; // may be empty
-  const key1 = !emptyString(did) ? cid + ":" + did : cid;
+  const tok = r.headers.get(rcf.didTokenHeader) || "";
+  let key1 = !emptyString(did) ? cid + ":" + did : cid;
+  key1 = !emptyString(tok) ? key1 + ":" + tok : key1;
   if (!emptyString(cid)) {
     // ignore cid based rate limit if no cid provided.
     // some url paths do not require cid.
