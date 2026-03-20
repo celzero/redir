@@ -92,8 +92,8 @@ export function rayId() {
   let ray = "";
   /** @type {OuterCtx} */
   const ocfg = ols.getStore();
-  if (ocfg?.req != null) {
-    ray = ocfg.req.headers.get("Cf-Ray");
+  if (ocfg != null) {
+    ray = rayid(ocfg.req);
   }
 
   if (ray == null || ray.length === 0) {
@@ -103,6 +103,16 @@ export function rayId() {
   }
 
   return ray;
+}
+
+/**
+ * Get the CF Ray ID from the request headers.
+ * @param {Request} req - The incoming request object.
+ * @returns {string|""} - CF Ray ID, if any.
+ */
+function rayid(req) {
+  if (req == null) return "";
+  return req.headers.get("Cf-Ray") || "";
 }
 
 /**

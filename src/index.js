@@ -9,6 +9,7 @@
 import * as ac from "./ac.js";
 import { b64AsBytes, emptyBuf } from "./buf.js";
 import * as d from "./d.js";
+import { Log } from "./log.js";
 import {
   grabLinks,
   grabSupportedCountries,
@@ -45,7 +46,6 @@ import {
   r429err as r429,
   r500err as r500,
   r503err as r503,
-  rayid,
   region,
 } from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
@@ -71,6 +71,8 @@ const supportedCountriesRpn = grabSupportedCountries(krpn);
 /** @type {Map<string, string>} */
 const allLinks = grabLinks();
 
+const log = new Log("main");
+
 /**
  * @param {Request} r
  * @param {any} env
@@ -79,14 +81,13 @@ const allLinks = grabLinks();
  */
 async function handle(r, env, ctx) {
   const home = env.REDIR_CATCHALL;
-  const ray = rayid(r);
   try {
     const url = new URL(r.url);
     const path = url.pathname;
 
     if (mustWsFwd(url)) {
       if ((await ac.admit(env, r)) === false) {
-        return r429(`wsf: ${ray} rate limited`);
+        return r429("wsf: rate limited");
       }
 
       const auth = await authorizeDevice(env, r);
@@ -110,15 +111,15 @@ async function handle(r, env, ctx) {
       // ex: x/crt
       const p2 = p[2] ? p[2].toLowerCase() : "";
       if (!p2 || p2.length === 0) {
-        return r400(`x: ${ray} missing resource`);
+        return r400("x: missing resource");
       }
       if (p2 === "crt") {
         return xc.certfile(env, r);
       }
-      return r400(`x: ${ray} unknown resource ${p2}`);
+      return r400(`x: unknown resource ${p2}`);
     } else if (p[1] === urldevice) {
       if ((await ac.admit2(env, r)) === false) {
-        return r429(`g: ${ray} rate limited`);
+        return r429("g: rate limited");
       }
 
       // d; device registration
@@ -127,19 +128,19 @@ async function handle(r, env, ctx) {
       if (p2 === "rem") {
         // d/rem?cid=hex&did=hex[&test]
         if (r.method !== "DELETE" && r.method !== "POST") {
-          return r405(`d/rem: ${ray} method not allowed`);
+          return r405("d/rem: method not allowed");
         }
         return await removeDevice(env, r);
       } else if (p2 === "acc") {
         if (r.method !== "POST") {
-          return r405(`d/acc: ${ray} method not allowed`);
+          return r405("d/acc: method not allowed");
         }
         // d/acc?kind=[0|1|2|-1|-2][&cid=][&did=]&vcode=[&test]
         // metadata as json in the body
         return await registerClient(env, r);
       } else if (!p2 || p2.length === 0 || p2 === "reg") {
         if (r.method !== "POST") {
-          return r405(`d/reg: ${ray} method not allowed`);
+          return r405("d/reg: method not allowed");
         }
         // d/reg?did=hex&cid=hex&vcode=[&test]
         // metadata as json in the body
@@ -156,7 +157,7 @@ async function handle(r, env, ctx) {
       // g; play store subs rtdn at g/rtdn
       const p2 = p[2] ? p[2].toLowerCase() : "";
       if (!p2 || p2.length === 0) {
-        return r400(`g: ${ray} missing resource`);
+        return r400("g: missing resource");
       }
 
       if (p2 === "rtdn") {
@@ -168,18 +169,18 @@ async function handle(r, env, ctx) {
         const minVCodeNeeded = minvcode(env, "paid-features");
         const cansell = greaterThanEqCmp(vcode, minVCodeNeeded);
         if (!cansell) {
-          return r503(`g: ${ray} app ${vcode} outdated`);
+          return r503(`g: app ${vcode} outdated`);
         }
       }
 
       if ((await ac.admit(env, r)) === false) {
-        return r429(`g: ${ray} rate limited`);
+        return r429("g: rate limited");
       }
 
       if (p2 === "ack") {
         // g/ack/[vcode]?cid&did&purchaseToken&vcode[&force&sku&test]
         if (r.method !== "POST") {
-          return r405(`g/ack: ${ray} method not allowed`);
+          return r405("g/ack: method not allowed");
         }
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
@@ -187,7 +188,7 @@ async function handle(r, env, ctx) {
       } else if (p2 === "con") {
         // g/con/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
-          return r405(`g/con: ${ray} method not allowed`);
+          return r405("g/con: method not allowed");
         }
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
@@ -196,7 +197,7 @@ async function handle(r, env, ctx) {
         // TODO: mere possession of cid is auth, right now
         // will get entitlement for onetime purchase too, if &sku=onetime.tier
         // g/entitlements/[vcode]?cid&did&vcode&test[&sku]
-        if (r.method !== "GET") return r405(`g/ent: ${ray} method not allowed`);
+        if (r.method !== "GET") return r405("g/ent: method not allowed");
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
         return respond(googlePlayGetEntitlements(env, r), auth);
@@ -204,7 +205,7 @@ async function handle(r, env, ctx) {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/stop/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
-          return r405(`g/stop: ${ray} method not allowed`);
+          return r405("g/stop: method not allowed");
         }
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
@@ -213,13 +214,13 @@ async function handle(r, env, ctx) {
         // will refund and revoke onetime purchase, if &sku=onetime.tier
         // g/refund/[vcode]?cid&did&purchaseToken&vcode[&sku&test]
         if (r.method !== "POST") {
-          return r405(`g/refund: ${ray} method not allowed`);
+          return r405("g/refund: method not allowed");
         }
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
         return respond(revokeSubscription(env, r), auth);
       }
-      return r400(`g: ${ray} unknown resource ${p2}`);
+      return r400(`g: unknown resource ${p2}`);
     } else if (p[1] === urlmoney1) {
       // mb; rsasig
       const psk = env.PRE_SHARED_KEY_SVC;
@@ -237,7 +238,7 @@ async function handle(r, env, ctx) {
       // p; proxy metadata
       const clientVCode = p[2];
       if (!clientVCode || clientVCode.length === 0) {
-        return r400(`p: ${ray} missing vcode`);
+        return r400("p: missing vcode");
       }
       const pkjwk = rsapubkey(env);
       // unparse pkjwk to avoid stringifying it twice
@@ -281,10 +282,10 @@ async function handle(r, env, ctx) {
         }).json,
       );
     } else {
-      console.warn(`p: ${ray} unknown path`, path);
+      log.w(`p: unknown path`, path);
     }
   } catch (ex) {
-    console.error(`handle: ${ray} err`, r.url, ex);
+    log.e(`handle: err`, r.url, ex);
     return r500(ex.message);
   }
   return r302(home);
