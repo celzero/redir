@@ -118,7 +118,7 @@ async function handle(r, env, ctx) {
       }
       return r400(`x: unknown resource ${p2}`);
     } else if (p[1] === urldevice) {
-      if ((await ac.admit2(env, r)) === false) {
+      if ((await ac.admit3(env, r)) === false) {
         return r429("g: rate limited");
       }
 

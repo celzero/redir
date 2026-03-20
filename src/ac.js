@@ -17,8 +17,8 @@ const log = new glog.Log("ac");
  * @param {Request} r - The incoming request
  * @returns {Promise<boolean>} - True if the request is allowed, false otherwise
  */
-export async function admit2(env, r) {
-  return admit(env, r, 2);
+export async function admit3(env, r) {
+  return admit(env, r, 3);
 }
 
 /**
@@ -61,7 +61,7 @@ export async function admit(env, r, rate = 10) {
   if (!emptyString(cid)) {
     // ignore cid based rate limit if no cid provided.
     // some url paths do not require cid.
-    if (rate === 2) {
+    if (rate === 3) {
       const { success } = await ac2.limit({ key: key1 });
       if (!success) return false; // rate limit by cid at 2 per 10s
     } else {

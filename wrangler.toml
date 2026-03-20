@@ -60,7 +60,7 @@ name = "TWO_10s_AC"
 namespace_id = "5353"
 
   [ratelimits.simple]
-  limit = 2
+  limit = 3
   period = 10
 
 ##################
