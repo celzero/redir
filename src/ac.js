@@ -57,10 +57,10 @@ export async function admit(env, r, rate = 10) {
   const did = u.searchParams.get("did") || ""; // may be empty
   const tok = r.headers.get(rcf.didTokenHeader) || "";
   let key1 = !emptyString(did) ? cid + ":" + did : cid;
-  key1 = !emptyString(tok) ? key1 + ":" + tok : key1;
-  if (!emptyString(cid)) {
-    // ignore cid based rate limit if no cid provided.
-    // some url paths do not require cid.
+  key1 = !emptyString(tok) ? tok : key1;
+  if (!emptyString(cid) || !emptyString(tok)) {
+    // ignore cid/tok based rate limits if no cid/tok sent.
+    // some url paths do not require cid; and tok is optional.
     if (rate === 3) {
       const { success } = await ac2.limit({ key: key1 });
       if (!success) return false; // rate limit by cid at 2 per 10s
