@@ -48,10 +48,10 @@ export class OuterCtx extends ExecCtx {
   }
 }
 
-/** @type {AsyncLocalStorage<ExecCtx>} - nodejs.org/api/async_context.html*/
+/** @type {AsyncLocalStorage<ExecCtx>} - nodejs.org/api/async_context.html */
 export const als = new AsyncLocalStorage({ name: "execctx" });
 
-/** @type {AsyncLocalStorage<OuterCtx>} - nodejs.org/api/async_context.html*/
+/** @type {AsyncLocalStorage<OuterCtx>} - developers.cloudflare.com/workers/runtime-apis/nodejs/asynclocalstorage/#multiple-stores */
 export const ols = new AsyncLocalStorage({ name: "outerctx" });
 
 /**
