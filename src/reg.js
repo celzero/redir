@@ -36,7 +36,7 @@ import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
 
 // TODO: set it to false once all test clients have migrated to the new registration flow
-const allowAuthorizationBypassForTest = true;
+const allowAuthorizationBypassForTest = false;
 
 export const mincidlength = 32; // ideally 64 hex chars
 export const mindidlength = 16; // ideally 32 hex chars
