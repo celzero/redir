@@ -146,15 +146,21 @@ export function hasctx() {
  * @returns {boolean} - Whether this execution is in test domain.
  */
 export function testmode() {
-  /** @type {OuterCtx} */
-  const ocfg = ols.getStore();
-  if (ocfg != null) return ocfg.test;
-
+  let innertest = false;
+  let outertest = false;
   /** @type {ExecCtx} */
   const cfg = als.getStore();
-  if (cfg != null) return cfg.test;
+  if (cfg != null) innertest = cfg.test;
 
-  return false;
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg != null) outertest = ocfg.test;
+
+  // inner test is usually set by playstore/stripe order values
+  // while outer test is set by client request query param;
+  // if either is in test domain, treat the entire execution to be
+  // in test domain; regardless of whether they disagree.
+  return innertest || outertest;
 }
 
 /**
