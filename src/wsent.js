@@ -63,15 +63,15 @@ export class WSUser {
     /**
      * @type {number} - in bytes
      */
-    this.trafficUsed = json.traffic_used || -1;
+    this.trafficUsed = json.traffic_used != null ? json.traffic_used : -1;
     /**
      * @type {number} - if -1, then unlimited
      */
-    this.trafficMax = json.traffic_max || -2;
+    this.trafficMax = json.traffic_max != null ? json.traffic_max : -2;
     /**
      * @type {number} - 1 = active, 3 = banned, anything else = inactive
      */
-    this.status = json.status || -1;
+    this.status = json.status != null ? json.status : -1;
     /**
      * @type {string} - email address (always null)
      */
@@ -79,15 +79,16 @@ export class WSUser {
     /**
      * @type {number} - (unused)
      */
-    this.emailStatus = json.email_status || -1;
+    this.emailStatus = json.email_status != null ? json.email_status : -1;
     /**
      * @type {number} - billing plan ID (unused; usually 120)
      */
-    this.billingPlanId = json.billing_plan_id || -1;
+    this.billingPlanId =
+      json.billing_plan_id != null ? json.billing_plan_id : -1;
     /**
      * @type {number} - rebill flag (0 = no rebill, 1 = rebill enabled)
      */
-    this.rebill = json.rebill || -1;
+    this.rebill = json.rebill != null ? json.rebill : -1;
     /**
      * @type {Date} - premium expiry date in yyyy-mm-dd format
      */
@@ -97,11 +98,12 @@ export class WSUser {
     /**
      * @type {boolean} - 1 if premium, anything else if free
      */
-    this.isPremium = (json.is_premium || -1) == 1;
+    this.isPremium = json.is_premium === 1;
     /**
      * @type {Date} - registration date (unix timestamp in seconds)
      */
-    this.regDate = new Date(json.reg_date * 1000);
+    this.regDate =
+      json.reg_date != null ? new Date(json.reg_date * 1000) : new Date(0);
     /**
      * @type {string|null} - last reset date "yyyy-mm-dd" or null if not applicable
      */
@@ -250,7 +252,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
     // No existing credentials, generate new ones
     const wsuser = await newCreds(env, exp, plan);
     let aad = null;
-    if (wsuser.regDate * 1000 > dbenc.aadRequirementStartTime) {
+    if (wsuser.regDate.getTime() > dbenc.aadRequirementStartTime) {
       // always true for new creds
       aad = wstokaad;
     }
@@ -298,10 +300,15 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   if (c == null) {
     throw new Error(`err insert or get creds for ${cid} on ${plan}`);
   }
+  if (c.status === "banned") {
+    // TODO: c.status === invalid?
+    log.e(`cannot use existing creds for ${cid} ${c.status}`);
+    return c;
+  }
   // if WSEntitlement has "expired", attempt to renew it
   if (c.status === "expired" || renew) {
     log.w(
-      `getOrGen: renewing existing entitlement for ${c.cid} (test? ${c.test}) ${c.status}; force renew? ${renew}`,
+      `getOrGen: renewing existing entitlement for ${c.cid} (test? ${c.test}) ${c.status} ${c.expiry}; force renew? ${renew}`,
     );
     try {
       // No downgrade of the user is necessary if they stop paying
@@ -427,13 +434,25 @@ export async function creds(env, cid, op = "get") {
  */
 async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   const testing = testmode();
-
   // google play enforces a 1-day grace period after expiry
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
+
+  if (c.expiry == null || c.expiry.getTime() <= 0) {
+    throw new Error(
+      `invalid entitlement for ${c?.cid} expiring on ${c?.expiry}`,
+    );
+  }
+  if (subExpiryNoGraceMs <= 0) {
+    log.w(
+      `update creds: no-op (test? ${testing}); invalid sub expiry: ${subExpiry}`,
+    );
+    return c;
+  }
+
   if (c.expiry.getTime() >= subExpiryNoGraceMs) {
     log.d(
-      `updateCreds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiry} - 1d`,
+      `update creds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiry} - 1d`,
     );
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
@@ -441,7 +460,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
 
   log.i(
-    `updateCreds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`,
+    `update creds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
@@ -568,34 +587,6 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
 }
 
 /**
- * @param {Date} t - time
- * @param {Date} [base=new Date()] - Starting date for calculations
- * @returns {number} - Number of months until t
- */
-function monthsUntil(t, base = new Date()) {
-  const months =
-    (t.getFullYear() - base.getFullYear()) * 12 +
-    (t.getMonth() - base.getMonth());
-  return months;
-}
-
-/**
- * @param {Date} t - time
- * @param {Date} [base=new Date()] - Starting date for calculations
- * @returns {number} - Number of days until t (note <24h = 1 day)
- * @throws {TypeError} - If t is not a Date object
- */
-function daysUntil(t, base = new Date()) {
-  if (!(t instanceof Date)) {
-    throw new TypeError("daysUntil: t must be a Date object");
-  }
-  const onedayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-  const diffTime = t.getTime() - base.getTime();
-  const diffDays = Math.ceil(diffTime / onedayMs); // Convert ms to days
-  return diffDays;
-}
-
-/**
  *
  * @param {any} env - Worker environment
  * @param {Date} expiry - Expiry date of the entitlement
@@ -700,7 +691,6 @@ async function newCreds(env, expiry, requestedPlan) {
         log.e(
           `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
         );
-        errors.push("ws: invalid response");
         i -= 1; // retry
         tries -= 1;
         await sleep(3);
@@ -948,6 +938,43 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
     execCount = totalMonths; // x months plan
   }
   return [plan, execCount];
+}
+
+/**
+ * @param {Date} t - time
+ * @param {Date} [base=new Date()] - Starting date for calculations
+ * @returns {number} - Number of months until t
+ */
+function monthsUntil(t, base = new Date()) {
+  if (!(t instanceof Date) || !(base instanceof Date)) {
+    throw new TypeError("monthsUntil: must be Date objects");
+  }
+  if (t.getTime() <= base.getTime()) {
+    return -1; // If t is in the past, return -1 months
+  }
+  const months =
+    (t.getUTCFullYear() - base.getUTCFullYear()) * 12 +
+    (t.getUTCMonth() - base.getUTCMonth());
+  return months;
+}
+
+/**
+ * @param {Date} t - time
+ * @param {Date} [base=new Date()] - Starting date for calculations
+ * @returns {number} - Number of days until t (note <24h = 1 day)
+ * @throws {TypeError} - If t is not a Date object
+ */
+function daysUntil(t, base = new Date()) {
+  if (!(t instanceof Date) || !(base instanceof Date)) {
+    throw new TypeError("daysUntil: must be Date objects");
+  }
+  if (t.getTime() <= base.getTime()) {
+    return -1; // If t is in the past, return -1 days
+  }
+  const onedayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+  const diffTime = t.getTime() - base.getTime();
+  const diffDays = Math.ceil(diffTime / onedayMs); // Convert ms to days
+  return diffDays;
 }
 
 /**

@@ -3900,7 +3900,7 @@ function subscriptionItem2plan(item, start) {
 /**
  * TODO: instead of null throw Error with approp msg
  * @param {ProductPurchaseV2} p
- * @param {ProductPurchaseV?} linkedPurchase - Add expiry to existing purchase
+ * @param {ProductPurchaseV2?} linkedPurchase - Add expiry to existing purchase
  * @returns {GEntitlement?} - If p is valid, else null.
  */
 function onetimeDeferredPlan(p, linkedPurchase = null) {

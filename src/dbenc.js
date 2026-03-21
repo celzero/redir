@@ -8,7 +8,7 @@ import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
 const log = new glog.Log("dbenc");
 
-// 11 July 2024
+// 11 July 2024 (1752256401335) or 22 Mar 2026 (1774128919000)
 export const aadRequirementStartTime = 1752256401335;
 
 /**
