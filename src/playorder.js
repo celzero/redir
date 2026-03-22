@@ -7,13 +7,7 @@
  */
 
 import { emptyString } from "./buf.js";
-import {
-  accountIdentifiersImmutable,
-  als,
-  ExecCtx,
-  obsToken,
-  testmode,
-} from "./d.js";
+import { accountIdentifiersImmutable, als, ExecCtx, obsToken } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
@@ -2046,9 +2040,10 @@ async function refundOrder(env, orderId, revoke = true) {
  * @param {any} env
  * @param {string} cid
  * @param {string} purchaseToken
+ * @param {boolean} test
  * @returns {Promise<Response>}
  */
-async function refundOnetimePurchase(env, cid, purchaseToken) {
+async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400j({ error: "missing/invalid client id" });
   }
@@ -2067,7 +2062,6 @@ async function refundOnetimePurchase(env, cid, purchaseToken) {
   const testPurchase = isOnetimeTest2(purchase2);
   const orderId = purchase2.orderId;
   const obstoken = obsToken();
-  const test = testmode();
 
   // TODO: compare purchase2.cid and arg(cid)?
   if (testPurchase !== test) {
@@ -2222,7 +2216,7 @@ export async function cancelSubscription(env, req) {
 
     if (knownOnetimeProductsAndPlans.has(sku)) {
       // TODO: do not revoke; but cancel only?
-      return await refundOnetimePurchase(env, cid, purchaseToken);
+      return await refundOnetimePurchase(env, cid, purchaseToken, test);
     }
 
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));
@@ -2391,7 +2385,7 @@ export async function revokeSubscription(env, req) {
     }
 
     if (knownOnetimeProductsAndPlans.has(sku)) {
-      return await refundOnetimePurchase(env, cid, purchaseToken);
+      return await refundOnetimePurchase(env, cid, purchaseToken, test);
     }
 
     const subdb = new SubscriptionPurchaseV2(JSON.parse(entry.meta));

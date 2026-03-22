@@ -143,23 +143,30 @@ export function hasctx() {
 }
 
 /**
+ * @param {"any"|"exec"|"outer"|"request"|"play"} who - contexts to check for test mode;
+ *   "any" checks both contexts and returns true if either is in test mode
  * @returns {boolean} - Whether this execution is in test domain.
  */
-export function testmode() {
+export function testmode(who = "any") {
   let innertest = false;
   let outertest = false;
-  /** @type {ExecCtx} */
-  const cfg = als.getStore();
-  if (cfg != null) innertest = cfg.test;
 
-  /** @type {OuterCtx} */
-  const ocfg = ols.getStore();
-  if (ocfg != null) outertest = ocfg.test;
+  if (who === "exec" || who === "any" || who === "play") {
+    /** @type {ExecCtx} */
+    const cfg = als.getStore();
+    if (cfg != null) innertest = cfg.test;
+  }
+
+  if (who === "outer" || who === "any" || who === "request") {
+    /** @type {OuterCtx} */
+    const ocfg = ols.getStore();
+    if (ocfg != null) outertest = ocfg.test;
+  }
 
   // inner test is usually set by playstore/stripe order values
   // while outer test is set by client request query param;
   // if either is in test domain, treat the entire execution to be
-  // in test domain; regardless of whether they disagree.
+  // in test domain if "who=any"; regardless of whether they disagree.
   return innertest || outertest;
 }
 

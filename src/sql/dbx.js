@@ -7,7 +7,7 @@
  */
 
 import { emptyString } from "../buf.js";
-import { ExecCtx, hasctx, testmode } from "../d.js";
+import { ExecCtx, hasctx, OuterCtx, testmode } from "../d.js";
 import * as glog from "../log.js";
 
 const log = new glog.Log("dbx");
@@ -128,7 +128,7 @@ class D1OutMeta {
 /**
  * Get the D1 binding based on the environment.
  * @param {any} env - Worker environment
- * @param {ExecCtx} cfg - caller configuration
+ * @param {ExecCtx|OuterCtx} cfg - caller configuration
  * @returns the D1 binding based on env.TEST
  * @throws {Error} - if the D1 binding is not available
  * */

@@ -7,7 +7,7 @@
  */
 
 import * as bin from "./buf.js";
-import { als, ExecCtx, testmode } from "./d.js";
+import { testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
 import * as glog from "./log.js";
@@ -297,7 +297,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         wsuser.sessionAuthHash,
         wsuser.expiry,
         wsStatus(wsuser),
-        testmode(),
+        testmode("exec"),
       );
     }
   }
@@ -418,6 +418,7 @@ export async function creds(env, cid, op = "get") {
   if (bin.emptyString(tokhex)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
+  const test = testmode("exec");
   const tok = bin.hex2byt2str(tokhex);
   const [wsstatus, wsuser] = await credsStatus(env, tok);
   // TODO: insert into db depending on "op"?
@@ -428,7 +429,7 @@ export async function creds(env, cid, op = "get") {
     wsstatus === "banned" || // banned user, do not proceed
     wsstatus === "unknown" // try our luck, maybe it is valid
   ) {
-    return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, testmode()); // Return existing credentials
+    return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, test);
   } else if (wsstatus === "invalid") {
     // TODO: also call /Delete? but will it fail anyway?
     await dbx.deleteCreds(dbx.db(env), cid);
@@ -446,7 +447,7 @@ export async function creds(env, cid, op = "get") {
  * @throws {Error} - If there is an error updating the entitlement
  */
 async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
-  const testing = testmode();
+  const testing = testmode("exec");
   // google play enforces a 1-day grace period after expiry
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
@@ -595,7 +596,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     c.sessiontoken, // TODO: check if wsuser.sessionAuthHash differs?
     wsuser?.expiry,
     wsstatus,
-    testmode(),
+    testmode("exec"),
   );
 }
 
@@ -613,9 +614,7 @@ async function newCreds(env, expiry, requestedPlan) {
     --header 'X-WS-WL-ID: ' \
     --header 'X-WS-WL-Token: '
   */
-  /** @type {ExecCtx} */
-  const execctx = als.getStore();
-  const testing = execctx ? execctx.test : false;
+  const testing = testmode("exec");
 
   const [plan, execCount] = expiry2plan(expiry, testing);
 
@@ -1010,50 +1009,41 @@ function daysUntil(t, base = new Date()) {
 
 /**
  * @param {any} env - Worker environment
- * @param {ExecCtx} cfg - caller configuration
  * @returns
  */
-function apiurl(env, cfg = null) {
-  let out = env.WS_URL;
-  cfg = cfg == null ? als.getStore() : cfg;
-  if (cfg != null) {
-    out = cfg.test ? env.WS_URL_TEST : env.WS_URL;
+function apiurl(env) {
+  if (testmode("exec")) {
+    return env.WS_URL_TEST;
   } else if (env.TEST) {
-    out = env.WS_URL_TEST;
+    return env.WS_URL_TEST;
   }
-  return out;
+  return env.WS_URL;
 }
 
 /**
  * @param {any} env - Worker environment
- * @param {ExecCtx} cfg - caller configuration
  * @returns
  */
-function apiaccess(env, cfg = null) {
-  let out = env.WS_WL_ID;
-  cfg = cfg == null ? als.getStore() : cfg;
-  if (cfg != null) {
-    out = cfg.test ? env.WS_WL_ID_TEST : env.WS_WL_ID;
+function apiaccess(env) {
+  if (testmode("exec")) {
+    return env.WS_WL_ID_TEST;
   } else if (env.TEST) {
-    out = env.WS_WL_ID_TEST;
+    return env.WS_WL_ID_TEST;
   }
-  return out;
+  return env.WS_WL_ID;
 }
 
 /**
  * @param {any} env - Worker environment
- * @param {ExecCtx} cfg - caller configuration
  * @returns
  */
-function apisecret(env, cfg = null) {
-  let out = env.WS_WL_TOKEN;
-  cfg = cfg == null ? als.getStore() : cfg;
-  if (cfg != null) {
-    out = cfg.test ? env.WS_WL_TOKEN_TEST : env.WS_WL_TOKEN;
+function apisecret(env) {
+  if (testmode("exec")) {
+    return env.WS_WL_TOKEN_TEST;
   } else if (env.TEST) {
-    out = env.WS_WL_TOKEN_TEST;
+    return env.WS_WL_TOKEN_TEST;
   }
-  return out;
+  return env.WS_WL_TOKEN;
 }
 
 async function sleep(sec) {
