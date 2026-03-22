@@ -664,7 +664,7 @@ async function newCreds(env, expiry, requestedPlan) {
 
   const userid = wsuser.userId || "nowsuser??";
   const remExec = execCount - 1; // already executed once above
-  const ups = 0; // count of successful upgrades
+  let ups = 0; // count of successful upgrades
   let tries = 3;
   for (let i = 0; i < remExec && tries > 0; i++) {
     try {
