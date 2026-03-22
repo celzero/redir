@@ -248,8 +248,12 @@ export class WSEntitlement {
  */
 export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   let c = await creds(env, cid);
+  // Track whether the remote WS account was just provisioned in this call.
+  // newCreds already applies the full plan (POST + upgrade PUTs), so renewal
+  // must be skipped to avoid double-extending the expiry.
+  let wasCreated = false;
   if (c == null) {
-    // No existing credentials, generate new ones
+    wasCreated = true; // newCreds sets up the full plan; do not re-renew below
     const wsuser = await newCreds(env, exp, plan);
     let aad = null;
     if (wsuser.regDate.getTime() > dbenc.aadRequirementStartTime) {
@@ -305,8 +309,17 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
     log.e(`cannot use existing creds for ${cid} ${c.status}`);
     return c;
   }
-  // if WSEntitlement has "expired", attempt to renew it
-  if (c.status === "expired" || renew) {
+  // if WSEntitlement has "expired", attempt to renew it.
+  // skip if creds were just created: newCreds already applied the full plan
+  // (POST + upgrade PUTs), so calling maybeUpdateCreds would double-extend
+  // the expiry (c.expiry is the stale single-unit POST value, not the final
+  // value after all PUTs — even after the credsStatus refresh in newCreds,
+  // we avoid the extra round-trip and the risk of over-extension).
+  // skip for "unknown" status: expiry is epoch so maybeUpdateCreds throws.
+  if (
+    !wasCreated &&
+    (c.status === "expired" || (renew && c.status !== "unknown"))
+  ) {
     log.w(
       `getOrGen: renewing existing entitlement for ${c.cid} (test? ${c.test}) ${c.status} ${c.expiry}; force renew? ${renew}`,
     );
@@ -652,6 +665,7 @@ async function newCreds(env, expiry, requestedPlan) {
 
   const userid = wsuser.userId || "nowsuser??";
   const remExec = execCount - 1; // already executed once above
+  const ups = 0; // count of successful upgrades
   let tries = 3;
   for (let i = 0; i < remExec && tries > 0; i++) {
     try {
@@ -713,6 +727,8 @@ async function newCreds(env, expiry, requestedPlan) {
         `new creds: upgrade ${userid} ${i}/${remExec}/${tries} successful for ${plan}`,
       );
       tries = 3; // reset tries on success
+      ups += 1;
+      // note: a new wsuser must be fetched from credsStatus after the loop
     } catch (err) {
       log.e(`new creds: #${tries}+${i} err ${userid} during upgrade:`, err);
       i -= 1; // retry
@@ -721,7 +737,22 @@ async function newCreds(env, expiry, requestedPlan) {
       continue;
     }
   }
-  return wsuser; // Return the new credentials
+  note = log.i.bind(log);
+  // Remote API is the source of truth: refresh wsuser to get the actual
+  // expiry after all upgrade PUTs have been applied. The POST response
+  // only reflects +1 unit, not the full multi-year plan.
+  if (ups > 0) {
+    const [, refreshed] = await credsStatus(env, wsuser.sessionAuthHash);
+    if (refreshed != null) {
+      wsuser = refreshed;
+    } else {
+      note = log.e.bind(log);
+    }
+  }
+  note(
+    `new creds: for ${userid} expiring on ${wsuser.expiry} after tot ${ups} upgrades (asked: ${requestedPlan}, got: ${plan} + ${execCount})`,
+  );
+  return wsuser; // the new/updated credentials
 }
 
 /**
