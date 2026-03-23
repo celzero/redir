@@ -736,7 +736,7 @@ async function newCreds(env, expiry, requestedPlan) {
       continue;
     }
   }
-  note = log.i.bind(log);
+  let note = log.i.bind(log);
   // Remote API is the source of truth: refresh wsuser to get the actual
   // expiry after all upgrade PUTs have been applied. The POST response
   // only reflects +1 unit, not the full multi-year plan.
