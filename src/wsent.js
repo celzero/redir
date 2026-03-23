@@ -268,7 +268,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       aad,
       wsuser.sessionAuthHash,
     );
-    if (!enctok) {
+    if (!enctok || bin.emptyString(enctok)) {
       const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
       throw new Error(
         `ws: err encrypt(token) for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`,
@@ -593,7 +593,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
   // do not expect wsstatus to be "unknown" or "invalid" here
   return new WSEntitlement(
     c.cid,
-    c.sessiontoken, // TODO: check if wsuser.sessionAuthHash differs?
+    c.sessiontoken, // wsuser.sessionAuthHash is empty when returned from credStatus
     wsuser?.expiry,
     wsstatus,
     testmode("exec"),
@@ -744,6 +744,7 @@ async function newCreds(env, expiry, requestedPlan) {
     const [, refreshed] = await credsStatus(env, wsuser.sessionAuthHash);
     if (refreshed != null) {
       wsuser = refreshed;
+      wsuser.sessionAuthHash = wsuser.sessionAuthHash;
     } else {
       note = log.e.bind(log);
     }
@@ -756,6 +757,7 @@ async function newCreds(env, expiry, requestedPlan) {
 
 /**
  * credsStatus checks the status of the given session token.
+ * The returned wsuser does not contain session auth hash.
  * @param {any} env - Worker environment
  * @param {string} sessiontoken - id:type:timestamp:sig1:sig2
  * @return {Promise<["valid"|"invalid"|"banned"|"expired"|"unknown", WSUser]>} statuses:
@@ -779,6 +781,9 @@ async function credsStatus(env, sessiontoken) {
       const d = await consumejson(r);
       if (d && d.data) {
         const wsuser = new WSUser(d.data);
+        log.d(
+          `creds status: got session: ${wsuser?.userId} expiry ${wsuser.expiry}`,
+        );
         return [wsStatus(wsuser), wsuser];
       } // else: fallthrough and return "unknown"
     }

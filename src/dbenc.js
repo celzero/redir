@@ -54,6 +54,11 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
  * @throws {Error} - If the plaintext is not a valid string or if encryption fails
  */
 export async function encryptText(env, cid, uniq, aadstr, plainstr) {
+  if (bin.emptyString(plainstr)) {
+    log.e("encryptText: plaintext missing");
+    return null;
+  }
+
   const noncehex = bin.str2byt2hex(uniq);
   const aadhex = bin.str2byt2hex(aadstr); // optional, may be empty
   const pthex = bin.str2byt2hex(plainstr);
