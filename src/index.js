@@ -21,6 +21,7 @@ import {
   googlePlayAcknowledgePurchase,
   googlePlayConsumePurchase,
   googlePlayGetEntitlements,
+  googlePlayGetTransaction,
   googlePlayNotification,
   revokeSubscription,
 } from "./playorder.js";
@@ -219,6 +220,14 @@ async function handle(r, env, ctx) {
         const auth = await authorizeDevice(env, r);
         if (!auth.ok) return auth;
         return respond(revokeSubscription(env, r), auth);
+      } else if (p2 === "tx") {
+        // g/tx?cid=&purchaseToken=[&test][&tot=n][&active]
+        if (r.method !== "GET") {
+          return r405("g/tx: method not allowed");
+        }
+        const auth = await authorizeDevice(env, r);
+        if (!auth.ok) return auth;
+        return respond(googlePlayGetTransaction(env, r), auth);
       }
       return r400(`g: unknown resource ${p2}`);
     } else if (p[1] === urlmoney1) {

@@ -50,8 +50,9 @@ export async function forwardToWs(env, r) {
     await bearerAndCidForWs(env, r);
   if (needsAuth) {
     if (emptyString(token)) return r401err("wsf: needs cid or auth");
-    if (mustEncrypt && emptyString(cid))
-      return r401err("wsf: needs cid or auth");
+    if (mustEncrypt && emptyString(cid)) {
+      return r401err("wsf: needs cid");
+    }
   }
 
   const [typ, sensitive, test] = reqType(u);

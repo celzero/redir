@@ -374,6 +374,55 @@ export async function playOnetimeActive(db, cid, limit = -1) {
 }
 
 /**
+ * Returns up to `limit` playorder rows for the given cid, ordered by mtime desc.
+ * @param {any} db
+ * @param {string} cid
+ * @param {number} limit - Max rows to return (1–20); use -1 for no limit.
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playByCid(db, cid, limit = -1) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: playByCid: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM playorders WHERE cid = ? ORDER BY mtime DESC" +
+    (limit > 0 ? ` LIMIT ${limit}` : "") +
+    ";";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
+ * Returns up to `limit` active playorder rows for the given cid, ordered by mtime desc.
+ * A row is considered active if:
+ *  - it is a subscriptionPurchaseV2 with subscriptionState = SUBSCRIPTION_STATE_ACTIVE, or
+ *  - it is a productPurchaseV2 with purchaseStateContext.purchaseState = PURCHASED
+ * @param {any} db
+ * @param {string} cid
+ * @param {number} limit - Max rows to return (1–20); use -1 for no limit.
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playActiveByCid(db, cid, limit = -1) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: playActiveByCid: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND p.meta IS NOT NULL" +
+    " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
+    " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_ACTIVE' )" +
+    " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
+    " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED' ) )" +
+    " ORDER BY p.mtime DESC" +
+    (limit > 0 ? ` LIMIT ${limit}` : "") +
+    ";";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
  * @param {any} db
  * @param {string} token
  * @return {Promise<D1Out>} - D1Out object

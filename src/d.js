@@ -360,6 +360,8 @@ export class PlayOk {
     this.deletedEntitlement = payload.deletedEntitlement;
     /** @type {boolean|undefined} - was already fully refunded */
     this.wasAlreadyFullyRefunded = payload.wasAlreadyFullyRefunded;
+    /** @type {object|object[]|undefined} - raw playorders row(s) with meta parsed as JS object */
+    this.tx = payload.tx;
     /** @type {string|undefined} - CF Ray ID */
     this.ray = payload.ray || rayId();
   }
@@ -399,6 +401,7 @@ export class PlayOk {
     if (this.wasAlreadyFullyRefunded != null) {
       out.wasAlreadyFullyRefunded = this.wasAlreadyFullyRefunded;
     }
+    if (this.tx != null) out.tx = this.tx;
     if (this.ray != null) out.ray = this.ray;
     return out;
   }

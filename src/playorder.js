@@ -4359,6 +4359,207 @@ function replacing(sub) {
   return ctx.replacementCancellation != null;
 }
 
+/**
+ * GET g/tx?cid=&purchaseToken=[&test][&tot=n][&active]
+ *
+ * Returns the playorders row for the given purchaseToken (with meta parsed as
+ * a JS object).  Additionally:
+ *
+ * - If `tot=n` (1–20) is present the response also includes up to `n` most
+ *   recent purchases for the same cid (ordered by mtime desc), provided the
+ *   given purchaseToken exists in the database.  The entry for the sent
+ *   purchaseToken is always included in the list.
+ *
+ * - If `active` is present the behaviour changes to: return all active
+ *   purchases (up to `tot=n`, or just the single row when `tot` is absent),
+ *   but only if the sent purchaseToken itself is active.
+ *
+ * @param {any} env - Worker environment
+ * @param {Request} req - HTTP request
+ * @returns {Promise<Response>}
+ */
+export async function googlePlayGetTransaction(env, req) {
+  try {
+    if (req.method !== "GET") {
+      return r405j({ error: "method not allowed" });
+    }
+
+    const url = new URL(req.url);
+    const cid = url.searchParams.get("cid");
+    const purchaseToken =
+      url.searchParams.get("purchaseToken") ||
+      url.searchParams.get("purchasetoken");
+    const test = url.searchParams.has("test");
+    const activeOnly = url.searchParams.has("active");
+    const totParam = url.searchParams.get("tot");
+    let tot = totParam != null ? parseInt(totParam, 10) : 0;
+    if (isNaN(tot) || tot < 1) {
+      tot = 0; // 0 means "only return the single row for purchaseToken"
+    } else if (tot > 20) {
+      tot = 20;
+    }
+
+    if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      return r400j({ error: "missing/invalid client id" });
+    }
+    if (emptyString(purchaseToken)) {
+      return r400j({ error: "missing purchase token" });
+    }
+
+    const obstoken = await obfuscate(purchaseToken);
+    logd(
+      `tx: cid=${cid} tok=${obstoken} tot=${tot} active=${activeOnly} test=${test}`,
+    );
+
+    return await als.run(new ExecCtx(env, test, obstoken), async () => {
+      // look up the requested purchase token
+      const tokenRes = await dbx.playSub(dbx.db(env), purchaseToken);
+      if (
+        tokenRes == null ||
+        !tokenRes.success ||
+        tokenRes.results == null ||
+        tokenRes.results.length === 0
+      ) {
+        return r400j({
+          error: "purchase token not found",
+          purchaseId: obstoken,
+          cid: cid,
+          test: test,
+        });
+      }
+
+      const entry = tokenRes.results[0];
+      // verify the token belongs to the claimed cid
+      if (entry.cid !== cid) {
+        return r400j({
+          error: "cid mismatch",
+          purchaseId: obstoken,
+          cid: cid,
+          test: test,
+        });
+      }
+
+      // parse the meta field of a single row into a JS object
+      function parseRow(row) {
+        if (row == null) return row;
+        const out = Object.assign({}, row);
+        if (typeof out.meta === "string") {
+          try {
+            out.meta = JSON.parse(out.meta);
+          } catch (_) {
+            // leave as string if unparseable
+          }
+        }
+        return out;
+      }
+
+      // helper: is a parsed row considered "active"?
+      function isRowActive(row) {
+        const m = row.meta;
+        if (m == null || typeof m !== "object") return false;
+        if (
+          m.kind === "androidpublisher#subscriptionPurchaseV2" &&
+          m.subscriptionState === "SUBSCRIPTION_STATE_ACTIVE"
+        ) {
+          return true;
+        }
+        if (
+          m.kind === "androidpublisher#productPurchaseV2" &&
+          m.purchaseStateContext != null &&
+          m.purchaseStateContext.purchaseState === "PURCHASED"
+        ) {
+          return true;
+        }
+        return false;
+      }
+
+      const parsedEntry = parseRow(entry);
+
+      if (!activeOnly && tot === 0) {
+        // simplest case: just return the single row
+        return r200j({
+          success: true,
+          cid: cid,
+          purchaseId: obstoken,
+          tx: parsedEntry,
+          test: test,
+        });
+      }
+
+      if (activeOnly) {
+        // only proceed if the sent purchaseToken is itself active
+        if (!isRowActive(parsedEntry)) {
+          return r400j({
+            error: "purchase token is not active",
+            purchaseId: obstoken,
+            cid: cid,
+            test: test,
+          });
+        }
+
+        if (tot === 0) {
+          // just the single active row
+          return r200j({
+            success: true,
+            cid: cid,
+            purchaseId: obstoken,
+            tx: [parsedEntry],
+            test: test,
+          });
+        }
+
+        // return up to tot active rows for this cid
+        const activeRes = await dbx.playActiveByCid(dbx.db(env), cid, tot);
+        const activeRows =
+          activeRes != null && activeRes.success && activeRes.results != null
+            ? activeRes.results.map(parseRow)
+            : [parsedEntry];
+
+        // ensure the requested purchaseToken is always included
+        const hasActiveToken = activeRows.some(
+          (row) => row.purchasetoken === purchaseToken,
+        );
+        const txActive = hasActiveToken
+          ? activeRows
+          : [parsedEntry, ...activeRows].slice(0, tot);
+
+        return r200j({
+          success: true,
+          cid: cid,
+          purchaseId: obstoken,
+          tx: txActive,
+          test: test,
+        });
+      }
+
+      // tot > 0, no activeOnly: return up to `tot` past/active rows for this cid
+      const histRes = await dbx.playByCid(dbx.db(env), cid, tot);
+      const histRows =
+        histRes != null && histRes.success && histRes.results != null
+          ? histRes.results.map(parseRow)
+          : [parsedEntry];
+
+      // ensure the requested purchaseToken is always included
+      const hasHistToken = histRows.some(
+        (row) => row.purchasetoken === purchaseToken,
+      );
+      const txHist = hasHistToken
+        ? histRows
+        : [parsedEntry, ...histRows].slice(0, tot);
+
+      return r200j({
+        success: true,
+        cid: cid,
+        purchaseId: obstoken,
+        tx: txHist,
+        test: test,
+      });
+    });
+  } catch (err) {
+    return r500j({ error: "get transaction failed", details: err.message });
+  }
+}
+
 function logi(...args) {
   log.i(...args);
 }
