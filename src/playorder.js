@@ -1060,6 +1060,24 @@ class TestPurchase {
 }
 
 /**
+ * @see https://developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2#PausedStateContext
+ * ```json
+ * {
+ *   "autoResumeTime": string
+ * }
+ * ```
+ */
+class PausedStateContext {
+  constructor(json) {
+    json = json || {};
+    /**
+     * @type {string} - The time at which the subscription will be automatically resumed, in RFC3339 format.
+     */
+    this.autoResumeTime = json.autoResumeTime || "";
+  }
+}
+
+/**
  * ```json
  * {
  *   "externalAccountId": string,
@@ -2532,12 +2550,9 @@ async function ackSubscriptionWithoutEntitlement(env, tok) {
 /**
  * @param {any} env - Workers environment.
  * @param {string[]} productIds - all productIds associated with the purchase token.
- * @param {string[]} unconsumedProductIds - subset of productIds that are not yet consumed.
  * @param {string} tok - Google Play purchase token.
  * @param {WSEntitlement?} ent - Windscribe entitlement.
- * @param {boolean} ackWithoutEntitlement - if true, never acknowledge payments without an entitlement.
- * @param {boolean} alreadyAckd - if true, skip acknowledgment and only consume the purchase;
- * used for handling the case where ack succeeded but consume failed in a previous attempt.
+ * @param {boolean} ackWithoutEntitlement - if true, allow acknowledgment even without an entitlement.
  * @returns {Promise<void>}
  * @throws {Error} - If no productIds to acknowledge or if acknowledgement fails.
  */
@@ -2650,7 +2665,7 @@ async function consumeOnetimePurchase(env, productId, cid, tok) {
  * @param {string} cid - Client ID for logging purposes.
  * @param {string} tok - Google Play purchase token.
  * @param {WSEntitlement?} ent - Windscribe entitlement.
- * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge payments without an entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, allow acknowledgment even without an entitlement.
  * @throws {Error} - If the acknowledgment fails.
  */
 async function ackOnetimePurchase(
@@ -2718,7 +2733,7 @@ async function ackOnetimePurchase(
  * @param {any} env
  * @param {string} tok - Google Play purchase token.
  * @param {WSEntitlement} ent - Windscribe entitlement.
- * @param {boolean} ackWithoutEntitlement - if true, NEVER acknowledge sub payments without an entitlement.
+ * @param {boolean} ackWithoutEntitlement - if true, allow acknowledgment even without an entitlement.
  * @returns {Promise<void>}
  * @throws {Error} - If the acknowledgment fails.
  */
