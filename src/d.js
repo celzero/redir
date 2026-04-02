@@ -94,6 +94,16 @@ export function request() {
 }
 
 /**
+ * @returns {URL} - The request URL.
+ */
+export function url() {
+  /** @type {OuterCtx} */
+  const ocfg = ols.getStore();
+  if (ocfg?.env != null) return ocfg.url;
+  return null;
+}
+
+/**
  * @returns {string} - CF Ray ID
  */
 export function rayId() {
@@ -121,19 +131,6 @@ export function rayId() {
 function rayid(req) {
   if (req == null) return "";
   return req.headers.get("Cf-Ray") || "";
-}
-
-/**
- * Appends ray id to input string if available in execution context.
- * @param {string} s - string to append ray id to
- * @returns {string} - input string with ray id appended if available
- */
-export function appendRayId(s) {
-  const ray = rayId();
-  if (ray) {
-    return `${s} (ray: ${ray})`;
-  }
-  return s;
 }
 
 /**

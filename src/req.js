@@ -6,7 +6,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { PlayErr, PlayOk, ResErr, ResOK, request as outerReq } from "./d.js";
+import {
+  PlayErr,
+  PlayOk,
+  ResErr,
+  ResOK,
+  request as outerReq,
+  url as outerUrl,
+} from "./d.js";
 import { Log } from "./log.js";
 
 export const defaultcc = "us";
@@ -114,9 +121,24 @@ export function postalcode(req) {
  * @param {Request|null|undefined} req
  * @returns {Request|null}
  */
-function _req(req) {
-  if (req != null) return req;
+function getreq(req) {
+  if (req != null && req instanceof Request) return req;
   return outerReq() || null;
+}
+
+/**
+ * Returns the pre-parsed URL from OuterCtx if available, otherwise falls back
+ * to parsing the URL from the request via getreq(). Returns null if neither
+ * is available.
+ * @param {Request|null|undefined} req
+ * @returns {URL|null}
+ */
+function geturl(req) {
+  const u = outerUrl();
+  if (u != null) return u;
+  const r = getreq(req);
+  if (r == null) return null;
+  return new URL(r.url);
 }
 
 /**
@@ -125,9 +147,9 @@ function _req(req) {
  * @returns {string|null}
  */
 export function cid(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("cid");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("cid");
 }
 
 /**
@@ -136,9 +158,9 @@ export function cid(req) {
  * @returns {string|null}
  */
 export function did(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("did");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("did");
 }
 
 /**
@@ -147,9 +169,9 @@ export function did(req) {
  * @returns {boolean}
  */
 export function isTest(req) {
-  const r = _req(req);
-  if (r == null) return false;
-  return new URL(r.url).searchParams.has("test");
+  const u = geturl(req);
+  if (u == null) return false;
+  return u.searchParams.has("test");
 }
 
 /**
@@ -159,9 +181,9 @@ export function isTest(req) {
  * @returns {string|null}
  */
 export function purchaseToken(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  const p = new URL(r.url).searchParams;
+  const u = geturl(req);
+  if (u == null) return null;
+  const p = u.searchParams;
   return p.get("purchaseToken") || p.get("purchasetoken") || null;
 }
 
@@ -172,9 +194,9 @@ export function purchaseToken(req) {
  * @returns {string|null}
  */
 export function sku(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  const p = new URL(r.url).searchParams;
+  const u = geturl(req);
+  if (u == null) return null;
+  const p = u.searchParams;
   return p.get("sku") || p.get("productId") || p.get("productid") || null;
 }
 
@@ -184,9 +206,9 @@ export function sku(req) {
  * @returns {string|null}
  */
 export function force(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("force");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("force");
 }
 
 /**
@@ -195,9 +217,9 @@ export function force(req) {
  * @returns {string|null}
  */
 export function vcode(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("vcode");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("vcode");
 }
 
 /**
@@ -206,9 +228,9 @@ export function vcode(req) {
  * @returns {string|null}
  */
 export function clientKind(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("clientkind");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("clientkind");
 }
 
 /**
@@ -217,9 +239,9 @@ export function clientKind(req) {
  * @returns {string|null}
  */
 export function deviceKind(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("devicekind");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("devicekind");
 }
 
 /**
@@ -228,9 +250,9 @@ export function deviceKind(req) {
  * @returns {string|null}
  */
 export function rpn(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("rpn");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("rpn");
 }
 
 /**
@@ -239,9 +261,9 @@ export function rpn(req) {
  * @returns {boolean}
  */
 export function activeOnly(req) {
-  const r = _req(req);
-  if (r == null) return false;
-  return new URL(r.url).searchParams.has("active");
+  const u = geturl(req);
+  if (u == null) return false;
+  return u.searchParams.has("active");
 }
 
 /**
@@ -250,9 +272,9 @@ export function activeOnly(req) {
  * @returns {string|null}
  */
 export function tot(req) {
-  const r = _req(req);
-  if (r == null) return null;
-  return new URL(r.url).searchParams.get("tot");
+  const u = geturl(req);
+  if (u == null) return null;
+  return u.searchParams.get("tot");
 }
 
 /**
@@ -261,7 +283,7 @@ export function tot(req) {
  * @returns {string|null}
  */
 export function didToken(req) {
-  const r = _req(req);
+  const r = getreq(req);
   if (r == null) return null;
   return r.headers.get(didTokenHeader);
 }
@@ -272,7 +294,7 @@ export function didToken(req) {
  * @returns {string|null}
  */
 export function authorization(req) {
-  const r = _req(req);
+  const r = getreq(req);
   if (r == null) return null;
   return r.headers.get("Authorization");
 }
