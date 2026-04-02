@@ -9,6 +9,7 @@
 // should NOT import any other local classes
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { emptyString } from "./buf";
 
 export class ExecCtx {
   /**
@@ -151,13 +152,25 @@ export function testmode(who = "any") {
   let innertest = false;
   let outertest = false;
 
+  if (
+    emptyString(who) ||
+    (who !== "exec" &&
+      who !== "play" &&
+      who !== "outer" &&
+      who !== "request" &&
+      who !== "any")
+  ) {
+    log.e(`testmode: invalid who ${who}; using any...`);
+    who = "any";
+  }
+
   if (who === "exec" || who === "any" || who === "play") {
     /** @type {ExecCtx} */
     const cfg = als.getStore();
     if (cfg != null) innertest = cfg.test;
   }
 
-  if (who === "outer" || who === "any" || who === "request") {
+  if (!usingexec || who === "outer" || who === "any" || who === "request") {
     /** @type {OuterCtx} */
     const ocfg = ols.getStore();
     if (ocfg != null) outertest = ocfg.test;
