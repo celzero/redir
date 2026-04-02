@@ -52,10 +52,9 @@ export async function admit(env, r, rate = 10) {
   const { success } = await ac1000.limit({ key: ip });
 
   // TODO: strictly determine paths that can safely bypass rate limits.
-  const u = new URL(r.url);
-  const cid = u.searchParams.get("cid");
-  const did = u.searchParams.get("did") || ""; // may be empty
-  const tok = r.headers.get(rcf.didTokenHeader) || "";
+  const cid = rcf.cid(r);
+  const did = rcf.did(r) || ""; // may be empty
+  const tok = rcf.didToken(r) || "";
   let key1 = !emptyString(did) ? cid + ":" + did : cid;
   key1 = !emptyString(tok) ? tok : key1;
   if (!emptyString(cid) || !emptyString(tok)) {

@@ -21,8 +21,13 @@ import { hmacclientkey } from "./enc.js";
 import { hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import {
+  cid as cidOf,
+  clientKind,
   consumejson,
-  didTokenHeader,
+  deviceKind,
+  did as didOf,
+  didToken as didTokenOf,
+  isTest,
   r200j,
   r204,
   r204token,
@@ -108,11 +113,10 @@ export async function registerClient(env, req) {
   if (req.method !== "POST") {
     return r405("method not allowed");
   }
-  const url = new URL(req.url);
-  const test = url.searchParams.has("test");
-  const clientkind = url.searchParams.get("clientkind") || "0";
-  const devicekind = url.searchParams.get("devicekind") || "0";
-  const existingCid = url.searchParams.get("cid");
+  const test = isTest(req);
+  const clientkind = clientKind(req) || "0";
+  const devicekind = deviceKind(req) || "0";
+  const existingCid = cidOf(req);
   const meta = await consumejson(req);
 
   const parsedck = parseInt(clientkind, 10);
@@ -249,10 +253,9 @@ export async function registerDevice(env, req) {
     return r400("unsupported content type");
   }
 
-  const url = new URL(req.url);
-  const cid = url.searchParams.get("cid");
-  const did = url.searchParams.get("did");
-  const test = url.searchParams.has("test");
+  const cid = cidOf(req);
+  const did = didOf(req);
+  const test = isTest(req);
 
   if (
     emptyString(cid) ||
@@ -454,10 +457,9 @@ export async function removeDevice(env, req) {
     return r405("method not allowed");
   }
 
-  const url = new URL(req.url);
-  const cid = url.searchParams.get("cid");
-  const did = url.searchParams.get("did");
-  const test = url.searchParams.has("test");
+  const cid = cidOf(req);
+  const did = didOf(req);
+  const test = isTest(req);
 
   if (
     emptyString(did) ||
@@ -597,10 +599,9 @@ async function verifyDidToken(k, cid, did, token) {
  * @returns {Promise<Response>} 204 if authorized (token in header on new issue), error Response otherwise.
  */
 export async function authorizeDevice(env, req) {
-  const url = new URL(req.url);
-  const cid = url.searchParams.get("cid");
-  const did = url.searchParams.get("did");
-  const test = url.searchParams.has("test");
+  const cid = cidOf(req);
+  const did = didOf(req);
+  const test = isTest(req);
 
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
     return r400("missing/invalid client id");
@@ -641,7 +642,7 @@ export async function authorizeDevice(env, req) {
     return r401("missing/invalid device id");
   }
 
-  const incomingToken = req.headers.get(didTokenHeader);
+  const incomingToken = didTokenOf(req);
 
   // ultra-fast path: both sigs cached valid + matching token in tokenCache →
   // authorized with no key derivation or hmacsign at all

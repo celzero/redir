@@ -12,13 +12,20 @@ import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
 import {
+  activeOnly as activeOnlyOf,
+  cid as cidOf,
   consumejson,
+  force as forceOf,
+  isTest,
+  purchaseToken as purchaseTokenOf,
   r200play,
   r200t,
   r400play as r400j,
   r405play as r405j,
   r409play as r409j,
   r500play as r500j,
+  sku as skuOf,
+  tot,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
@@ -2258,17 +2265,10 @@ export async function cancelSubscription(env, req) {
     return r405j({ error: "method not allowed" });
   }
 
-  const url = new URL(req.url);
-  const cid = url.searchParams.get("cid");
-  const purchaseToken =
-    url.searchParams.get("purchaseToken") ||
-    url.searchParams.get("purchasetoken");
-  let test = url.searchParams.has("test");
-  const sku =
-    url.searchParams.get("sku") ||
-    url.searchParams.get("productId") ||
-    url.searchParams.get("productid") ||
-    stdProductId;
+  const cid = cidOf(req);
+  const purchaseToken = purchaseTokenOf(req);
+  let test = isTest(req);
+  const sku = skuOf(req) || stdProductId;
   // TODO: use vcode = url.path.get("vcode") to accept or reject cancellation
 
   if (emptyString(purchaseToken)) {
@@ -2428,17 +2428,10 @@ export async function revokeSubscription(env, req) {
     return r405j({ error: "method not allowed" });
   }
 
-  const url = new URL(req.url);
-  const cid = url.searchParams.get("cid");
-  const purchaseToken =
-    url.searchParams.get("purchaseToken") ||
-    url.searchParams.get("purchasetoken");
-  let test = url.searchParams.has("test");
-  const sku =
-    url.searchParams.get("sku") ||
-    url.searchParams.get("productId") ||
-    url.searchParams.get("productid") ||
-    stdProductId;
+  const cid = cidOf(req);
+  const purchaseToken = purchaseTokenOf(req);
+  let test = isTest(req);
+  const sku = skuOf(req) || stdProductId;
   // TODO: only supported vcode = url.path("vcode") can revoke purchase
 
   if (emptyString(purchaseToken)) {
@@ -2892,18 +2885,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       return r405j({ error: "method not allowed" });
     }
     // Parse request body to get purchase token
-    const url = new URL(req.url);
-    const force = url.searchParams.get("force");
-    purchasetoken =
-      url.searchParams.get("purchaseToken") ||
-      url.searchParams.get("purchasetoken");
-    cid = url.searchParams.get("cid");
-    sku =
-      url.searchParams.get("sku") ||
-      url.searchParams.get("productId") ||
-      url.searchParams.get("productid") ||
-      stdProductId;
-    test = url.searchParams.has("test");
+    const force = forceOf(req);
+    purchasetoken = purchaseTokenOf(req);
+    cid = cidOf(req);
+    sku = skuOf(req) || stdProductId;
+    test = isTest(req);
     // TODO: use vcode = url.path.get("vcode") to accept or reject purchases
 
     if (emptyString(purchasetoken)) {
@@ -3395,17 +3381,10 @@ export async function googlePlayConsumePurchase(env, req) {
       return r405j({ error: "method not allowed" });
     }
 
-    const url = new URL(req.url);
-    purchasetoken =
-      url.searchParams.get("purchaseToken") ||
-      url.searchParams.get("purchasetoken");
-    cid = url.searchParams.get("cid");
-    sku =
-      url.searchParams.get("sku") ||
-      url.searchParams.get("productId") ||
-      url.searchParams.get("productid") ||
-      stdProductId;
-    test = url.searchParams.has("test");
+    purchasetoken = purchaseTokenOf(req);
+    cid = cidOf(req);
+    sku = skuOf(req) || stdProductId;
+    test = isTest(req);
 
     if (emptyString(purchasetoken)) {
       return r400j({ error: "missing purchase token" });
@@ -3620,9 +3599,8 @@ export async function googlePlayGetEntitlements(env, req) {
       return r405j({ error: "method not allowed" });
     }
 
-    const url = new URL(req.url);
-    let cid = url.searchParams.get("cid");
-    const test = url.searchParams.has("test");
+    let cid = cidOf(req);
+    const test = isTest(req);
     // TODO: use vcode = url.path.get("vcode") to accept or reject purchases
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
       return r400j({ error: "missing/invalid client id" });
@@ -4483,14 +4461,11 @@ export async function googlePlayGetTransaction(env, req) {
       return r405j({ error: "method not allowed" });
     }
 
-    const url = new URL(req.url);
-    const cid = url.searchParams.get("cid");
-    const purchaseToken =
-      url.searchParams.get("purchaseToken") ||
-      url.searchParams.get("purchasetoken");
-    const test = url.searchParams.has("test");
-    const activeOnly = url.searchParams.has("active");
-    const totParam = url.searchParams.get("tot");
+    const cid = cidOf(req);
+    const purchaseToken = purchaseTokenOf(req);
+    const test = isTest(req);
+    const activeOnly = activeOnlyOf(req);
+    const totParam = tot(req);
     let tot = totParam != null ? parseInt(totParam, 10) : 0;
     if (isNaN(tot) || tot < 1) {
       tot = 0; // 0 means "only return the single row for purchaseToken"

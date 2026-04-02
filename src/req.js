@@ -6,8 +6,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-import { PlayErr, PlayOk, ResErr, ResOK } from "./d.js";
+import { PlayErr, PlayOk, ResErr, ResOK, request as outerReq } from "./d.js";
 import { Log } from "./log.js";
+
 export const defaultcc = "us";
 export const unknown = "unknown";
 export const didTokenHeader = "x-rethink-app-did-token";
@@ -104,6 +105,176 @@ export function postalcode(req) {
     return req.cf.postalCode;
   }
   return unknown;
+}
+
+/**
+ * Returns the given request if provided, otherwise falls back to the request
+ * captured in the outer async-local-storage context. Returns null if neither
+ * is available.
+ * @param {Request|null|undefined} req
+ * @returns {Request|null}
+ */
+function _req(req) {
+  if (req != null) return req;
+  return outerReq() || null;
+}
+
+/**
+ * Returns the "cid" URL query parameter from the request.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function cid(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("cid");
+}
+
+/**
+ * Returns the "did" URL query parameter from the request.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function did(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("did");
+}
+
+/**
+ * Returns true when the "test" URL query parameter is present.
+ * @param {Request?} req
+ * @returns {boolean}
+ */
+export function isTest(req) {
+  const r = _req(req);
+  if (r == null) return false;
+  return new URL(r.url).searchParams.has("test");
+}
+
+/**
+ * Returns the purchase token from the "purchaseToken" (or lowercase
+ * "purchasetoken") URL query parameter.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function purchaseToken(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  const p = new URL(r.url).searchParams;
+  return p.get("purchaseToken") || p.get("purchasetoken") || null;
+}
+
+/**
+ * Returns the product / SKU identifier from the "sku", "productId", or
+ * "productid" URL query parameter (first non-empty value wins).
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function sku(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  const p = new URL(r.url).searchParams;
+  return p.get("sku") || p.get("productId") || p.get("productid") || null;
+}
+
+/**
+ * Returns the "force" URL query parameter.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function force(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("force");
+}
+
+/**
+ * Returns the "vcode" URL query parameter.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function vcode(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("vcode");
+}
+
+/**
+ * Returns the "clientkind" URL query parameter.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function clientKind(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("clientkind");
+}
+
+/**
+ * Returns the "devicekind" URL query parameter.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function deviceKind(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("devicekind");
+}
+
+/**
+ * Returns the "rpn" URL query parameter (WebSocket forward routing key).
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function rpn(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("rpn");
+}
+
+/**
+ * Returns true when the "active" URL query parameter is present.
+ * @param {Request?} req
+ * @returns {boolean}
+ */
+export function activeOnly(req) {
+  const r = _req(req);
+  if (r == null) return false;
+  return new URL(r.url).searchParams.has("active");
+}
+
+/**
+ * Returns the "tot" URL query parameter (numeric limit hint).
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function tot(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return new URL(r.url).searchParams.get("tot");
+}
+
+/**
+ * Returns the value of the "x-rethink-app-did-token" request header.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function didToken(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return r.headers.get(didTokenHeader);
+}
+
+/**
+ * Returns the value of the "Authorization" request header.
+ * @param {Request?} req
+ * @returns {string|null}
+ */
+export function authorization(req) {
+  const r = _req(req);
+  if (r == null) return null;
+  return r.headers.get("Authorization");
 }
 
 /**

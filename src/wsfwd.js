@@ -6,6 +6,8 @@ import { decryptText, encryptText } from "./enc.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
 import {
+  authorization,
+  cid as cidOf,
   consumejson,
   didTokenHeader,
   r400err,
@@ -25,6 +27,7 @@ const wswginitpath = "/wgconfigs/init";
 const wswgconnectpath = "/wgconfigs/connect";
 const wswgpermanentpath = "/wgconfigs/permanent";
 const wswglistkeyspath = "/wgconfigs/list_keys";
+const wswgpskrekeypath = "/wgconfigs/psk-rekey";
 const wssessionpath = "/session";
 const wsportpath = "/portmap";
 const wslocpath = "/serverlist/mob-v2/";
@@ -185,11 +188,10 @@ function forwardToWsWithAuth(url) {
  */
 async function bearerAndCidForWs(env, req) {
   const url = new URL(req.url);
-  const q = url.searchParams;
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = authorization(req);
   const authVals = authHeader ? authHeader.split(" ") : [];
   const needsAuth = forwardToWsWithAuth(url);
-  let cid = q.get("cid"); // may be null
+  let cid = cidOf(req); // may be null
   const validcid =
     cid != null && cid.length >= mincidlength && /^[a-fA-F0-9]+$/.test(cid);
   if (!validcid) cid = null; // ensure cid is null if invalid
@@ -263,6 +265,7 @@ function allowlisted(u) {
   if (p.startsWith(wssessionpath)) return true;
   if (p.startsWith(wsportpath)) return true;
   if (p.startsWith(wslocpath)) return true;
+  if (p.startsWith(wswgpskrekeypath)) return true;
 
   return false;
 }

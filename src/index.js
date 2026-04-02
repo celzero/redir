@@ -48,6 +48,7 @@ import {
   r500err as r500,
   r503err as r503,
   region,
+  vcode as vcodeOf,
 } from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
 import { forwardToWs } from "./wsfwd.js";
@@ -165,7 +166,7 @@ async function handle(r, env, ctx) {
         return await googlePlayNotification(env, r);
       }
 
-      const vcode = url.searchParams.get("vcode");
+      const vcode = vcodeOf(r);
       if (vcode) {
         const minVCodeNeeded = minvcode(env, "paid-features");
         const cansell = greaterThanEqCmp(vcode, minVCodeNeeded);
