@@ -676,76 +676,106 @@ async function newCreds(env, expiry, requestedPlan) {
   const remExec = execCount - 1; // already executed once above
   let ups = 0; // count of successful upgrades
   let tries = 3;
-  for (let i = 0; i < remExec && tries > 0; i++) {
-    try {
-      if (i > 0) {
-        await sleep(1);
-      }
-      /*
+  try {
+    for (let i = 0; i < remExec && tries > 0; i++) {
+      try {
+        if (i > 0) {
+          await sleep(1);
+        }
+        /*
         curl --location --request PUT '.../Users?plan=month|year&delete_credentials=0|1' \
         --header 'X-WS-WL-ID: ' \
         --header 'X-WS-WL-Token: ' \
         --header 'Authorization: Bearer ...' \
       */
-      // see: maybeUpdateCreds for a primer on user plan updates
-      const url2 = apiurl(env) + updateuser + plan + "&delete_credentials=0";
-      const r2 = await fetch(url2, {
-        method: "PUT",
-        headers: {
-          ...headers,
-          Authorization: `Bearer ${wsuser.sessionAuthHash}`,
-        },
-      });
+        // see: maybeUpdateCreds for a primer on user plan updates
+        const url2 = apiurl(env) + updateuser + plan + "&delete_credentials=0";
+        const r2 = await fetch(url2, {
+          method: "PUT",
+          headers: {
+            ...headers,
+            Authorization: `Bearer ${wsuser.sessionAuthHash}`,
+          },
+        });
 
-      if (!r2.ok) {
-        const err = await consumejson(r2);
-        const errstr = JSON.stringify(err);
-        log.e(
-          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
-        );
-        i -= 1; // retry
-        tries -= 1;
-        await sleep(3);
-        continue;
-      }
-      // data = { data: { ... }, metadata: { ... } }
-      const data2 = await consumejson(r2);
-      if (!data2 || typeof data2 !== "object") {
-        log.e(
-          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
-        );
-        i -= 1; // retry
-        tries -= 1;
-        await sleep(3);
-        continue;
-      }
+        if (!r2.ok) {
+          const err = await consumejson(r2);
+          const errstr = JSON.stringify(err);
+          log.e(
+            `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} failed: ${url2}, ${r2.status}; test? ${testing}, forbidden: ${errstr}`,
+          );
+          i -= 1; // retry
+          tries -= 1;
+          await sleep(3);
+          continue;
+        }
+        // data = { data: { ... }, metadata: { ... } }
+        const data2 = await consumejson(r2);
+        if (!data2 || typeof data2 !== "object") {
+          log.e(
+            `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} invalid response ${data2} from WS (url: ${url2}, test? ${testing})`,
+          );
+          i -= 1; // retry
+          tries -= 1;
+          await sleep(3);
+          continue;
+        }
 
-      const meta2 = new WSMetaResponse(data2.metadata);
-      const wsdone = new WSSuccessResponse(data2.data);
-      if (!wsdone || wsdone.success !== 1) {
+        const meta2 = new WSMetaResponse(data2.metadata);
+        const wsdone = new WSSuccessResponse(data2.data);
+        if (!wsdone || wsdone.success !== 1) {
+          i -= 1; // retry
+          tries -= 1;
+          log.e(
+            `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} not successful for (test? ${testing}) ` +
+              `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.md5}`,
+          );
+          await sleep(3);
+          continue;
+        }
+        log.i(
+          `new creds: upgrade ${userid} ${i}/${remExec}/${tries} successful for ${plan}`,
+        );
+        tries = 3; // reset tries on success
+        ups += 1;
+        // note: a new wsuser must be fetched from credsStatus after the loop
+      } catch (err) {
+        log.e(`new creds: #${tries}+${i} err ${userid} during upgrade:`, err);
         i -= 1; // retry
         tries -= 1;
-        log.e(
-          `new creds: upgrade for ${userid} ${i}/${remExec}/${tries} not successful for (test? ${testing}) ` +
-            `${meta2.hostName}, ${meta2.serviceRequestId}, ${meta2.md5}`,
-        );
         await sleep(3);
         continue;
       }
-      log.i(
-        `new creds: upgrade ${userid} ${i}/${remExec}/${tries} successful for ${plan}`,
-      );
-      tries = 3; // reset tries on success
-      ups += 1;
-      // note: a new wsuser must be fetched from credsStatus after the loop
-    } catch (err) {
-      log.e(`new creds: #${tries}+${i} err ${userid} during upgrade:`, err);
-      i -= 1; // retry
-      tries -= 1;
-      await sleep(3);
-      continue;
     }
+    if (remExec > 0 && tries <= 0) {
+      throw new Error(
+        `new creds: upgrade loop exhausted retries for ${userid} [${plan}x${remExec}]`,
+      );
+    }
+  } catch (err) {
+    /* avoid case where very many accounts get created but lost to unhandled exception
+              "2026-03-23": {
+                "payments": {
+                    "new_account": {
+                        "count": 2782,
+                        "unit_price": "15.00"
+                    }
+                },
+                "refunds": null,
+                "net": {
+                    "subs": {
+                        "new_account": 2782
+                    },
+                    "cost": "41730.00"
+                }
+            },
+    */
+    log.e(`new creds: upgrade loop err for ${userid}; deleting creds:`, err);
+    const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
+    log.e(`new creds: deleted creds for ${userid} after err? ${deleted}`);
+    throw err;
   }
+
   let note = log.i.bind(log);
   // Remote API is the source of truth: refresh wsuser to get the actual
   // expiry after all upgrade PUTs have been applied. The POST response
