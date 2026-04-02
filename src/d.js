@@ -170,7 +170,7 @@ export function testmode(who = "any") {
     if (cfg != null) innertest = cfg.test;
   }
 
-  if (!usingexec || who === "outer" || who === "any" || who === "request") {
+  if (who === "outer" || who === "any" || who === "request") {
     /** @type {OuterCtx} */
     const ocfg = ols.getStore();
     if (ocfg != null) outertest = ocfg.test;
