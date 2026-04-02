@@ -1542,7 +1542,6 @@ async function processGooglePlayNotification(env, notif) {
 }
 
 /**
- * TODO: stub
  * @param {any} env
  * @param {OneTimeProductNotification} notif
  */
@@ -1651,9 +1650,9 @@ async function handleOneTimeProductNotification(env, notif) {
       for (const tries of [1, 10]) {
         await sleep(tries); // wait 1s, then 10s
         try {
-          await deleteWsEntitlement(env, cid);
+          const deletedEnt = await deleteWsEntitlement(env, cid);
           logi(
-            `onetime: revoked ent for ${cid} / tok: ${obstoken} ${sku}/${productIds}; test? ${test}`,
+            `onetime: revoked (deleted? ${deletedEnt}) ent for ${cid} / tok: ${obstoken} ${sku}/${productIds}; test? ${test}`,
           );
           break;
         } catch (e) {
@@ -1861,13 +1860,16 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
       logi(
         `sub: expire/cancel sub ${cid} ${productId} at ${expiry} (now: ${now}) (cancel? ${cancelled} / expired? ${expired} / revoked? ${revoked} / unpaid? ${unpaid} / renew? ${autorenew} / replace? ${replaced} / defer? ${deferring})`,
       );
+
       if ((revoked && !replaced) || unpaid) {
         for (const tries of [1, 10]) {
           await sleep(tries); // Wait 1s, 10s
           try {
             // TODO: validate if productId being revoked/unpaid even grants a WSEntitlement
-            await deleteWsEntitlement(env, cid);
-            logi(`sub: revoked/unpaid sub ent for ${cid} ${productId}`);
+            const deletedEnt = await deleteWsEntitlement(env, cid);
+            logi(
+              `sub: revoked/unpaid (deleted? ${deletedEnt}) sub ent for ${cid} ${productId}`,
+            );
             break;
           } catch (e) {
             // TODO: set allok to false?
@@ -1891,6 +1893,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
         );
       }
     }
+
     return allok;
   } else {
     // SUBSCRIPTION_CANCELED, SUBSCRIPTION_ON_HOLD, SUBSCRIPTION_IN_GRACE_PERIOD, SUBSCRIPTION_PAUSED
@@ -1909,7 +1912,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
 async function handleVoidedPurchaseNotification(env, notif, test) {
   const obstoken = await obfuscate(notif.purchaseToken || "");
   const note = notif.refundType === 1 ? logi : loge;
-  // the purchase has been refunded already;
+  // the purchase has been refunded/voided;
   // if the purchaseToken exists in the database, then
   // retrieve the corresponding entitlements
   // (like from ws table) and delete them.
@@ -1917,6 +1920,86 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
   note(
     `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; test? ${test}`,
   );
+
+  return als.run(new ExecCtx(env, test, obstoken), async () => {
+    const purchaseToken = notif.purchaseToken;
+    // 1 = PRODUCT_TYPE_SUBSCRIPTION, 2 = PRODUCT_TYPE_ONE_TIME
+    const productType = notif.productType;
+
+    // 1. Look up the purchase token in the database to get the cid
+    const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
+    if (
+      dbres == null ||
+      !dbres.success ||
+      dbres.results == null ||
+      dbres.results.length <= 0
+    ) {
+      loge(`void: ${obstoken} not found in db; test? ${test}`);
+      return;
+    }
+
+    const entry = dbres.results[0];
+    const cid = entry.cid;
+    const linkedtoken = entry.linkedtoken || null;
+
+    if (emptyString(cid)) {
+      loge(`void: no cid for ${obstoken}; test? ${test}`);
+      return;
+    }
+
+    // 2. Try to fetch fresh meta from Google and update the DB if non-nil
+    let freshMeta = null;
+    try {
+      if (productType === 1) {
+        // PRODUCT_TYPE_SUBSCRIPTION
+        freshMeta = await getSubscription(env, purchaseToken);
+      } else if (productType === 2) {
+        // PRODUCT_TYPE_ONE_TIME
+        freshMeta = await getOnetimeProductV2(env, purchaseToken);
+      } else {
+        logw(
+          `void: unknown productType ${productType} for ${cid} / ${obstoken}; test? ${test}`,
+        );
+      }
+    } catch (err) {
+      // Token may have expired or been purged by Google (tokens are deleted 60d
+      // after subscription expiry); log and proceed to delete the entitlement.
+      logw(
+        `void: err fetching meta for ${cid} / ${obstoken}: ${err.message}; test? ${test}`,
+      );
+    }
+
+    if (freshMeta != null) {
+      try {
+        await dbx.upsertPlaySub(
+          dbx.db(env),
+          cid,
+          purchaseToken,
+          linkedtoken,
+          freshMeta,
+        );
+        logi(`void: updated meta for ${cid} / ${obstoken}; test? ${test}`);
+      } catch (err) {
+        loge(
+          `void: err updating meta for ${cid} / ${obstoken}: ${err.message}; test? ${test}`,
+        );
+      }
+    }
+
+    // 3. Delete the entitlement for this cid
+    for (const tries of [1, 10]) {
+      await sleep(tries); // wait 1s, then 10s
+      try {
+        await deleteWsEntitlement(env, cid);
+        logi(`void: deleted ent for ${cid} / ${obstoken}; test? ${test}`);
+        break;
+      } catch (e) {
+        loge(
+          `void: err deleting ent for ${cid} / ${obstoken}: ${e.message}; test? ${test}`,
+        );
+      }
+    }
+  });
 }
 
 /**
@@ -2134,11 +2217,12 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
     deleteEntitlement = true;
   }
 
+  let deletedEnt = false;
   if (deleteEntitlement) {
     // TODO: retry?
     try {
       // if no entitlement exists there's nothing to revoke; that's okay
-      await deleteWsEntitlement(env, cid);
+      deletedEnt = await deleteWsEntitlement(env, cid);
     } catch (e) {
       // TODO: worker analytics?
       loge(`onetime: refund ent delete err for ${cid}: ${e.message}`);
@@ -2146,14 +2230,14 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   }
 
   logi(
-    `onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken} / deleted? ${deleteEntitlement} / test? ${test}`,
+    `onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken} / deleted? ${deletedEnt} / test? ${test}`,
   );
 
   return r200j({
     success: true,
     message: "refunded onetime purchase",
     hadEntitlement: plan != null,
-    deletedEntitlement: deleteEntitlement,
+    deletedEntitlement: deletedEnt,
     wasAlreadyFullyRefunded: fullyRefunded,
     purchaseId: test ? purchaseToken : obstoken,
     orderId: test ? orderId : undefined,

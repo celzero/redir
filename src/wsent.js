@@ -350,11 +350,12 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @returns {Promise<void>} - Revokes the entitlement if it exists
+ * @returns {Promise<boolean>} - Revokes the entitlement if it exists
  * @throws {Error} - If there is an error deleting the entitlement
  */
 export async function deleteWsEntitlement(env, cid) {
   const db = dbx.db(env);
+  /** @type {WSEntitlement?} */
   let c = null;
   try {
     c = await creds(env, cid, "del");
@@ -363,24 +364,33 @@ export async function deleteWsEntitlement(env, cid) {
   }
   if (c == null) {
     // do not throw on no creds (client code may keep retrying otherwise)
-    return; // No existing credentials, nothing to delete
+    return false; // No existing credentials, nothing to delete
   }
-  // TODO: allow deletion of banned users?
+
+  if (c.test && !testmode("exec")) {
+    log.e(`ws: deleting test user ${cid} in non-test mode?`);
+  }
+
+  // TODO: check if c.test and testmode() match?
+
+  // TODO: do not allow deletion of banned users?
   if (c.status === "banned") {
-    throw new Error(`ws: cannot delete banned user ${cid} ${c.status}`);
+    log.e(`ws: deleting banned user ${cid} ${c.status}; test? ${c.test}`);
   }
   const deleted = await deleteCreds(env, c.sessiontoken);
   if (!deleted) {
     // TODO: tombstone db record?
     throw new Error(`ws: could not delete creds for ${cid}`);
   }
-  log.d(`ws: deleted remote win creds for ${cid}; deleting from db...`);
+  log.i(
+    `ws: deleted remote win creds for ${cid}; deleting from db...; test? ${c.test}`,
+  );
   const out = await dbx.deleteCreds(db, cid);
   if (!out || !out.success) {
     throw new Error(`ws: db delete err for ${cid} ${c.status}`);
   }
-  log.i(`ws: deleted both remote and local creds for ${cid}`);
-  return; // Successfully deleted the entitlement
+  log.i(`ws: deleted both remote and local creds for ${cid}; test? ${c.test}`);
+  return true; // Successfully deleted the entitlement
 }
 
 /**
