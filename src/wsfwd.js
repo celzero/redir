@@ -32,6 +32,8 @@ const wssessionpath = "/session";
 const wsportpath = "/portmap";
 const wslocpath = "/serverlist/mob-v2/";
 
+const wsdisableperma = true;
+
 const wsprodquery = "ws";
 const wstestquery = "wstest";
 const wsassetsquery = "wsassets";
@@ -260,8 +262,8 @@ function allowlisted(u) {
   p = p.toLowerCase(); // normalize to lowercase
   if (p.startsWith(wswginitpath)) return true;
   if (p.startsWith(wswgconnectpath)) return true;
-  if (p.startsWith(wswgpermanentpath)) return true;
-  if (p.startsWith(wswglistkeyspath)) return true;
+  if (p.startsWith(wswgpermanentpath) && !wsdisableperma) return true;
+  if (p.startsWith(wswglistkeyspath) && !wsdisableperma) return true;
   if (p.startsWith(wssessionpath)) return true;
   if (p.startsWith(wsportpath)) return true;
   if (p.startsWith(wslocpath)) return true;
