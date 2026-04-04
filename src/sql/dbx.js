@@ -204,6 +204,21 @@ export async function getDevice(db, cid, did) {
 }
 
 /**
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @returns {Promise<D1Out>} - D1Out with one row (cid, ctime, kind) if the client
+ *   exists and is not banned/removed; empty results otherwise.
+ */
+export async function getClient(db, cid) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: getClient: db/cid missing");
+  }
+  const q = "SELECT cid, ctime, kind FROM clients WHERE cid = ? AND kind >= 0";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
  *
  * @param {any} db - D1 binding
  * @param {string} cid - client identifier

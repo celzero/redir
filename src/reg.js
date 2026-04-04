@@ -42,6 +42,8 @@ import { crand, obfuscateHex } from "./webcrypto.js";
 
 // TODO: set it to false once all test clients have migrated to the new registration flow
 const allowAuthorizationBypassForTest = false;
+// TODO: set it to false once all clients have migrated
+const allowLegacyCid = true;
 
 export const mincidlength = 32; // ideally 64 hex chars
 export const mindidlength = 16; // ideally 32 hex chars
@@ -105,6 +107,135 @@ function didtokkey(cid, did, expiry) {
 const didTokenValiditySecs = 3 * 24 * 60 * 60;
 const didTokenCtx = str2byte("rethinkappdidtoken");
 
+// CIDs created before this cutoff (March 12, 2026 00:00:00 UTC) were not
+// HMAC-signed and cannot be cryptographically validated. Validate by DB lookup.
+const legacyCutoffMs = Date.UTC(2026, 2, 12); // month is 0-indexed; 2 = March
+
+/**
+ * Returns true if the SQLite ctime string from the clients table represents a
+ * timestamp before the legacy cutoff (March 12, 2026).
+ * @param {string|null} ctime
+ * @returns {boolean}
+ */
+function isLegacyCtime(ctime) {
+  if (emptyString(ctime)) return false;
+  const t = dbx.sqliteutc(ctime).getTime();
+  return !isNaN(t) && t < legacyCutoffMs;
+}
+
+/**
+ * Returns true if the cid exists in the database and was created before the
+ * legacy cutoff. Performs a DB lookup; do not call on hot paths.
+ * @param {any} env
+ * @param {string} cid
+ * @returns {Promise<boolean>}
+ */
+async function isLegacyCidInDb(env, cid) {
+  try {
+    const db = dbx.db(env);
+    const res = await dbx.getClient(db, cid);
+    if (res == null || !res.success || !res.results?.length) return false;
+    return isLegacyCtime(res.results[0]?.ctime ?? null);
+  } catch (e) {
+    log.e("isLegacyCidInDb: err", e);
+    return false;
+  }
+}
+
+/**
+ * Authorization path for legacy cids (ctime < March 12, 2026).
+ * Validates cid presence and legacy ctime in the database, then checks
+ * that did is associated with that cid. Never issues a didToken.
+ * Returns r204() if authorized, r401() on denial, r500() on DB error,
+ * or null if the cid is not legacy (caller should apply the normal rejection).
+ * @param {any} env
+ * @param {string} cid
+ * @param {string} did
+ * @returns {Promise<Response|null>}
+ */
+async function authorizeLegacy(env, cid, did) {
+  try {
+    const db = dbx.db(env);
+    const clientres = await dbx.getClient(db, cid);
+    if (clientres == null || !clientres.success || !clientres.results?.length) {
+      return null; // cid not in DB; not legacy
+    }
+    if (!isLegacyCtime(clientres.results[0]?.ctime ?? null)) {
+      return null; // cid is in DB but created after the cutoff; not legacy
+    }
+    // confirmed legacy cid: verify did is associated with it
+    const devres = await dbx.getDevice(db, cid, did);
+    if (
+      devres == null ||
+      !devres.success ||
+      devres.results == null ||
+      devres.results.length <= 0
+    ) {
+      log.w("authorizeLegacy: device not found", cid, did);
+      return r401("device not found");
+    }
+    log.d("authorizeLegacy: ok", cid, ":", did);
+    return r204(); // authorized; never issue a token for legacy cids
+  } catch (e) {
+    log.e("authorizeLegacy: err", e);
+    return r500(`db err: ${e.message}`);
+  }
+}
+
+/**
+ * Device registration path for legacy cids (ctime < March 12, 2026).
+ * DIDs for legacy cids are plain random hex (not HMAC-signed).
+ * If did is provided it is persisted as-is; if absent a new random
+ * 16-byte (32 hex-char) did is generated. Never returns a didToken.
+ * @param {any} env
+ * @param {string} cid
+ * @param {string|null} did - optional existing device identifier
+ * @param {object|null} clientmeta
+ * @param {object|null} devicemeta
+ * @returns {Promise<Response>}
+ */
+async function registerLegacyDevice(env, cid, did, clientmeta, devicemeta) {
+  try {
+    const db = dbx.db(env);
+    const isNewDid = emptyString(did);
+    const targetDid = isNewDid ? buf2hex(crand(16)) : did;
+    const cout = await dbx.upsertClient(
+      db,
+      cid,
+      clientmeta,
+      kindplaystoreclient,
+    );
+    if (cout == null || !cout.success) {
+      return r500("client upsert failed");
+    }
+    const dout = await dbx.upsertDevice(
+      db,
+      targetDid,
+      cid,
+      devicemeta,
+      kindphone,
+    );
+    if (dout == null || !dout.success) {
+      return r500("device upsert failed");
+    }
+    log.d(
+      "registerLegacyDevice:",
+      isNewDid ? "new" : "updated",
+      "did:",
+      targetDid,
+      "for c:",
+      cid,
+    );
+    if (isNewDid) {
+      return r200j(new ResClientReg({ cid, did: targetDid }).json);
+    }
+    return retrieveDevices(env, cid, false);
+  } catch (e) {
+    log.e("registerLegacyDevice err:", e);
+    return r500(`db error: ${e.message}`);
+  }
+}
+
 /**
  * @param {any} env - Workers environment
  * @param {Request} req - Incoming request
@@ -143,6 +274,27 @@ export async function registerClient(env, req) {
     const cachedCidSig = sigcache.get(cidkey);
     if (cachedCidSig === signotok) {
       log.w("registerClient: cid sig cached invalid", existingCid);
+      if (allowLegacyCid && (await isLegacyCidInDb(env, existingCid))) {
+        const clientmeta = meta?.client ?? null;
+        try {
+          const db = dbx.db(env);
+          const cout = await dbx.upsertClient(
+            db,
+            existingCid,
+            clientmeta,
+            clientkindint,
+          );
+          if (cout == null || !cout.success) {
+            log.w(`registerClient (legacy) upsert failed for ${existingCid}`);
+            return r500("could not re-register");
+          }
+        } catch (e2) {
+          log.e("registerClient (legacy) upsert error:", e2);
+          return r500(`db err: ${e2.message}`);
+        }
+        log.d("registerClient (legacy) updated cid:", existingCid);
+        return r200j(new ResClientReg({ cid: existingCid }).json);
+      }
       return r401("cid verification failed");
     }
     if (cachedCidSig === false) {
@@ -159,6 +311,29 @@ export async function registerClient(env, req) {
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("registerClient: cid invalid", existingCid);
+          if (allowLegacyCid && (await isLegacyCidInDb(env, existingCid))) {
+            const clientmeta = meta?.client ?? null;
+            try {
+              const db = dbx.db(env);
+              const cout = await dbx.upsertClient(
+                db,
+                existingCid,
+                clientmeta,
+                clientkindint,
+              );
+              if (cout == null || !cout.success) {
+                log.w(
+                  `registerClient (legacy) upsert failed for ${existingCid}`,
+                );
+                return r500("could not re-register");
+              }
+            } catch (e2) {
+              log.e("registerClient (legacy) upsert error:", e2);
+              return r500(`db err: ${e2.message}`);
+            }
+            log.d("registerClient (legacy) updated cid:", existingCid);
+            return r200j(new ResClientReg({ cid: existingCid }).json);
+          }
           return r401("cid verification failed");
         }
       } catch (e) {
@@ -289,9 +464,29 @@ export async function registerDevice(env, req) {
   const cachedDidSig = didkey != null ? sigcache.get(didkey) : null;
 
   if (cachedCidSig === signotok) {
+    const meta = await consumejson(req);
+    if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
+      return registerLegacyDevice(
+        env,
+        cid,
+        did,
+        meta?.client ?? null,
+        meta?.device ?? null,
+      );
+    }
     return r401("cid verification failed");
   }
   if (cachedDidSig === signotok) {
+    const meta = await consumejson(req);
+    if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
+      return registerLegacyDevice(
+        env,
+        cid,
+        did,
+        meta?.client ?? null,
+        meta?.device ?? null,
+      );
+    }
     return r401("did verification failed");
   }
 
@@ -323,6 +518,16 @@ export async function registerDevice(env, req) {
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("registerDevice: cid invalid", cid);
+          const meta = await consumejson(req);
+          if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
+            return registerLegacyDevice(
+              env,
+              cid,
+              did,
+              meta?.client ?? null,
+              meta?.device ?? null,
+            );
+          }
           return r401("cid verification failed");
         }
       }
@@ -332,6 +537,16 @@ export async function registerDevice(env, req) {
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("registerDevice: did invalid", did);
+          const meta = await consumejson(req);
+          if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
+            return registerLegacyDevice(
+              env,
+              cid,
+              did,
+              meta?.client ?? null,
+              meta?.device ?? null,
+            );
+          }
           return r401("did verification failed");
         }
       }
@@ -627,6 +842,10 @@ export async function authorizeDevice(env, req) {
 
   if (cachedCidSig === signotok) {
     log.w("authorizeDevice: cid sig cached invalid", cid);
+    const legacyResp = allowLegacyCid
+      ? await authorizeLegacy(env, cid, did)
+      : null;
+    if (legacyResp != null) return legacyResp;
     if (allowAuthorizationBypassForTest && test) {
       log.w("authorizeDevice: TEST bypass cid sig invalid");
       return r204();
@@ -635,6 +854,10 @@ export async function authorizeDevice(env, req) {
   }
   if (cachedDidSig === signotok) {
     log.w("authorizeDevice: did sig cached invalid", did);
+    const legacyResp = allowLegacyCid
+      ? await authorizeLegacy(env, cid, did)
+      : null;
+    if (legacyResp != null) return legacyResp;
     if (allowAuthorizationBypassForTest && test) {
       log.w("authorizeDevice: TEST bypass did sig invalid");
       return r204();
@@ -695,6 +918,10 @@ export async function authorizeDevice(env, req) {
         sigcache.put(cidkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("authorizeDevice: cid invalid", cid);
+          const legacyResp = allowLegacyCid
+            ? await authorizeLegacy(env, cid, did)
+            : null;
+          if (legacyResp != null) return legacyResp;
           if (allowAuthorizationBypassForTest && test) {
             log.w("authorizeDevice: TEST bypass cid invalid");
             return r204();
@@ -708,6 +935,10 @@ export async function authorizeDevice(env, req) {
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("authorizeDevice: did invalid", did);
+          const legacyResp = allowLegacyCid
+            ? await authorizeLegacy(env, cid, did)
+            : null;
+          if (legacyResp != null) return legacyResp;
           if (allowAuthorizationBypassForTest && test) {
             log.w("authorizeDevice: TEST bypass did invalid");
             return r204();
