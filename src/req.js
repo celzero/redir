@@ -334,6 +334,12 @@ export function r200j(j) {
   return new Response(JSON.stringify(j), { status: 200, headers: h });
 }
 
+/** 200 OK with JSON body */
+export function r200jstr(jstr) {
+  const h = { "content-type": "application/json" };
+  return new Response(jstr, { status: 200, headers: h });
+}
+
 /** 200 OK with JSON body, wrapping payload in PlayOk */
 export function r200play(j) {
   const h = { "content-type": "application/json" };
