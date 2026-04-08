@@ -40,7 +40,13 @@ import {
 import * as dbx from "./sql/dbx.js";
 import { crand, obfuscateHex } from "./webcrypto.js";
 
-// TODO: set it to false once all test clients have migrated to the new registration flow
+// TODO: on device registration failure or device denylisting, delete all wg keys of associated wsuser
+// existing valid clients+devices will be able to regenerate new wg creds
+// but the devices that have been denylisted will not be able to.
+
+// TODO: never send entitlement in developer payload and have client fetch it?
+
+// set it to false once all test clients have migrated to the new registration flow
 const allowAuthorizationBypassForTest = false;
 // TODO: set it to false once all clients have migrated
 const allowLegacyCid = true;

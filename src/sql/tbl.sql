@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS ws (
     cid TEXT PRIMARY KEY,
     -- ws session token (encrypted)
     sessiontoken TEXT NOT NULL,
-    -- user identifier
+    -- user identifier (todo: unique)
     userid TEXT NOT NULL,
     -- created at timestamp
     ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

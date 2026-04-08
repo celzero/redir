@@ -25,7 +25,6 @@ import {
   r409play as r409j,
   r500play as r500j,
   sku as skuOf,
-  tot,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
@@ -1741,7 +1740,7 @@ async function handleSubscriptionNotification(env, notif, test) {
   test = test || sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
   const obstoken = await obfuscate(purchasetoken);
-  // TODO: handle SUBSCRIPTION_PAUSED and SUBSCRIPTION_RESTORED
+  // TODO: handle SUBSCRIPTION_PAUSED, SUBSCRIPTION_DEFERRED, SUBSCRIPTION_RESTORED
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     logi(`sub: ${typ} for ${obstoken} test? ${test}`);
