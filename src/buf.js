@@ -76,7 +76,10 @@ export function buf2b64url(buffer) {
 export function cat(...args) {
   if (args.length === 0) return ZEROBUF;
   if (args.length === 1) return byt(args[0]);
-  const totalLength = args.reduce((sum, arg) => sum + (arg?.byteLength ?? 0), 0);
+  const totalLength = args.reduce(
+    (sum, arg) => sum + (arg?.byteLength ?? 0),
+    0,
+  );
   const result = new Uint8Array(totalLength);
   let offset = 0;
   for (const arg of args) {
@@ -145,6 +148,7 @@ export function eq(a, b) {
 }
 
 /**
+ * TODO: developers.cloudflare.com/workers/runtime-apis/web-crypto/#timingsafeequal
  * Always inspects every byte regardless of where the first difference is,
  * so the execution time does not leak information about the compared values.
  * Use this whenever comparing security-sensitive values such as HMAC tags.
@@ -157,6 +161,7 @@ export function safeEq(a, b) {
   const bempty = emptyBuf(b);
   if (aempty && bempty) return true;
   if (aempty || bempty) return false;
+  if (a.byteLength !== b.byteLength) return false;
 
   const av = byt(a);
   const bv = byt(b);
