@@ -559,8 +559,8 @@ async function respond(promisedResponse, authr) {
 }
 
 export default {
-  async fetch(request, env, ctx) {
-    env = d.wrap(env, request);
-    return d.ols.run(new d.OuterCtx(env, request), handle, request, env, ctx);
+  async fetch(req, env, ctx) {
+    env = d.wrap(env, req);
+    return d.ols.run(new d.OuterCtx(env, req, ctx), handle, req, env, ctx);
   },
 };

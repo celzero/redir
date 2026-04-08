@@ -38,8 +38,9 @@ export class OuterCtx extends ExecCtx {
   /**
    * @param {any} env - Worker environment
    * @param {Request} req - Incoming request object
+   * @param {any} workctx - developers.cloudflare.com/workers/runtime-apis/context
    */
-  constructor(env, req) {
+  constructor(env, req, workctx) {
     const u = new URL(req.url);
     const test = u.searchParams.has("test");
 
@@ -53,6 +54,10 @@ export class OuterCtx extends ExecCtx {
      * @type {URL} - Incoming URL.
      */
     this.url = u;
+    /**
+     * @type {any} - developers.cloudflare.com/workers/runtime-apis/context
+     */
+    this.workctx = workctx;
   }
 }
 
@@ -178,6 +183,18 @@ export function testmode(who = "any") {
   // if either is in test domain, treat the entire execution to be
   // in test domain if "who=any"; regardless of whether they disagree.
   return innertest || outertest;
+}
+
+/**
+ * developers.cloudflare.com/workers/runtime-apis/context/#waituntil
+ * @param {function(): Promise<any>} fn - The async function to execute in background.
+ * @param  {...any} args - Arguments to pass to the function, if any
+ */
+export function go(fn, ...args) {
+  const workctx = ols.getStore()?.workctx;
+  if (workctx != null) {
+    workctx.waitUntil(fn(...args));
+  }
 }
 
 /**
