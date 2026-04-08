@@ -68,6 +68,39 @@ CREATE TABLE IF NOT EXISTS ws (
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT
 );
 
+CREATE TABLE IF NOT EXISTS wslease (
+    -- user identifier
+    userid TEXT PRIMARY KEY,
+    -- ws session token (encrypted)
+    sessiontoken TEXT NOT NULL,
+    -- session information json
+    meta TEXT NOT NULL,
+    -- client identifier
+    cid TEXT UNIQUE,
+    -- expiry
+    until TIMESTAMP NOT NULL,
+    -- created at timestamp
+    ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    mtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    -- restrict deletion unless ws has been notified and sessiontoken is invalidated
+    FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS wsperma (
+    -- managed wg public key (std base64; 44 chars)
+    pubkey TEXT PRIMARY KEY,
+    -- device identifier; nullable: set to NULL by FK ON DELETE SET NULL when device is removed
+    did TEXT UNIQUE,
+    -- client identifier
+    cid TEXT NOT NULL,
+    -- credential as json (encrypted)
+    meta TEXT NOT NULL,
+    -- created at timestamp
+    ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (did) REFERENCES devices(did) ON DELETE SET NULL,
+    FOREIGN KEY (cid) REFERENCES ws(cid) ON DELETE CASCADE
+);
+
 -- developers.cloudflare.com/d1/best-practices/use-indexes
 CREATE INDEX IF NOT EXISTS idx_playorders_linkedtoken
 ON playorders(linkedtoken);
@@ -77,3 +110,13 @@ ON playorders(cid);
 
 CREATE INDEX IF NOT EXISTS idx_devices_cid
 ON devices(cid);
+
+CREATE INDEX IF NOT EXISTS idx_wslease_cid
+ON wslease(cid);
+
+CREATE INDEX IF NOT EXISTS idx_wsperma_cid
+ON wsperma(cid);
+
+-- sqlite.org/foreignkeys.html
+-- TODO: migrate tables with unique constraints on columns that
+-- TODO: require it for it to be a valid foreign key

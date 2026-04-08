@@ -510,6 +510,83 @@ export async function deleteCreds(db, cid) {
 }
 
 /**
+ * Retrieves the wsperma row whose did matches, if any.
+ * @param {any} db - D1 binding
+ * @param {string} did - device identifier
+ * @returns {Promise<D1Out>}
+ */
+export async function getPermaByDid(db, did) {
+  if (db == null || emptyString(did)) {
+    throw new Error("d1: getPermaByDid: db/did missing");
+  }
+  const q = "SELECT * FROM wsperma WHERE did = ?";
+  const tx = db.prepare(q).bind(did);
+  return run(tx, q);
+}
+
+/**
+ * Retrieves all wsperma rows for a given cid, ordered oldest-first.
+ * @param {any} db - D1 binding
+ * @param {string} cid - client identifier
+ * @returns {Promise<D1Out>}
+ */
+export async function getPermasByCid(db, cid, limit = 10) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: getPermasByCid: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM wsperma WHERE cid = ? ORDER BY ctime ASC" +
+    (limit > 0 ? ` LIMIT ${limit}` : "");
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
+ * Inserts or updates a wsperma row identified by pubkey.
+ * On conflict the did and meta columns are updated; cid and ctime are preserved.
+ * @param {any} db - D1 binding
+ * @param {string} pubkey - WG public key (std base64, 44 chars)
+ * @param {string} did - device identifier
+ * @param {string} cid - client identifier
+ * @param {string} encmeta - encrypted config json (ivtaggedciphertext hex)
+ * @returns {Promise<D1Out>}
+ */
+export async function upsertPerma(db, pubkey, did, cid, encmeta) {
+  if (
+    db == null ||
+    emptyString(pubkey) ||
+    emptyString(did) ||
+    emptyString(cid) ||
+    emptyString(encmeta)
+  ) {
+    throw new Error("d1: upsertPerma: db/pubkey/did/cid/encmeta missing");
+  }
+  const q =
+    "INSERT INTO wsperma(pubkey, did, cid, meta) VALUES(?, ?, ?, ?)" +
+    " ON CONFLICT(pubkey) DO UPDATE SET did=excluded.did, meta=excluded.meta";
+  const tx = db.prepare(q).bind(pubkey, did, cid, encmeta);
+  return run(tx, q);
+}
+
+/**
+ * Assigns did to a wsperma row that currently has did = NULL (i.e. the
+ * device was deleted and the FK set the column to NULL).  Only updates rows
+ * where did IS NULL to avoid accidentally overwriting an active assignment.
+ * @param {any} db - D1 binding
+ * @param {string} pubkey - WG public key to re-assign
+ * @param {string} did - new device identifier
+ * @returns {Promise<D1Out>}
+ */
+export async function reassignPermaDid(db, pubkey, did) {
+  if (db == null || emptyString(pubkey) || emptyString(did)) {
+    throw new Error("d1: reassignPermaDid: db/pubkey/did missing");
+  }
+  const q = "UPDATE wsperma SET did = ? WHERE pubkey = ? AND did IS NULL";
+  const tx = db.prepare(q).bind(did, pubkey);
+  return run(tx, q);
+}
+
+/**
  * developers.cloudflare.com/d1/worker-api/prepared-statements/#run
  * @param {any} tx - D1 prepared statement
  * @param {string} [sql] - optional SQL query string for logging

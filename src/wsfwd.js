@@ -15,6 +15,7 @@ import {
   r421err,
 } from "./req.js";
 import { WSUser } from "./wsent.js";
+import { getOrCreatePermaConfig } from "./wsperma.js";
 
 const log = new glog.Log("wsfwd");
 
@@ -60,6 +61,11 @@ export async function forwardToWs(env, r) {
     if (mustEncrypt && emptyString(cid)) {
       return r401err("wsf: needs cid");
     }
+  }
+
+  // permanent managed WG credential — handled separately, never forwarded
+  if (isPermaReq(u)) {
+    return getOrCreatePermaConfig(env, cid, did, token);
   }
 
   const [typ, sensitive, test] = reqType(u);
@@ -270,4 +276,15 @@ function allowlisted(u) {
   if (p.startsWith(wswgpskrekeypath)) return true;
 
   return false;
+}
+
+/**
+ * @param {URL} u - URL to check
+ */
+function isPermaReq(u) {
+  let p = u.pathname;
+  if (emptyString(p)) return false;
+
+  p = p.toLowerCase();
+  return p.startsWith(wswgpermanentpath);
 }
