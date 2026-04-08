@@ -1056,7 +1056,7 @@ function daysUntil(t, base = new Date()) {
  * @param {any} env - Worker environment
  * @returns
  */
-function apiurl(env) {
+export function apiurl(env) {
   if (testmode("exec")) {
     return env.WS_URL_TEST;
   } else if (env.TEST) {
