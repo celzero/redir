@@ -4,7 +4,7 @@
 import * as bin from "./buf.js";
 import { hkdfaes, hkdfalgkeysz, sha256, sha512 } from "./hmac.js";
 import * as glog from "./log.js";
-import { decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
+import { csprng, decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
 const log = new glog.Log("dbenc");
 
@@ -95,6 +95,123 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
     log.e("encrypt: failed", err);
     return null;
   }
+}
+
+/**
+ * Encrypts plaintext using AES-GCM with a random IV, prepending the IV to the
+ * output so no separate nonce storage is required.  Unlike {@link encrypt}
+ * (which derives a fixed IV from uniq+cid), the IV here is generated randomly.
+ *
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {string?} aadhex - additional authenticated data (hex string)
+ * @param {string} plaintext - plaintext to encrypt (hex string)
+ * @returns {Promise<string|null>} - iv (12 B) ‖ taggedciphertext, encoded as hex, or null
+ */
+export async function encrypt2(env, cid, aadhex, plaintext) {
+  let keyctx = "";
+  if (!bin.emptyString(aadhex)) {
+    keyctx = "dbenc2";
+  }
+  const enckey = await key(env, cid, keyctx);
+  if (!enckey) {
+    log.e("encrypt2: key missing");
+    return null;
+  }
+  try {
+    const iv = csprng(12); // random 12-byte IV
+    const pt = bin.hex2buf(plaintext);
+    const aad = bin.hex2buf(aadhex);
+    const tagged = await encryptAesGcm(enckey, iv, pt, aad);
+    // prepend iv: ivtaggedciphertext = iv ‖ taggedciphertext
+    const out = new Uint8Array(iv.byteLength + tagged.byteLength);
+    out.set(iv, 0);
+    out.set(tagged, iv.byteLength);
+    return bin.buf2hex(out);
+  } catch (err) {
+    log.e("encrypt2: failed", err);
+    return null;
+  }
+}
+
+/**
+ * Decrypts an ivtaggedciphertext produced by {@link encrypt2}.
+ * The first 12 bytes of the ciphertext are the IV; the rest is the AES-GCM
+ * tagged ciphertext.
+ *
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {string?} aadhex - additional authenticated data (hex string)
+ * @param {string} ivtaggedciphertext - iv ‖ taggedciphertext (hex string)
+ * @returns {Promise<string|null>} - decrypted plaintext (hex) or null
+ */
+export async function decrypt2(env, cid, aadhex, ivtaggedciphertext) {
+  let keyctx = "";
+  if (!bin.emptyString(aadhex)) {
+    keyctx = "dbenc2";
+  }
+  const enckey = await key(env, cid, keyctx);
+  if (!enckey) {
+    log.e("decrypt2: key missing");
+    return null;
+  }
+  try {
+    const combined = bin.hex2buf(ivtaggedciphertext);
+    if (combined.byteLength <= 12) {
+      throw new Error("decrypt2: data too short to contain IV");
+    }
+    const iv = combined.slice(0, 12);
+    const cipher = combined.slice(12);
+    const aad = bin.hex2buf(aadhex);
+    const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
+    return bin.buf2hex(plaintext);
+  } catch (err) {
+    log.e("decrypt2: failed", err);
+    return null;
+  }
+}
+
+/**
+ * String-level wrapper around {@link encrypt2}.
+ * Converts plainstr and aadstr to hex, encrypts with a random IV, and returns
+ * the resulting ivtaggedciphertext hex string.
+ *
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {string?} aadstr - additional authenticated data (string)
+ * @param {string} plainstr - plaintext to encrypt (string)
+ * @returns {Promise<string|null>} - ivtaggedciphertext (hex) or null
+ */
+export async function encryptText2(env, cid, aadstr, plainstr) {
+  if (bin.emptyString(plainstr)) {
+    log.e("encryptText2: plaintext missing");
+    return null;
+  }
+  const aadhex = bin.str2byt2hex(aadstr); // optional, may be empty
+  const pthex = bin.str2byt2hex(plainstr);
+  return await encrypt2(env, cid, aadhex, pthex);
+}
+
+/**
+ * String-level wrapper around {@link decrypt2}.
+ * Decrypts an ivtaggedciphertext hex string and returns the plaintext as UTF-8.
+ *
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID (hex string)
+ * @param {string?} aadstr - additional authenticated data (string)
+ * @param {string} ivtaggedciphertext - iv ‖ taggedciphertext (hex string)
+ * @returns {Promise<string|null>} - decrypted plaintext (UTF-8 string) or null
+ */
+export async function decryptText2(env, cid, aadstr, ivtaggedciphertext) {
+  const aadhex = bin.str2byt2hex(aadstr);
+  const plainhex = await decrypt2(env, cid, aadhex, ivtaggedciphertext);
+  if (bin.emptyString(plainhex)) return null;
+  try {
+    return bin.hex2byt2str(plainhex);
+  } catch (err) {
+    log.e("decryptText2: failed decode hex2str", err);
+  }
+  return null;
 }
 
 /**

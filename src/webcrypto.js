@@ -11,7 +11,6 @@ import {
   b642buf,
   buf2hex,
   byt,
-  cat,
   emptyBuf,
   hex2buf,
   lcat,
@@ -283,4 +282,16 @@ export async function obfuscate(str) {
  */
 export async function obfuscateHex(hexstr) {
   return sha256hex(hexstr);
+}
+
+/**
+ * Generates cryptographically secure random bytes.
+ * @param {number} len - The number of random bytes to generate (default: 32)
+ * @returns {Uint8Array} - A Uint8Array containing the random bytes
+ */
+export function csprng(len = 12) {
+  if (isNaN(len) || len <= 0) {
+    throw new Error("csprng: invalid argument");
+  }
+  return crypto.getRandomValues(new Uint8Array(len));
 }
