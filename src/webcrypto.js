@@ -18,6 +18,8 @@ import {
   str2byt2hex,
 } from "./buf.js";
 
+const obssalt = "90a0755b09e7e3329a1f9b837dba3c0c";
+
 /**
  * @param {CryptoKey} aeskey - The AES-GCM key
  * @param {BufferSource} iv - The initialization vector (12 byte)
@@ -267,10 +269,15 @@ export async function importRsaSsa256Key(pem) {
  * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
  * then hashes it to a hex string.
  * @param {string} str - input string to obfuscate.
+ * @param {string} salt - override salt.
  * @returns {Promise<string>} - sha256 hash of the input as hex.
  */
-export async function obfuscate(str) {
+export async function obfuscate(str, salt = obssalt) {
   const hex = str2byt2hex(str);
+  if (salt) {
+    const saltHex = hex2buf(salt);
+    return obfuscateHex(hex + saltHex);
+  }
   return obfuscateHex(hex);
 }
 
