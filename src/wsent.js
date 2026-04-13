@@ -773,7 +773,10 @@ async function newCreds(env, expiry, requestedPlan) {
             },
     */
     log.e(`new creds: upgrade loop err for ${userid}; deleting creds:`, err);
-    const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
+    const deleted = await deleteCreds(
+      env,
+      wsuser.sessionAuthHash || initialSessionAuthHash,
+    );
     log.e(`new creds: deleted creds for ${userid} after err? ${deleted}`);
     throw err;
   }
@@ -787,13 +790,14 @@ async function newCreds(env, expiry, requestedPlan) {
   if (ups > 0) {
     const [, refreshed] = await credsStatus(env, wsuser.sessionAuthHash);
     if (refreshed != null) {
+      refreshed.sessionAuthHash = initialSessionAuthHash;
       wsuser = refreshed;
-      wsuser.sessionAuthHash = refreshed.sessionAuthHash;
     } else {
-      wsuser.sessionAuthHash = initialSessionAuthHash;
       note = log.e.bind(log);
     }
   }
+
+  // failsafe; should never happen
   if (bin.emptyString(wsuser.sessionAuthHash)) {
     usingFirstAuth = true;
     wsuser.sessionAuthHash = initialSessionAuthHash;
