@@ -848,12 +848,16 @@ async function credsStatus(env, sessiontoken) {
     if (r.status >= 400) {
       const err = await consumejson(r);
       log.w(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
-      if (err.errorCode === 701) {
+      if (err != null && err.errorCode === 701) {
         return ["invalid", null]; // Session is invalid
       }
-      if (err.errorCode === 6002) {
+      if (err != null && err.errorCode === 6002) {
         // TODO: windscribe bug; return "unknown"?
         return ["invalid", null]; // Server error validating session
+      }
+      if (r.status === 403) {
+        // TODO: analytics?
+        return ["invalid", null]; // 403 forbidden
       }
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
