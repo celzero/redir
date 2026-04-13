@@ -3705,7 +3705,7 @@ async function linkedOnetimePurchases2(
   for (const p of currentPurchases) {
     const meta =
       typeof p.meta === "string" ? JSON.parse(p.meta || "{}") : p.meta || {};
-    if (p.purchasetoken === linkedtoken) {
+    if (linkedtoken != null && p.purchasetoken === linkedtoken) {
       return [p.purchasetoken, new ProductPurchaseV2(meta)];
     }
     if (link === nolink && p.purchasetoken !== purchasetoken) {
@@ -3842,6 +3842,7 @@ async function getOrGenAndPersistCidFromProduct(
  */
 async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
   // TODO: cid must match with existing db entry, if any
+  // linkedPurchaseToken is the older token this new pt must "invalidate" / supercede
   return dbx.upsertPlaySub(dbx.db(env), cid, pt, sub.linkedPurchaseToken, sub);
 }
 
@@ -3976,13 +3977,13 @@ function subscriptionItem2plan(item, start) {
 
 /**
  * TODO: instead of null throw Error with approp msg
- * @param {ProductPurchaseV2} p
- * @param {ProductPurchaseV2?} linkedPurchase - Add expiry to existing purchase
+ * @param {ProductPurchaseV2} p - existing purchase to extend, or new purchase if linkedPurchase is null.
+ * @param {ProductPurchaseV2?} linkedPurchase - Adds expiry to existing purchase.
  * @returns {GEntitlement?} - If p is valid, else null.
  */
 function onetimeDeferredPlan(p, linkedPurchase = null) {
   if (linkedPurchase == null) {
-    loge(`onetime: deferred: null linked purchase`);
+    logw(`onetime: deferred: null linked purchase`);
     return onetimePlan(p);
   }
 
