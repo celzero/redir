@@ -941,16 +941,23 @@ async function deleteCreds(env, sessiontoken) {
       "logStatus": null
       }
       */
-      if (r.status === 403) {
-        const err = await consumejson(r);
-        const errstr = JSON.stringify(err);
+      let errstr = "";
+      if (r.status >= 400) {
+        const errmsg = await consumejson(r);
+        errstr = errmsg != null ? JSON.stringify(errmsg) : "err null";
         log.w(`deleteCreds: attempt ${tries} err: ${errstr}`);
-        if (err.errorCode === 701) {
+        if (errmsg.errorCode === 701) {
           return true; // Session is invalid, can never delete
         }
+        if (r.status === 403) {
+          return true; // forbidden, can never delete
+        }
       }
+      log.e(
+        `deleteCreds: attempt ${tries} failed with status ${r.status} ${errstr}`,
+      );
     } catch (err) {
-      log.e(`deleteCreds: attempt ${tries} error:`, err);
+      log.e(`deleteCreds: attempt ${tries} caught error`, err);
       // TODO: queue retry
     }
   }
