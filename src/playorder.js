@@ -768,6 +768,8 @@ class ProductPurchaseV1 {
     this.productId = json.productId || "";
     /**
      * @type {number} - Default from Google RTDN is 1 (may be 0).
+     * multi-quantity purchases are only supported for consumable one-time sku
+     * @see developer.android.com/google/play/billing/integrate#mq
      */
     this.quantity = json.quantity ?? 0;
     /**
@@ -909,7 +911,11 @@ class ProductOfferDetails {
       : null;
     /** @type {string} */
     this.offerToken = json.offerToken || "";
-    /** @type {number} - set to at least 1 for valid purchases */
+    /**
+     * @type {number} - set to at least 1 for valid purchases
+     * multi-quantity purchases are only supported for consumable one-time sku
+     * @see developer.android.com/google/play/billing/integrate#mq
+     */
     this.quantity = json.quantity ?? -1;
     /** @type {number} */
     this.refundableQuantity = json.refundableQuantity ?? -1;
@@ -2974,6 +2980,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const unconsumedProductIds = unconsumedProducts2(purchase2);
         const paid = isOnetimePaid2(purchase2);
         const pending = isOnetimeUnpaid2(purchase2);
+        const cancelled = isOnetimeCancelled2(purchase2);
         const onetimeState = onetimePurchaseStateStr2(purchase2);
 
         logi(
@@ -2993,9 +3000,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         } // else: test === testPurchase
 
-        if (!paid || pending) {
+        if (!paid || pending || cancelled) {
           return r400j({
-            error: "purchase not completed",
+            error: cancelled ? "purchase cancelled" : "purchase not completed",
             purchaseId: test ? purchasetoken : obstoken,
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
             state: onetimeState,
@@ -3162,7 +3169,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
         const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
         const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
-        obstoken = await obfuscate(purchasetoken);
 
         if (testPurchase !== test) {
           loge(`ack: err test domain mismatch for ${cid} with ${obstoken}`);
@@ -3445,6 +3451,7 @@ export async function googlePlayConsumePurchase(env, req) {
       const unconsumedProductIds = unconsumedProducts2(purchase2);
       const paid = isOnetimePaid2(purchase2);
       const pending = isOnetimeUnpaid2(purchase2);
+      const cancelled = isOnetimeCancelled2(purchase2);
       const onetimeState = onetimePurchaseStateStr2(purchase2);
 
       logi(
@@ -3463,9 +3470,9 @@ export async function googlePlayConsumePurchase(env, req) {
         });
       } // else: test === testPurchase
 
-      if (!paid || pending) {
+      if (!paid || pending || cancelled) {
         return r400j({
-          error: "purchase not completed",
+          error: cancelled ? "purchase cancelled" : "purchase not completed",
           purchaseId: test ? purchasetoken : obstoken,
           state: onetimeState,
           sku: sku,
