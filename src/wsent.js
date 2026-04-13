@@ -672,6 +672,8 @@ async function newCreds(env, expiry, requestedPlan) {
     );
   }
 
+  const initialSessionAuthHash = wsuser.sessionAuthHash;
+
   const userid = wsuser.userId || "nowsuser??";
   const remExec = execCount - 1; // already executed once above
   let ups = 0; // count of successful upgrades
@@ -776,6 +778,8 @@ async function newCreds(env, expiry, requestedPlan) {
     throw err;
   }
 
+  let usingFirstAuth = false;
+
   let note = log.i.bind(log);
   // Remote API is the source of truth: refresh wsuser to get the actual
   // expiry after all upgrade PUTs have been applied. The POST response
@@ -784,13 +788,19 @@ async function newCreds(env, expiry, requestedPlan) {
     const [, refreshed] = await credsStatus(env, wsuser.sessionAuthHash);
     if (refreshed != null) {
       wsuser = refreshed;
-      wsuser.sessionAuthHash = wsuser.sessionAuthHash;
+      wsuser.sessionAuthHash = refreshed.sessionAuthHash;
     } else {
+      wsuser.sessionAuthHash = initialSessionAuthHash;
       note = log.e.bind(log);
     }
   }
+  if (bin.emptyString(wsuser.sessionAuthHash)) {
+    usingFirstAuth = true;
+    wsuser.sessionAuthHash = initialSessionAuthHash;
+    note = log.e.bind(log);
+  }
   note(
-    `new creds: for ${userid} expiring on ${wsuser.expiry} after tot ${ups} upgrades (asked: ${requestedPlan}, got: ${plan} + ${execCount})`,
+    `new creds: for ${userid} (usingInitTok? ${usingFirstAuth}) expiring on ${wsuser.expiry} after tot ${ups} upgrades (asked: ${requestedPlan}, got: ${plan} + ${execCount})`,
   );
   return wsuser; // the new/updated credentials
 }
