@@ -504,6 +504,7 @@ export async function deleteCreds(db, cid) {
   if (db == null || cid == null) {
     throw new Error("d1: wsDeleteCreds: db/cid missing");
   }
+  // will cascade delete matching cid from wsperma table
   const q = "DELETE FROM ws WHERE cid = ?";
   const tx = db.prepare(q).bind(cid);
   return run(tx, q);
@@ -515,12 +516,13 @@ export async function deleteCreds(db, cid) {
  * @param {string} did - device identifier
  * @returns {Promise<D1Out>}
  */
-export async function getPermaByDid(db, did) {
-  if (db == null || emptyString(did)) {
-    throw new Error("d1: getPermaByDid: db/did missing");
+export async function deletePermasByPubkeys(db, pubkeys) {
+  if (db == null || !Array.isArray(pubkeys) || pubkeys.length === 0) {
+    throw new Error("d1: deletePermasByPubkeys: db/pubkeys missing or empty");
   }
-  const q = "SELECT * FROM wsperma WHERE did = ?";
-  const tx = db.prepare(q).bind(did);
+  const placeholders = pubkeys.map(() => "?").join(",");
+  const q = `DELETE FROM wsperma WHERE pubkey IN (${placeholders})`;
+  const tx = db.prepare(q).bind(...pubkeys);
   return run(tx, q);
 }
 
@@ -562,9 +564,9 @@ export async function upsertPerma(db, pubkey, did, cid, encmeta) {
     throw new Error("d1: upsertPerma: db/pubkey/did/cid/encmeta missing");
   }
   const q =
-    "INSERT INTO wsperma(pubkey, did, cid, meta) VALUES(?, ?, ?, ?)" +
-    " ON CONFLICT(pubkey) DO UPDATE SET did=excluded.did, meta=excluded.meta";
-  const tx = db.prepare(q).bind(pubkey, did, cid, encmeta);
+    "INSERT INTO wsperma(pubkey, did, cid, meta, mtime) VALUES(?, ?, ?, ?, ?)" +
+    " ON CONFLICT(pubkey) DO UPDATE SET did=excluded.did, meta=excluded.meta, mtime=excluded.mtime";
+  const tx = db.prepare(q).bind(pubkey, did, cid, encmeta, now());
   return run(tx, q);
 }
 
@@ -581,8 +583,9 @@ export async function reassignPermaDid(db, pubkey, did) {
   if (db == null || emptyString(pubkey) || emptyString(did)) {
     throw new Error("d1: reassignPermaDid: db/pubkey/did missing");
   }
-  const q = "UPDATE wsperma SET did = ? WHERE pubkey = ? AND did IS NULL";
-  const tx = db.prepare(q).bind(did, pubkey);
+  const q =
+    "UPDATE wsperma SET did = ?, mtime = ? WHERE pubkey = ? AND did IS NULL";
+  const tx = db.prepare(q).bind(did, now(), pubkey);
   return run(tx, q);
 }
 

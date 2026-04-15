@@ -305,7 +305,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
     throw new Error(`err insert or get creds for ${cid} on ${plan}`);
   }
   if (c.status === "banned") {
-    // TODO: c.status === invalid?
+    // c.status === invalid may point to expired or deleted creds
     log.e(`cannot use existing creds for ${cid} ${c.status}`);
     return c;
   }

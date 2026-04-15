@@ -433,6 +433,14 @@ export function r405play(j) {
   return new Response(JSON.stringify(payload), { status: 405, headers: h });
 }
 
+/** 403 Forbidden with JSON body, wrapping payload in PlayErr */
+export function r403play(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 403, headers: h });
+}
+
 /** 409 Conflict with JSON body, wrapping payload in PlayErr */
 export function r409play(j) {
   const h = { "content-type": "application/json" };

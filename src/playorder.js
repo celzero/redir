@@ -21,6 +21,7 @@ import {
   r200play,
   r200t,
   r400play as r400j,
+  r403play as r403j,
   r405play as r405j,
   r409play as r409j,
   r500play as r500j,
@@ -2321,6 +2322,18 @@ export async function cancelSubscription(env, req) {
       });
     }
 
+    const obsoleted = await isPurchaseTokenLinked(env, purchaseToken);
+    if (obsoleted) {
+      loge(`cancel: tok ${obstoken} for ${cid} is obsoleted`);
+      return r403j({
+        error: "purchase token obsolete",
+        purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
+      });
+    }
+
     if (knownOnetimeProductsAndPlans.has(sku)) {
       // TODO: do not revoke; but cancel only?
       return await refundOnetimePurchase(env, cid, purchaseToken, test);
@@ -2477,6 +2490,20 @@ export async function revokeSubscription(env, req) {
       loge(`sub: revoke cid mismatch: ${cid} != ${storedcid}`);
       return r400j({
         error: "cannot revoke, cid mismatch",
+        purchaseId: obstoken,
+        cid: cid,
+        sku: sku,
+        test: test,
+      });
+    }
+
+    // reject revoke on an obsoleted purchase token (it is a linkedtoken for a
+    // newer purchase that supersedes it). Ack and consume are still allowed.
+    const obsolete = await isPurchaseTokenLinked(env, purchaseToken);
+    if (obsolete) {
+      loge(`revoke: tok ${obstoken} for ${cid} is obsoleted`);
+      return r403j({
+        error: "purchase token obsolete",
         purchaseId: obstoken,
         cid: cid,
         sku: sku,
@@ -3009,6 +3036,40 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             sku: sku,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
+            test: test,
+          });
+        }
+
+        // obsoleted token may still be acknowledged, but must not grant an
+        // entitlement. Consume is also allowed.
+        const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+        if (obsoleted) {
+          logi(
+            `onetime: ack tok ${obstoken} for ${cid} is obsoleted; ack w/o entitlement`,
+          );
+          if (!ackd) {
+            try {
+              await ackOnetimePurchases(
+                env,
+                productIds,
+                purchasetoken,
+                null,
+                true,
+              );
+            } catch (e) {
+              loge(`onetime: err ack obsoleted ${obstoken}: ${e.message}`);
+            }
+          }
+          return r200j({
+            success: true,
+            message: "onetime linked purchase acknowledged without entitlement",
+            cid: cid,
+            state: onetimeState,
+            allProducts: productIds,
+            unconsumedProducts: unconsumedProductIds,
+            purchaseId: test ? purchasetoken : obstoken,
+            linkedPurchaseId: test ? linkedPurchaseId : undefined,
+            sku: sku,
             test: test,
           });
         }
