@@ -64,11 +64,6 @@ export async function forwardToWs(env, r) {
     }
   }
 
-  if (emptyString(enctoken) && !emptyString(token)) {
-    enctoken = await encryptText(env, cid, token);
-    log.w(`forwardToWs: token unecrypted; re-enc ${enctoken} for ${cid}`);
-  }
-
   // permanent managed WG credential — handled separately, never forwarded
   if (isPermaReq(u)) {
     return getOrCreatePermaConfig(env, cid, did, token);
@@ -199,6 +194,7 @@ function forwardToWsWithAuth(url) {
  * @param {Request} req - The request object
  * @returns {Promise<[string|null, string|null, string|null, boolean, boolean]>} - [cid, token, enctoken, needsAuth, mustDecrypt]
  *          or [null, null, encToken|null, needsAuth, mustDecrypt] if not available
+ * @throws {Error} - if the token is invalid or re-encryption of a plain token fails
  */
 async function bearerAndCidForWs(env, req) {
   const url = new URL(req.url);
@@ -223,9 +219,12 @@ async function bearerAndCidForWs(env, req) {
   const enctoken = authVals[1];
   const toks = enctoken.split(":");
   if (toks.length > 4) {
-    log.d("bearerAndCidForWs: already decrypted", toks[0]);
+    const reenc = await encryptText(env, cid, enctoken);
+    log.w(
+      `bearerAndCidForWs: token unecrypted ${toks[0]}; re-enc ${reenc} for ${cid}`,
+    );
     // already decrypted (or was left unencrypted)
-    return [cid, enctoken, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
+    return [cid, enctoken, reenc, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
 
   if (!validcid || emptyString(enctoken)) {
