@@ -181,7 +181,7 @@ async function handle(r, env, ctx) {
 
       if (p2 === "ack") {
         // g/ack/[vcode]?cid&did&purchaseToken&vcode[&force&sku&test]
-        if (r.method !== "POST") {
+        if (r.method !== "POST" && r.method !== "GET") {
           return r405("g/ack: method not allowed");
         }
         const auth = await authorizeDevice(env, r);

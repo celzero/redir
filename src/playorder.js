@@ -2913,9 +2913,10 @@ export async function googlePlayAcknowledgePurchase(env, req) {
   let sku = "";
 
   try {
-    if (req.method !== "POST") {
+    if (req.method !== "POST" && req.method !== "GET") {
       return r405j({ error: "method not allowed" });
     }
+    const post = req.method === "POST";
     // Parse request body to get purchase token
     const force = forceOf(req);
     purchasetoken = purchaseTokenOf(req);
@@ -3007,7 +3008,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const unconsumedProductIds = unconsumedProducts2(purchase2);
         const paid = isOnetimePaid2(purchase2);
         const pending = isOnetimeUnpaid2(purchase2);
-        const cancelled = isOnetimeCancelled2(purchase2);
+        const cancelled = isOnetimeCancelled2(null, purchase2);
         const onetimeState = onetimePurchaseStateStr2(purchase2);
 
         logi(
@@ -3141,7 +3142,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         if (!ackd) {
           try {
-            await ackOnetimePurchases(env, productIds, purchasetoken, ent);
+            if (post) {
+              await ackOnetimePurchases(env, productIds, purchasetoken, ent);
+            } else {
+              throw new Error("acknowledgment skipped for GET");
+            }
           } catch (e) {
             loge(
               `onetime: err ack/con: ${cid} / tok: ${obstoken}: ${e.message}`,
@@ -3392,6 +3397,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const sendPayload = ent != null;
 
         if (!ackd) {
+          if (!post) {
+            throw new Error("acknowledgment skipped for GET");
+          }
           await ackSubscription(env, purchasetoken, ent);
         }
 
@@ -3512,7 +3520,7 @@ export async function googlePlayConsumePurchase(env, req) {
       const unconsumedProductIds = unconsumedProducts2(purchase2);
       const paid = isOnetimePaid2(purchase2);
       const pending = isOnetimeUnpaid2(purchase2);
-      const cancelled = isOnetimeCancelled2(purchase2);
+      const cancelled = isOnetimeCancelled2(null, purchase2);
       const onetimeState = onetimePurchaseStateStr2(purchase2);
 
       logi(
@@ -4364,14 +4372,16 @@ function isOnetimeCancelled(notif, purchase) {
 }
 
 /**
- * @param {OneTimeProductNotification} notif
+ * @param {OneTimeProductNotification?} notif
  * @param {ProductPurchaseV2} purchase2
  * @returns {boolean}
  */
 function isOnetimeCancelled2(notif, purchase2) {
   return (
-    notif.notificationType === 2 ||
-    purchase2.purchaseStateContext?.purchaseState === "CANCELLED"
+    (notif != null && notif.notificationType === 2) ||
+    (purchase2 != null &&
+      purchase2.purchaseStateContext != null &&
+      purchase2.purchaseStateContext.purchaseState === "CANCELLED")
   );
 }
 
