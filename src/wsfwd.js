@@ -25,6 +25,7 @@ const wsApiProd = "api.windscribe.com";
 const wsAssetsProd = "assets.windscribe.com";
 
 const wswginitpath = "/wgconfigs/init";
+const wswgrobertpath = "/robert/filter";
 const wswgconnectpath = "/wgconfigs/connect";
 const wswgpermanentpath = "/wgconfigs/permanent";
 const wswglistkeyspath = "/wgconfigs/list_keys";
@@ -268,12 +269,13 @@ function allowlisted(u) {
   p = p.toLowerCase(); // normalize to lowercase
   if (p.startsWith(wswginitpath)) return true;
   if (p.startsWith(wswgconnectpath)) return true;
-  if (p.startsWith(wswgpermanentpath) && !wsdisableperma) return true;
-  if (p.startsWith(wswglistkeyspath) && !wsdisableperma) return true;
+  if (!wsdisableperma && p.startsWith(wswgpermanentpath)) return true;
+  if (!wsdisableperma && p.startsWith(wswglistkeyspath)) return true;
   if (p.startsWith(wssessionpath)) return true;
   if (p.startsWith(wsportpath)) return true;
   if (p.startsWith(wslocpath)) return true;
   if (p.startsWith(wswgpskrekeypath)) return true;
+  if (p.startsWith(wswgrobertpath)) return true;
 
   return false;
 }
