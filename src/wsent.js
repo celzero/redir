@@ -318,7 +318,9 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   // skip for "unknown" status: expiry is epoch so maybeUpdateCreds throws.
   if (
     !wasCreated &&
-    (c.status === "expired" || (renew && c.status !== "unknown"))
+    (c.status === "expired" ||
+      (renew && c.status === "invalid") ||
+      (renew && c.status !== "unknown"))
   ) {
     log.w(
       `getOrGen: renewing existing entitlement for ${c.cid} (test? ${c.test}) ${c.status} ${c.expiry}; force renew? ${renew}`,
@@ -390,7 +392,7 @@ export async function deleteWsEntitlement(env, cid) {
     throw new Error(`ws: db delete err for ${cid} ${c.status}`);
   }
   log.i(`ws: deleted both remote and local creds for ${cid}; test? ${c.test}`);
-  return true; // Successfully deleted the entitlement
+  return true; // successfully deleted the entitlement
 }
 
 /**
@@ -950,7 +952,7 @@ async function deleteCreds(env, sessiontoken) {
           return true; // Session is invalid, can never delete
         }
         if (r.status === 403) {
-          return true; // forbidden, can never delete
+          return true; // forbidden, already deleted?
         }
       }
       log.e(
