@@ -27,6 +27,7 @@ const obssalt = "90a0755b09e7e3329a1f9b837dba3c0c";
  * @param {BufferSource} taggedciphertext - The encrypted data with authentication tag
  * @param {BufferSource?} aad - Additional authenticated data (AAD)
  * @returns {Promise<Uint8Array>} - The decrypted plaintext
+ * @see www.ietf.org/archive/id/draft-irtf-cfrg-aead-limits-11.html
  */
 export async function decryptAesGcm(aeskey, iv, taggedciphertext, aad) {
   if (!aad || emptyBuf(aad)) {
@@ -48,11 +49,12 @@ export async function decryptAesGcm(aeskey, iv, taggedciphertext, aad) {
 }
 
 /**
- * @param {BufferSource} aeskey - The AES-GCM key
+ * @param {CryptoKey} aeskey - The AES-GCM key
  * @param {BufferSource} iv - The initialization vector (12 byte)
  * @param {BufferSource} plaintext - The data to encrypt
  * @param {BufferSource?} aad - Additional authenticated data (AAD)
  * @returns {Promise<Uint8Array>} - The encrypted data with authentication tag
+ * @see www.ietf.org/archive/id/draft-irtf-cfrg-aead-limits-11.html
  */
 export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
   if (!aad || emptyBuf(aad)) {
@@ -74,12 +76,12 @@ export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
 }
 
 /**
- * @param {BufferSource} aeskey - The AES-CBC key
- * @param {BufferSource} hmackey - The HMAC key
+ * @param {CryptoKey} aeskey - The AES-CBC key
+ * @param {CryptoKey} hmackey - The HMAC key
  * @param {BufferSource} iv - The initialization vector (16 byte / 128 bit for AES-CBC)
  * @param {BufferSource} plaintext - The data to encrypt
  * @param {BufferSource?} aad - Additional authenticated data (AAD)
- * @returns {Promise<[Uint8Array]>} - The encrypted data with authentication tag
+ * @returns {Promise<[ArrayBuffer, ArrayBuffer]>} - [ciphertext, mac]
  */
 export async function encryptAesCbcHmac(aeskey, hmackey, iv, plaintext, aad) {
   /** @type {AesCbcParams} */
@@ -153,13 +155,13 @@ export function hmacsign(key, msg) {
 }
 
 /**
- * @param {object} pubjwkstr - The JWK public key object
+ * @param {JsonWebKey} pubjwk - The JWK public key object
  * @returns {Promise<CryptoKey>} - The imported RSA-PSS public key
  */
-export async function importRsaPssPubKey(pubjwkstr) {
+export async function importRsaPssPubKey(pubjwk) {
   return crypto.subtle.importKey(
     "jwk",
-    pubjwkstr,
+    pubjwk,
     {
       name: "RSA-PSS",
       hash: { name: "SHA-384" },
@@ -170,7 +172,7 @@ export async function importRsaPssPubKey(pubjwkstr) {
 }
 
 /**
- * @param {Uint8Array} m
+ * @param {BufferSource} m
  * @returns {Promise<Uint8Array>}
  */
 export async function sha256(m) {
@@ -192,7 +194,7 @@ export async function sha256hex(m) {
  * @returns {Uint8Array} - Random bytes
  */
 export function crand(n = 32) {
-  if (n <= 0) {
+  if (isNaN(n) || n <= 0) {
     throw new Error("n must be a positive number");
   }
   return crypto.getRandomValues(new Uint8Array(n));
@@ -203,13 +205,13 @@ export function crand(n = 32) {
  * @returns {string} - Hex string of length n
  */
 export function crandHex(n = 64) {
-  if (n <= 0 || n % 2 !== 0) {
+  if (isNaN(n) || n <= 0 || n % 2 !== 0) {
     throw new Error("n must be a positive even number");
   }
   // b as hex string
-  return Array.from(crand(n / 2), (byt) =>
-    byt.toString(16).padStart(2, "0"),
-  ).join("");
+  return Array.from(crand(n / 2), (b) => b.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 /**
@@ -294,12 +296,9 @@ export async function obfuscateHex(hexstr, salt = obssalt) {
 
 /**
  * Generates cryptographically secure random bytes.
- * @param {number} len - The number of random bytes to generate (default: 32)
+ * @param {number} len - The number of random bytes to generate (default: 12)
  * @returns {Uint8Array} - A Uint8Array containing the random bytes
  */
 export function csprng(len = 12) {
-  if (isNaN(len) || len <= 0) {
-    throw new Error("csprng: invalid argument");
-  }
-  return crypto.getRandomValues(new Uint8Array(len));
+  return crand(len);
 }

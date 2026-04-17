@@ -21,6 +21,10 @@ export const aadRequirementStartTime = 1752256401335;
  * @returns {Promise<string|null>} - decrypted plaintext (hex) or null
  */
 export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
+  if (bin.emptyString(cid) || bin.emptyString(uniq)) {
+    log.e("decrypt: cid/uniq missing");
+    return null;
+  }
   let keyctx = "";
   if (!bin.emptyString(aadhex)) {
     // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
@@ -34,7 +38,7 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
   }
   try {
     const cipher = bin.hex2buf(taggedciphertext);
-    const aad = bin.hex2buf(aadhex);
+    const aad = bin.hex2buf(aadhex ?? "");
     const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
     return bin.buf2hex(plaintext);
   } catch (err) {
@@ -60,7 +64,7 @@ export async function encryptText(env, cid, uniq, aadstr, plainstr) {
   }
 
   const noncehex = bin.str2byt2hex(uniq);
-  const aadhex = bin.str2byt2hex(aadstr); // optional, may be empty
+  const aadhex = bin.str2byt2hex(aadstr ?? ""); // optional, may be empty
   const pthex = bin.str2byt2hex(plainstr);
   return await encrypt(env, cid, noncehex, aadhex, pthex);
 }
@@ -75,6 +79,10 @@ export async function encryptText(env, cid, uniq, aadstr, plainstr) {
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex) or null
  */
 export async function encrypt(env, cid, uniq, aadhex, plaintext) {
+  if (bin.emptyString(cid) || bin.emptyString(uniq)) {
+    log.e("encrypt: cid/uniq missing");
+    return null;
+  }
   let keyctx = "";
   if (!bin.emptyString(aadhex)) {
     // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
@@ -88,7 +96,7 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
   }
   try {
     const pt = bin.hex2buf(plaintext);
-    const aad = bin.hex2buf(aadhex);
+    const aad = bin.hex2buf(aadhex ?? "");
     const taggedciphertext = await encryptAesGcm(enckey, iv, pt, aad);
     return bin.buf2hex(taggedciphertext);
   } catch (err) {
@@ -121,7 +129,7 @@ export async function encrypt2(env, cid, aadhex, plaintext) {
   try {
     const iv = csprng(12); // random 12-byte IV
     const pt = bin.hex2buf(plaintext);
-    const aad = bin.hex2buf(aadhex);
+    const aad = bin.hex2buf(aadhex ?? "");
     const tagged = await encryptAesGcm(enckey, iv, pt, aad);
     // prepend iv: ivtaggedciphertext = iv ‖ taggedciphertext
     const out = new Uint8Array(iv.byteLength + tagged.byteLength);
@@ -157,12 +165,13 @@ export async function decrypt2(env, cid, aadhex, ivtaggedciphertext) {
   }
   try {
     const combined = bin.hex2buf(ivtaggedciphertext);
-    if (combined.byteLength <= 12) {
-      throw new Error("decrypt2: data too short to contain IV");
+    // minimum: 12 (IV) + 16 (AES-GCM auth tag) = 28 bytes for empty plaintext
+    if (combined.byteLength < 28) {
+      throw new Error("decrypt2: data too short to contain IV + auth tag");
     }
     const iv = combined.slice(0, 12);
     const cipher = combined.slice(12);
-    const aad = bin.hex2buf(aadhex);
+    const aad = bin.hex2buf(aadhex ?? "");
     const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
     return bin.buf2hex(plaintext);
   } catch (err) {
@@ -187,7 +196,7 @@ export async function encryptText2(env, cid, aadstr, plainstr) {
     log.e("encryptText2: plaintext missing");
     return null;
   }
-  const aadhex = bin.str2byt2hex(aadstr); // optional, may be empty
+  const aadhex = bin.str2byt2hex(aadstr ?? ""); // optional, may be empty
   const pthex = bin.str2byt2hex(plainstr);
   return await encrypt2(env, cid, aadhex, pthex);
 }
@@ -203,7 +212,7 @@ export async function encryptText2(env, cid, aadstr, plainstr) {
  * @returns {Promise<string|null>} - decrypted plaintext (UTF-8 string) or null
  */
 export async function decryptText2(env, cid, aadstr, ivtaggedciphertext) {
-  const aadhex = bin.str2byt2hex(aadstr);
+  const aadhex = bin.str2byt2hex(aadstr ?? "");
   const plainhex = await decrypt2(env, cid, aadhex, ivtaggedciphertext);
   if (bin.emptyString(plainhex)) return null;
   try {
@@ -238,7 +247,7 @@ async function key(env, cid, ctxstr = "") {
 /**
  * @param {string} lo - hex string
  * @param {string} hi - hex string
- * @returns {Promise<ArrayBufferLike>} - 12-byte fixed nonce (BufferSource)
+ * @returns {Promise<Uint8Array>} - 12-byte fixed nonce
  */
 async function fixedNonce(lo, hi) {
   if (bin.emptyString(lo) || bin.emptyString(hi)) {
