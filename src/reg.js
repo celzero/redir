@@ -278,8 +278,10 @@ export async function registerClient(env, req) {
     // check sig cache before performing hmac
     const cidkey = sigkey1(rand16, test);
     const cachedCidSig = sigcache.get(cidkey);
+
     if (cachedCidSig === signotok) {
       log.w("registerClient: cid sig cached invalid", existingCid);
+
       if (allowLegacyCid && (await isLegacyCidInDb(env, existingCid))) {
         const clientmeta = meta?.client ?? null;
         try {
@@ -291,18 +293,21 @@ export async function registerClient(env, req) {
             clientkindint,
           );
           if (cout == null || !cout.success) {
-            log.w(`registerClient (legacy) upsert failed for ${existingCid}`);
+            log.w(`registerClient: (legacy) upsert failed for ${existingCid}`);
             return r500("could not re-register");
           }
         } catch (e2) {
-          log.e("registerClient (legacy) upsert error:", e2);
+          log.e("registerClient: (legacy) upsert error:", e2);
           return r500(`db err: ${e2.message}`);
         }
-        log.d("registerClient (legacy) updated cid:", existingCid);
+
+        log.d("registerClient: (legacy) updated cid:", existingCid);
         return r200j(new ResClientReg({ cid: existingCid }).json);
       }
+
       return r401("cid verification failed");
     }
+
     if (cachedCidSig === false) {
       // cache miss: run hmac and store result
       try {
@@ -314,9 +319,13 @@ export async function registerClient(env, req) {
         const cidsigbuf = await hmacsign(k, cidmsg);
         const cidsig16expected = new Uint8Array(cidsigbuf).slice(0, 16);
         const valid = safeEq(cidsig16claimed, cidsig16expected);
+
         sigcache.put(cidkey, valid ? sigok : signotok);
+
         if (!valid) {
           log.w("registerClient: cid invalid", existingCid);
+
+          // handle legacy clients
           if (allowLegacyCid && (await isLegacyCidInDb(env, existingCid))) {
             const clientmeta = meta?.client ?? null;
             try {
@@ -329,17 +338,18 @@ export async function registerClient(env, req) {
               );
               if (cout == null || !cout.success) {
                 log.w(
-                  `registerClient (legacy) upsert failed for ${existingCid}`,
+                  `registerClient: (legacy) upsert failed for ${existingCid}`,
                 );
                 return r500("could not re-register");
               }
             } catch (e2) {
-              log.e("registerClient (legacy) upsert error:", e2);
+              log.e("registerClient: (legacy) upsert error:", e2);
               return r500(`db err: ${e2.message}`);
             }
-            log.d("registerClient (legacy) updated cid:", existingCid);
+            log.d("registerClient: (legacy) updated cid:", existingCid);
             return r200j(new ResClientReg({ cid: existingCid }).json);
           }
+
           return r401("cid verification failed");
         }
       } catch (e) {
@@ -414,6 +424,7 @@ export async function registerClient(env, req) {
       // to avoid orphaned client record
       return r500("device insert failed");
     }
+
     log.d("registerClient cid:", cid, "did:", did, "test?", test);
     return r200j(new ResClientReg({ cid, did }).json);
   } catch (e) {
@@ -482,17 +493,8 @@ export async function registerDevice(env, req) {
     }
     return r401("cid verification failed");
   }
+
   if (cachedDidSig === signotok) {
-    const meta = await consumejson(req);
-    if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
-      return registerLegacyDevice(
-        env,
-        cid,
-        did,
-        meta?.client ?? null,
-        meta?.device ?? null,
-      );
-    }
     return r401("did verification failed");
   }
 
@@ -522,6 +524,7 @@ export async function registerDevice(env, req) {
         const cidsig16expected = new Uint8Array(results[idx++]).slice(0, 16);
         const valid = safeEq(cidsig16claimed, cidsig16expected);
         sigcache.put(cidkey, valid ? sigok : signotok);
+
         if (!valid) {
           log.w("registerDevice: cid invalid", cid);
           const meta = await consumejson(req);
@@ -534,15 +537,18 @@ export async function registerDevice(env, req) {
               meta?.device ?? null,
             );
           }
+
           return r401("cid verification failed");
         }
       }
+
       if (needDidVerify) {
         const didsig8expected = new Uint8Array(results[idx]).slice(0, 8);
         const valid = safeEq(didsig8claimed, didsig8expected);
         sigcache.put(didkey, valid ? sigok : signotok);
         if (!valid) {
           log.w("registerDevice: did invalid", did);
+
           const meta = await consumejson(req);
           if (allowLegacyCid && (await isLegacyCidInDb(env, cid))) {
             return registerLegacyDevice(
@@ -553,6 +559,7 @@ export async function registerDevice(env, req) {
               meta?.device ?? null,
             );
           }
+
           return r401("did verification failed");
         }
       }
@@ -590,9 +597,8 @@ export async function registerDevice(env, req) {
 
     log.d("registerDevice updated cid:", cid, "did:", did, "test?", test);
     return retrieveDevices(env, cid, test);
-  }
+  } // else: only cid provided: generate a new did
 
-  // only cid provided: generate a new did
   try {
     const rand8 = crand(8);
     const didmsg = cat(rand8, devicemsg);
