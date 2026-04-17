@@ -18,7 +18,12 @@ import { Log } from "./log.js";
 
 export const defaultcc = "us";
 export const unknown = "unknown";
+// device token
 export const didTokenHeader = "x-rethink-app-did-token";
+// client identifier
+export const cidHeader = "x-rethink-app-cid";
+// device identifier
+export const didHeader = "x-rethink-app-did";
 
 const log = new Log("req");
 
@@ -142,22 +147,34 @@ function geturl(req) {
 }
 
 /**
- * Returns the "cid" URL query parameter from the request.
+ * Returns the cid from the "x-rethink-app-cid" header, falling back to
+ * the "cid" URL query parameter.
  * @param {Request?} req
  * @returns {string|null}
  */
 export function cid(req) {
+  const r = getreq(req);
+  if (r != null) {
+    const h = r.headers.get(cidHeader);
+    if (h != null && h.length > 0) return h;
+  }
   const u = geturl(req);
   if (u == null) return null;
   return u.searchParams.get("cid");
 }
 
 /**
- * Returns the "did" URL query parameter from the request.
+ * Returns the "did" from the "x-rethink-app-did" header, falling back to
+ * the "did" URL query parameter.
  * @param {Request?} req
  * @returns {string|null}
  */
 export function did(req) {
+  const r = getreq(req);
+  if (r != null) {
+    const h = r.headers.get(didHeader);
+    if (h != null && h.length > 0) return h;
+  }
   const u = geturl(req);
   if (u == null) return null;
   return u.searchParams.get("did");
