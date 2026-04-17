@@ -12,6 +12,7 @@ import {
   buf2hex,
   byt,
   emptyBuf,
+  emptyString,
   hex2buf,
   lcat,
   str2ab,
@@ -269,25 +270,25 @@ export async function importRsaSsa256Key(pem) {
  * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
  * then hashes it to a hex string.
  * @param {string} str - input string to obfuscate.
- * @param {string} salt - override salt.
+ * @param {string} salt - override salt (hex).
  * @returns {Promise<string>} - sha256 hash of the input as hex.
  */
 export async function obfuscate(str, salt = obssalt) {
   const hex = str2byt2hex(str);
-  if (salt) {
-    const saltHex = hex2buf(salt);
-    return obfuscateHex(hex + saltHex);
-  }
-  return obfuscateHex(hex);
+  return obfuscateHex(hex, salt);
 }
 
 /**
  * Obfuscates a string using SHA-256. Converts str to a utf-8 byte array,
  * then hashes it to a hex string.
- * @param {string} hex - input shex string to obfuscate.
+ * @param {string} hexstr - input hex string to obfuscate.
+ * @param {string} salt - override salt (hex).
  * @returns {Promise<string>} - sha256 hash of the input as hex.
  */
-export async function obfuscateHex(hexstr) {
+export async function obfuscateHex(hexstr, salt = obssalt) {
+  if (!emptyString(salt)) {
+    return sha256hex(hexstr + salt);
+  }
   return sha256hex(hexstr);
 }
 
