@@ -1800,7 +1800,7 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
   // for expired and cancelled subs, the sub may have been upgraded or downgraded
   // instead of auto-renewed: developer.android.com/google/play/billing/subscriptions#handle-deferred-replacement
   const replaced = expired || cancelled ? replacing(sub) : false;
-  const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+  const obsoleted = await isLinkedPurchaseToken(env, purchasetoken);
   const obstoken = obsToken();
 
   logd(
@@ -2322,7 +2322,7 @@ export async function cancelSubscription(env, req) {
       });
     }
 
-    const obsoleted = await isPurchaseTokenLinked(env, purchaseToken);
+    const obsoleted = await isLinkedPurchaseToken(env, purchaseToken);
     if (obsoleted) {
       loge(`cancel: tok ${obstoken} for ${cid} is obsoleted`);
       return r403j({
@@ -2499,7 +2499,7 @@ export async function revokeSubscription(env, req) {
 
     // reject revoke on an obsoleted purchase token (it is a linkedtoken for a
     // newer purchase that supersedes it). Ack and consume are still allowed.
-    const obsolete = await isPurchaseTokenLinked(env, purchaseToken);
+    const obsolete = await isLinkedPurchaseToken(env, purchaseToken);
     if (obsolete) {
       loge(`revoke: tok ${obstoken} for ${cid} is obsoleted`);
       return r403j({
@@ -3043,7 +3043,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         // obsoleted token may still be acknowledged, but must not grant an
         // entitlement. Consume is also allowed.
-        const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+        const obsoleted = await isLinkedPurchaseToken(env, purchasetoken);
         if (obsoleted) {
           logi(
             `onetime: ack tok ${obstoken} for ${cid} is obsoleted; ack w/o entitlement`,
@@ -3329,7 +3329,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
-        const obsoleted = await isPurchaseTokenLinked(env, purchasetoken);
+        const obsoleted = await isLinkedPurchaseToken(env, purchasetoken);
         if (obsoleted) {
           logi(`ack: token ${obstoken} for ${cid} is obsoleted, cannot ack`);
           if (!ackd) {
@@ -4452,7 +4452,7 @@ function subAllProducts(sub) {
  * @param {any} env - Workers environment.
  * @param {string} t - purchase token.
  */
-async function isPurchaseTokenLinked(env, t) {
+async function isLinkedPurchaseToken(env, t) {
   const out = await dbx.firstLinkedPurchaseTokenEntry(dbx.db(env), t);
   if (out == null || !out.success) {
     return false; // no linked purchase token found
