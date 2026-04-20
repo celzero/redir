@@ -13,6 +13,20 @@ const ctx2 = bin.str2byte("encryptforclient");
 
 const clienthmackeyctx2 = bin.str2byte("clienthmacauthkey");
 
+/**
+ * Cryptographic Extraction and Key Derivation: The HKDF Scheme (p 5):
+ * "A natural (and practical) question is whether common KDF applications may
+ * have a randomness source from which to obtain salt. After all, the whole
+ * purpose of extractors is to generate randomness, so if one already has such
+ * a random salt why not use it directly as a PRF key? The answer is that this
+ * randomness needs not be secret while in KDF applications we want the output
+ * of the extractor to be secret. Obtaining public randomness is much easier
+ * than producing secret bits, especially since in most applications the
+ * extractor key (or salt) can be used repeatedly with many (independent)
+ * samples from the same source (hence it can be chosen in an out-of-band
+ * or setup stage and be repeatedly used later)"
+ * @see eprint.iacr.org/2010/264.pdf
+ */
 const clienthmackeysalt = new Uint8Array([
   38, 160, 252, 182, 155, 213, 11, 24, 145, 181, 17, 50, 5, 186, 88, 121, 253,
   55, 234, 238, 24, 15, 54, 144, 176, 249, 180, 142, 66, 88, 52, 80, 219, 142,
