@@ -26,6 +26,7 @@ import {
   r409play as r409j,
   r500play as r500j,
   sku as skuOf,
+  tot as totOf,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { crandHex, obfuscate } from "./webcrypto.js";
@@ -4543,7 +4544,7 @@ export async function googlePlayGetTransaction(env, req) {
     const purchaseToken = purchaseTokenOf(req);
     const test = isTest(req);
     const activeOnly = activeOnlyOf(req);
-    const totParam = tot(req);
+    const totParam = totOf(req);
     let tot = totParam != null ? parseInt(totParam, 10) : 0;
     if (isNaN(tot) || tot < 1) {
       tot = 0; // 0 means "only return the single row for purchaseToken"
