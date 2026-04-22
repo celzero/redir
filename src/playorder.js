@@ -40,6 +40,9 @@ import {
 // r200j wraps the payload in PlayOk before serialising (playorder-specific behaviour)
 const r200j = r200play;
 
+/** @type {boolean} - whether to attach entitlement with IAP acknowledgment */
+const attachEntitlementToAck = false;
+
 // setup: developers.google.com/android-publisher/getting_started
 // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
 const androidscope = ["https://www.googleapis.com/auth/androidpublisher"];
@@ -2690,7 +2693,7 @@ async function ackOnetimePurchases(
       productId,
       cid,
       tok,
-      ent,
+      ent, // may be null
       ackWithoutEntitlement,
     );
     // just one ack per purchasetoken is enough
@@ -2801,7 +2804,10 @@ async function ackOnetimePurchase(
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  if (ent != null) {
+  if (ent == null && !ackWithoutEntitlement) {
+    throw new Error(`onetime: err ack ${obs} for ${cid}; missing entitlement`);
+  }
+  if (attachEntitlementToAck && ent != null) {
     const body = JSON.stringify({
       developerPayload: JSON.stringify({
         ws: await ent.toClientEntitlement(env),
@@ -2820,11 +2826,6 @@ async function ackOnetimePurchase(
       );
     }
   } else {
-    if (!ackWithoutEntitlement) {
-      throw new Error(
-        `onetime: err ack ${obs} for ${cid}; missing entitlement`,
-      );
-    }
     const r = await fetch(ackurl, { method: "POST", headers });
     if (!r.ok) {
       const gmsg = await gerror(r);
@@ -2835,7 +2836,7 @@ async function ackOnetimePurchase(
     }
   }
 
-  logi(`onetime: ackd ${productId} / ${obs} for ${cid}`);
+  logi(`onetime: ackd ${productId} / ${obs} for ${cid}; ent? ${ent != null}`);
 }
 
 /**
