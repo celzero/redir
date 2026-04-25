@@ -389,6 +389,42 @@ export async function playOnetimeActive(db, cid, limit = -1) {
 }
 
 /**
+ * Returns up to `limit` fully-consumed (all productLineItems have
+ * consumptionState = CONSUMPTION_STATE_CONSUMED) productPurchaseV2 playorder
+ * rows for the given cid, ordered most-recently-modified first.
+ * Non-cancelled purchases only (purchaseStateContext.purchaseState = PURCHASED).
+ *
+ * These are purchases the client has already consumed but whose synthetic expiry
+ * (start + sku duration) may still lie in the future — i.e. "linked" onetime
+ * purchases that convey an active entitlement.
+ *
+ * @param {any} db
+ * @param {string} cid
+ * @param {number} limit - Max rows to return; -1 for no limit.
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playConsumedOnetimeForCid(db, cid, limit = -1) {
+  if (db == null || emptyString(cid)) {
+    throw new Error("d1: playConsumedOnetimeForCid: db/cid missing");
+  }
+  const q =
+    "SELECT * FROM playorders p WHERE p.cid=?" +
+    " AND p.meta IS NOT NULL" +
+    " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
+    " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED'" +
+    // all items must be consumed: no item has consumptionState != CONSUMED
+    " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je )" +
+    " AND NOT EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
+    " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')!='CONSUMPTION_STATE_CONSUMED' )" +
+    " ORDER BY p.mtime DESC" +
+    (limit > 0 ? ` LIMIT ${limit}` : "") +
+    ";";
+  const tx = db.prepare(q).bind(cid);
+  return run(tx, q);
+}
+
+/**
  * Returns up to `limit` playorder rows for the given cid, ordered by mtime desc.
  * @param {any} db
  * @param {string} cid

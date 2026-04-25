@@ -1678,6 +1678,35 @@ async function handleOneTimeProductNotification(env, notif) {
           );
         }
       }
+
+      // A cancelled/refunded onetime purchase may have a consumed predecessor
+      // whose synthetic expiry (start + sku duration) is still in the future.
+      // In that case, delete the (possibly far-future) entitlement set by the
+      // cancelled purchase and re-issue a fresh one anchored to the consumed
+      // purchase's expiry (WS grants a minimum of 1 month per PUT).
+      try {
+        const linkedPlan = await activeConsumedOnetimePlan(
+          env,
+          cid,
+          purchasetoken,
+        );
+        if (linkedPlan != null) {
+          logi(
+            `onetime: cancelled ${cid} / tok: ${obstoken} but consumed linked purchase expiry ${linkedPlan.expiry} is future; re-issuing entitlement; test? ${test}`,
+          );
+          await getOrGenWsEntitlement(
+            env,
+            cid,
+            linkedPlan.expiry,
+            linkedPlan.plan,
+            /*renew*/ true,
+          );
+        }
+      } catch (err) {
+        loge(
+          `onetime: err re-issuing ent from consumed linked purchase for ${cid} / tok: ${obstoken}: ${err.message}; test? ${test}`,
+        );
+      }
       return;
     }
 
@@ -2013,6 +2042,35 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
       } catch (e) {
         loge(
           `void: err deleting ent for ${cid} / ${obstoken}: ${e.message}; test? ${test}`,
+        );
+      }
+    }
+
+    // 4. For voided onetime purchases, check whether a consumed predecessor
+    //    still has a future synthetic expiry.  If so, re-issue a fresh
+    //    entitlement anchored to that expiry (WS grants min 1 month per PUT).
+    if (productType === 2 /* PRODUCT_TYPE_ONE_TIME */) {
+      try {
+        const linkedPlan = await activeConsumedOnetimePlan(
+          env,
+          cid,
+          purchaseToken,
+        );
+        if (linkedPlan != null) {
+          logi(
+            `void: voided ${obstoken} but consumed linked purchase expiry ${linkedPlan.expiry} is future; re-issuing entitlement for ${cid}; test? ${test}`,
+          );
+          await getOrGenWsEntitlement(
+            env,
+            cid,
+            linkedPlan.expiry,
+            linkedPlan.plan,
+            /*renew*/ true,
+          );
+        }
+      } catch (err) {
+        loge(
+          `void: err re-issuing ent from consumed linked purchase for ${cid} / ${obstoken}: ${err.message}; test? ${test}`,
         );
       }
     }
@@ -3739,12 +3797,83 @@ async function getActiveOnetimePurchasesForCid(env, cid, limit = -1) {
 }
 
 /**
+ * Returns all fully-consumed (all productLineItems consumed) onetime purchases
+ * for the given cid from the database, ordered most-recently-modified first.
+ * Consumed purchases may no longer be retrievable from Google APIs (purged after
+ * ~60 days) but their stored meta reflects their final state.
+ * @param {any} env
+ * @param {string} cid
+ * @param {number} limit
+ * @returns {Promise<Array>}
+ */
+async function getConsumedOnetimePurchasesForCid(env, cid, limit = -1) {
+  const out = await dbx.playConsumedOnetimeForCid(dbx.db(env), cid, limit);
+  if (out == null || !out.success) {
+    return [];
+  }
+  if (out.results == null || out.results.length === 0) {
+    return [];
+  }
+  logd(`onetime: consumed for cid ${cid}: ${JSON.stringify(out.results)}`);
+  return out.results;
+}
+
+/**
+ * Finds the most recently consumed onetime purchase for cid whose synthetic
+ * expiry (start + sku duration) is still in the future.  This is the "linked"
+ * purchase that conveys an active entitlement even though it has been consumed
+ * by the client.
+ *
+ * Call this after deleting a WS entitlement for a cancelled / refunded purchase
+ * to determine whether a consumed predecessor still warrants a (minimum 1-month)
+ * entitlement for the cid.
+ *
+ * @param {any} env
+ * @param {string} cid
+ * @param {string} [excludeToken] - purchase token to skip (the cancelled/refunded one)
+ * @returns {Promise<GEntitlement|null>}
+ */
+async function activeConsumedOnetimePlan(env, cid, excludeToken = null) {
+  const rows = await getConsumedOnetimePurchasesForCid(env, cid);
+  for (const row of rows) {
+    if (!emptyString(excludeToken) && row.purchasetoken === excludeToken) {
+      continue;
+    }
+    const metaRaw = row.meta || null;
+    if (metaRaw == null) continue;
+    try {
+      const metaParsed =
+        typeof metaRaw === "string" ? JSON.parse(metaRaw) : metaRaw;
+      if (metaParsed?.kind !== "androidpublisher#productPurchaseV2") continue;
+      const p2 = new ProductPurchaseV2(metaParsed);
+      const plan = onetimePlan(p2);
+      if (plan == null) continue;
+      if (plan.expiry == null || plan.expiry.getTime() <= Date.now()) {
+        logd(
+          `onetime: consumed linked purchase expired at ${plan.expiry} for ${cid}`,
+        );
+        continue;
+      }
+      logi(
+        `onetime: consumed linked purchase with future expiry ${plan.expiry} found for ${cid} / tok: ${row.purchasetoken}`,
+      );
+      return plan;
+    } catch (err) {
+      loge(`onetime: err parsing consumed meta for ${cid}: ${err.message}`);
+    }
+  }
+  return null;
+}
+
+/**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID for which to find linked one-time purchase
  * @param {string} purchasetoken - Purchase token of the current one-time purchase being processed
  * @param {string?} linkedtoken - Optional purchase token linked to the current purchase token in the database (may be an obsolete/deleted token)
  * @return {Promise<[string?, ProductPurchaseV2?]>} - List of the first linked one-time active purchase
- * (purchase token and metadata) for the given cid, excluding the current purchase token
+ * (purchase token and metadata) for the given cid, excluding the current purchase token.
+ * Considers both unconsumed (actively purchased) and consumed (previously active, expiry still
+ * in the future) purchases, since a consumed purchase can serve as a valid linked predecessor.
  * @throw {Error} - If there is an issue retrieving the purchases from the database or if there are more than 2 active purchases for the CID
  */
 async function linkedOnetimePurchases2(
@@ -3759,32 +3888,52 @@ async function linkedOnetimePurchases2(
   }
 
   const limit = 2; // link up to 2 purchases incl. fn arg "purchasetoken"
-  // the sent linkedtoken may have been deleted, and so, grab all active
-  // purchases, regardless.
-  const currentPurchases = await getActiveOnetimePurchasesForCid(env, cid);
-  if (currentPurchases == null) {
-    return nolink; // no active purchases found for cid
+  // Gather unconsumed (traditionally "active") purchases and consumed purchases
+  // with future expiry (linked predecessors).  Unconsumed take precedence.
+  const [activePurchases, consumedPurchases] = await Promise.all([
+    getActiveOnetimePurchasesForCid(env, cid),
+    getConsumedOnetimePurchasesForCid(env, cid),
+  ]);
+
+  // Merge: unconsumed first, then consumed; deduplicate by purchasetoken.
+  const seen = new Set();
+  const allPurchases = [];
+  for (const p of [...activePurchases, ...consumedPurchases]) {
+    if (!seen.has(p.purchasetoken)) {
+      seen.add(p.purchasetoken);
+      allPurchases.push(p);
+    }
   }
 
-  if (currentPurchases.length > limit) {
-    throw new Error(
-      `too many active purchases for ${cid}: ${currentPurchases.length}`,
-    );
+  // purchases other than the one being registered right now.
+  const others = allPurchases.filter((p) => p.purchasetoken !== purchasetoken);
+
+  if (others.length > limit) {
+    throw new Error(`too many active purchases for ${cid}: ${others.length}`);
   }
 
-  let link = nolink;
-  for (const p of currentPurchases) {
-    const meta =
-      typeof p.meta === "string" ? JSON.parse(p.meta || "{}") : p.meta || {};
+
+  if (consumedPurchases.length === 0) {
+    log.d(`linkedOnetimePurchases2: no active or consumed for ${cid}`);
+    return nolink;
+  }
+
+  // prefer an explicit linkedtoken match if provided.
+  for (const p of others) {
+    const meta = typeof p.meta === "string" ? JSON.parse(p.meta) : p.meta;
     if (linkedtoken != null && p.purchasetoken === linkedtoken) {
       return [p.purchasetoken, new ProductPurchaseV2(meta)];
     }
-    if (link === nolink && p.purchasetoken !== purchasetoken) {
-      link = [p.purchasetoken, new ProductPurchaseV2(meta)];
-    }
   }
 
-  return link;
+  // fallback to the first other purchase (most-recently modified due to ORDER BY mtime DESC).
+  if (others.length > 0) {
+    const p = others[0];
+    const meta = typeof p.meta === "string" ? JSON.parse(p.meta) : p.meta;
+    return [p.purchasetoken, new ProductPurchaseV2(meta)];
+  }
+
+  return nolink;
 }
 
 /**
