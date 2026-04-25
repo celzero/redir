@@ -26,6 +26,7 @@ import {
   revokeSubscription,
 } from "./playorder.js";
 import {
+  authorizeClient,
   authorizeDevice,
   registerClient,
   registerDevice,
@@ -226,7 +227,7 @@ async function handle(r, env, ctx) {
         if (r.method !== "GET") {
           return r405("g/tx: method not allowed");
         }
-        const auth = await authorizeDevice(env, r);
+        const auth = await authorizeClient(env, r);
         if (!auth.ok) return auth;
         return respond(googlePlayGetTransaction(env, r), auth);
       }
