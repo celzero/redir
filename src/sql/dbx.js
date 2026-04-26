@@ -374,6 +374,16 @@ export async function playOnetimeActive(db, cid, limit = -1) {
   if (db == null || emptyString(cid)) {
     throw new Error("d1: playOnetimeActive: db/cid missing");
   }
+  /*
+    SELECT * FROM playorders p WHERE p.cid=?
+    AND p.meta IS NOT NULL
+    AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'
+    AND json_extract(p.meta,'$.purchaseState') != 'CANCELLED'
+    AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je
+    WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_YET_TO_BE_CONSUMED' )
+    ORDER BY p.mtime DESC
+    LIMIT 20;
+   */
   const q =
     "SELECT * FROM playorders p WHERE p.cid=?" +
     " AND p.meta IS NOT NULL" +
@@ -395,7 +405,7 @@ export async function playOnetimeActive(db, cid, limit = -1) {
  * Non-cancelled purchases only (purchaseStateContext.purchaseState = PURCHASED).
  *
  * These are purchases the client has already consumed but whose synthetic expiry
- * (start + sku duration) may still lie in the future — i.e. "linked" onetime
+ * (start + sku duration) may still lie in the future; i.e. "linked" onetime
  * purchases that convey an active entitlement.
  *
  * @param {any} db
@@ -408,6 +418,16 @@ export async function playConsumedOnetimeForCid(db, cid, limit = -1) {
   if (db == null || emptyString(cid)) {
     throw new Error("d1: playConsumedOnetimeForCid: db/cid missing");
   }
+  /*
+    SELECT * FROM playorders p WHERE p.cid=?
+    AND p.meta IS NOT NULL
+    AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'
+    AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED'
+    AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je )
+    AND NOT EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je
+      WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')!='CONSUMPTION_STATE_CONSUMED' )
+    ORDER BY p.mtime DESC;
+  */
   const q =
     "SELECT * FROM playorders p WHERE p.cid=?" +
     " AND p.meta IS NOT NULL" +

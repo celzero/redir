@@ -287,7 +287,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         // means this new wsuser was not inserted at all.
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
         log.e(
-          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} / ${exp} ${plan}`,
+          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} ${wsuser.expiry} in favour of current expiry ${c?.expiry} / asked: ${exp} ${plan}`,
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {

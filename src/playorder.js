@@ -1694,12 +1694,15 @@ async function handleOneTimeProductNotification(env, notif) {
           logi(
             `onetime: cancelled ${cid} / tok: ${obstoken} but consumed linked purchase expiry ${linkedPlan.expiry} is future; re-issuing entitlement; test? ${test}`,
           );
-          await getOrGenWsEntitlement(
+          const wsuser = await getOrGenWsEntitlement(
             env,
             cid,
             linkedPlan.expiry,
             linkedPlan.plan,
             /*renew*/ true,
+          );
+          logi(
+            `onetime: re-issued entitlement for ${cid} / tok: ${obstoken} ${sku}/${productIds} until ${wsuser?.expiry} (expected: ${linkedPlan.expiry}); test? ${test}`,
           );
         }
       } catch (err) {
@@ -2060,12 +2063,15 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
           logi(
             `void: voided ${obstoken} but consumed linked purchase expiry ${linkedPlan.expiry} is future; re-issuing entitlement for ${cid}; test? ${test}`,
           );
-          await getOrGenWsEntitlement(
+          const wsuser = await getOrGenWsEntitlement(
             env,
             cid,
             linkedPlan.expiry,
             linkedPlan.plan,
             /*renew*/ true,
+          );
+          logi(
+            `void: refreshed entitlement for ${cid} / ${obstoken} until ${wsuser?.expiry} (expected: ${linkedPlan.expiry}); test? ${test}`,
           );
         }
       } catch (err) {
@@ -3101,12 +3107,14 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
 
-        // obsoleted token may still be acknowledged, but must not grant an
-        // entitlement. Consume is also allowed.
+        // obsoleted token may still be acknowledged, and if the linked (newer)
+        // purchase has since been refunded/cancelled — making this consumed token
+        // orphaned — we should still return the entitlement derived from this
+        // purchase itself so the client isn't left without access.
         const obsoleted = await isLinkedPurchaseToken(env, purchasetoken);
         if (obsoleted) {
           logi(
-            `onetime: ack tok ${obstoken} for ${cid} is obsoleted; ack w/o entitlement`,
+            `onetime: ack tok ${obstoken} for ${cid} is obsoleted; checking for orphan entitlement`,
           );
           if (!ackd) {
             try {
@@ -3121,6 +3129,46 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               loge(`onetime: err ack obsoleted ${obstoken}: ${e.message}`);
             }
           }
+
+          // Attempt to recover an entitlement: the linked/active purchase may have
+          // been refunded or cancelled, leaving this consumed token as an orphan.
+          // onetimeDeferredPlan uses both purchase2 (this token) and linkedPurchase2
+          // (the newer token's metadata) to compute the effective plan.
+          const orphanGent = onetimeDeferredPlan(purchase2, linkedPurchase2);
+          if (orphanGent != null) {
+            const orphanEnt = await getOrGenWsEntitlement(
+              env,
+              cid,
+              orphanGent.expiry,
+              orphanGent.plan,
+            );
+            const sendPayload =
+              orphanEnt != null && orphanEnt.status === "valid";
+            logi(
+              `onetime: orphan ent for ${cid} / tok: ${obstoken} / valid? ${sendPayload}; test? ${test}`,
+            );
+            return r200j({
+              success: true,
+              message: sendPayload
+                ? "onetime linked purchase acknowledged with recovered entitlement"
+                : "onetime linked purchase acknowledged without entitlement",
+              cid: cid,
+              state: onetimeState,
+              allProducts: productIds,
+              unconsumedProducts: unconsumedProductIds,
+              purchaseId: test ? purchasetoken : obstoken,
+              linkedPurchaseId: test ? linkedPurchaseId : undefined,
+              expiry: sendPayload ? orphanGent.expiryDate : undefined,
+              sku: sku,
+              test: test,
+              developerPayload: sendPayload
+                ? JSON.stringify({
+                    ws: await orphanEnt.toClientEntitlement(env),
+                  })
+                : undefined,
+            });
+          }
+
           return r200j({
             success: true,
             message: "onetime linked purchase acknowledged without entitlement",
@@ -3911,7 +3959,6 @@ async function linkedOnetimePurchases2(
   if (others.length > limit) {
     throw new Error(`too many active purchases for ${cid}: ${others.length}`);
   }
-
 
   if (consumedPurchases.length === 0) {
     log.d(`linkedOnetimePurchases2: no active or consumed for ${cid}`);
