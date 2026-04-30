@@ -1017,23 +1017,21 @@ function expiry2plan(expiry, testing = false, since = new Date()) {
     if (totalDays >= 10) {
       plan = "month";
       execCount = 1; // 1 month plan
-    } else if (totalDays == 1) {
+    } else {
+      // in testing, for subscription purchases, totalDays <=1
       if (testing) {
         plan = "month"; // testing, allow
         execCount = 1; // 1 month plan
       } else {
+        // TODO: should or should not restrict new creds?
         // may be anywhere between 1s and 1d
         // silent grace period ~24h
         // TODO: if purchase token is unacknowledged, then always
         // generate new creds as the user is unlikely to be a in silent grace period.
         // developer.android.com/google/play/billing/lifecycle/subscriptions#silent-grace-period
         // plan is "unknown"
-        execCount = 0;
+        execCount = 0; // restrict
       }
-    } else {
-      // TODO: should or should not restrict new creds?
-      // plan is "unknown"
-      execCount = 0; // restrict
     }
   } else {
     plan = "month"; // default to monthly plan
