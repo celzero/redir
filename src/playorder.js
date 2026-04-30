@@ -3136,7 +3136,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // been refunded or cancelled, leaving this consumed token as an orphan.
           // onetimeDeferredPlan uses both purchase2 (this token) and linkedPurchase2
           // (the newer token's metadata) to compute the effective plan.
-          const orphanGent = onetimeDeferredPlan(purchase2, linkedPurchase2);
+          const orphanGent = onetimeDeferredPlan(
+            purchase2,
+            linkedPurchase2,
+            /*mustBeAckd*/ true,
+          );
           if (orphanGent != null) {
             const orphanEnt = await getOrGenWsEntitlement(
               env,
@@ -3719,6 +3723,7 @@ export async function googlePlayConsumePurchase(env, req) {
       }
 
       try {
+        // consuming a purchase will also ack it, if unackd
         await consumeOnetimePurchases(
           env,
           cid,
@@ -3895,8 +3900,9 @@ async function activeConsumedOnetimePlan(env, cid, excludeToken = null) {
       const metaParsed =
         typeof metaRaw === "string" ? JSON.parse(metaRaw) : metaRaw;
       if (metaParsed?.kind !== "androidpublisher#productPurchaseV2") continue;
+      // TODO: attempt to fetch latest state from Google?
       const p2 = new ProductPurchaseV2(metaParsed);
-      const plan = onetimePlan(p2);
+      const plan = onetimePlan(p2, /*mustBeAckd*/ true);
       if (plan == null) continue;
       if (plan.expiry == null || plan.expiry.getTime() <= Date.now()) {
         logd(
@@ -3907,6 +3913,7 @@ async function activeConsumedOnetimePlan(env, cid, excludeToken = null) {
       logi(
         `onetime: consumed linked purchase with future expiry ${plan.expiry} found for ${cid} / tok: ${row.purchasetoken}`,
       );
+      // TODO: explictly return plan that expires late (db rows are mtime ordered)?
       return plan;
     } catch (err) {
       loge(`onetime: err parsing consumed meta for ${cid}: ${err.message}`);
@@ -4248,22 +4255,23 @@ function subscriptionItem2plan(item, start) {
  * TODO: instead of null throw Error with approp msg
  * @param {ProductPurchaseV2} p - existing purchase to extend, or new purchase if linkedPurchase is null.
  * @param {ProductPurchaseV2?} linkedPurchase - Adds expiry to existing purchase.
+ * @param {boolean} mustBeAckd - if true, return null if purchase is not acknowledged
  * @returns {GEntitlement?} - If p is valid, else null.
  */
-function onetimeDeferredPlan(p, linkedPurchase = null) {
+function onetimeDeferredPlan(p, linkedPurchase = null, mustBeAckd = false) {
   if (linkedPurchase == null) {
     logw(`onetime: deferred: null linked purchase`);
-    return onetimePlan(p);
+    return onetimePlan(p, mustBeAckd);
   }
 
-  const existingPlan = onetimePlan(linkedPurchase);
+  const existingPlan = onetimePlan(linkedPurchase, mustBeAckd);
   if (existingPlan == null) {
     loge(`onetime: deferred: no plan for linked purchase`);
     if (log.debug) logo(linkedPurchase);
     return null;
   }
 
-  const newPlan = onetimePlan(p);
+  const newPlan = onetimePlan(p, mustBeAckd);
   if (newPlan == null) {
     loge(`onetime: deferred: no plan for new purchase`);
     if (log.debug) logo(p);
@@ -4308,9 +4316,10 @@ function onetimeDeferredPlan(p, linkedPurchase = null) {
 /**
  * TODO: instead of null throw Error with approp msg
  * @param {ProductPurchaseV2} p
+ * @param {boolean} mustBeAckd - if true, return null if purchase is not acknowledged
  * @returns {GEntitlement?} - If p is valid, else null.
  */
-function onetimePlan(p) {
+function onetimePlan(p, mustBeAckd = false) {
   if (p == null) {
     loge(`onetime: invalid product purchase ${p}`);
     return null;
@@ -4321,6 +4330,11 @@ function onetimePlan(p) {
   const products = p.productLineItem;
   if (!Array.isArray(products) || products.length === 0) {
     loge(`onetime: no product line items ${p}; test? ${test}`);
+    return null;
+  }
+
+  if (mustBeAckd && !isOnetimeAck2(p)) {
+    loge(`onetime: purchase not acknowledged ${p}; test? ${test}`);
     return null;
   }
 
