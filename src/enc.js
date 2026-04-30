@@ -119,6 +119,7 @@ export async function encrypt(env, cid, plaintext) {
 }
 
 /**
+ * rekeys: datatracker.ietf.org/doc/html/rfc8645#section-5.3.2
  * @param {any} env - Worker environment
  * @param {BufferSource} ctx1 - keying context 1 (from client)
  * @param {BufferSource} ctx2 - keying context 2

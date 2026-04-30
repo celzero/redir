@@ -20,7 +20,7 @@ const macctx = bin.str2byte("authorizecrossservice");
 const log = new glog.Log("xc");
 
 /**
- *
+ * kw: nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-38F.pdf
  * @param {any} env - Worker environment
  * @param {Request} req - Request object
  * @returns {Promise<Response>} - Response with encrypted cert

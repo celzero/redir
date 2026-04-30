@@ -78,14 +78,16 @@ const annualProxyProductId = "proxy_annual_subscription_test";
 const stdProductId = "standard.tier";
 const proProductId = "pro.tier";
 const onetimeProductId = "onetime.tier";
+const sponsorProductId = "sponsor.tier";
 const monthlyBasePlanId = "proxy-monthly";
 const yearlyBasePlanId = "proxy-yearly";
 const twoYearlyBasePlanId = "proxy-yearly-2";
 const fiveYearlyBasePlanId = "proxy-yearly-5";
+const sponsorBasePlanId = "sponsor-app";
 
 const log = new glog.Log("playorder");
 
-/** @type Set<string> - set of known productIds */
+/** @type {Set<string>} - set of known productIds */
 const knownProducts = new Set([
   monthlyProxyProductId,
   annualProxyProductId,
@@ -94,14 +96,14 @@ const knownProducts = new Set([
   onetimeProductId,
 ]);
 
-/** @type Set<string> - set of onetime productIds and planIds */
+/** @type {Set<string>} - set of onetime productIds and planIds */
 const knownOnetimeProductsAndPlans = new Set([
   onetimeProductId,
   twoYearlyBasePlanId,
   fiveYearlyBasePlanId,
 ]);
 
-/** @type Map<string, GEntitlement> - basePlanId => Entitlement */
+/** @type {Map<string, GEntitlement>} - basePlanId => Entitlement */
 const knownBasePlans = new Map();
 
 /**
@@ -1996,7 +1998,7 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
       return;
     }
 
-    // 2. Try to fetch fresh meta from Google and update the DB if non-nil
+    // fetch fresh meta from Google and update the DB if non-nil
     let freshMeta = null;
     try {
       if (productType === 1) {
@@ -2035,7 +2037,7 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
       }
     }
 
-    // 3. Delete the entitlement for this cid
+    // delete the entitlement for this cid
     for (const tries of [1, 10]) {
       await sleep(tries); // wait 1s, then 10s
       try {
@@ -2049,9 +2051,9 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
       }
     }
 
-    // 4. For voided onetime purchases, check whether a consumed predecessor
-    //    still has a future synthetic expiry.  If so, re-issue a fresh
-    //    entitlement anchored to that expiry (WS grants min 1 month per PUT).
+    // for voided onetime purchases, check whether a consumed predecessor
+    // still has a future synthetic expiry. If so, re-issue a fresh
+    // entitlement anchored to that expiry (WS grants min 1 month per PUT).
     if (productType === 2 /* PRODUCT_TYPE_ONE_TIME */) {
       try {
         const linkedPlan = await activeConsumedOnetimePlan(
@@ -4803,8 +4805,13 @@ export async function googlePlayGetTransaction(env, req) {
         return out;
       }
 
-      // helper: is a parsed row considered "active"?
+      /**
+       * is a parsed row considered "active"?
+       * @param {*} row - a playorders row with meta parsed as a JS object
+       * @returns {boolean} - true if the row is active, false otherwise
+       */
       function isRowActive(row) {
+        /** @type {ProductPurchaseV2} */
         const m = row.meta;
         if (m == null || typeof m !== "object") return false;
         if (

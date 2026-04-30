@@ -76,6 +76,7 @@ export async function encryptAesGcm(aeskey, iv, plaintext, aad) {
 }
 
 /**
+ * aead limits: datatracker.ietf.org/doc/html/draft-irtf-cfrg-aead-limits-11#name-example-single-key-limits-s
  * @param {CryptoKey} aeskey - The AES-CBC key
  * @param {CryptoKey} hmackey - The HMAC key
  * @param {BufferSource} iv - The initialization vector (16 byte / 128 bit for AES-CBC)

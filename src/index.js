@@ -456,6 +456,8 @@ function greaterThanEqCmp(str1, str2) {
 }
 
 /**
+ * 90d cryptoperiod:
+ * nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-57pt1r5.pdf
  * @param {any} env
  * @returns {Uint8Array[]}
  * @throws when rsa-pss pub/priv keys are missing
