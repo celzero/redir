@@ -2,6 +2,7 @@
 // Copyright (c) 2025 RethinkDNS and its authors
 
 import * as bin from "./buf.js";
+import { go } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as glog from "./log.js";
 import { consumejson, r200jstr, r400err, r429err, r500err } from "./req.js";
@@ -130,7 +131,7 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
     }
 
     if (deleteKeys.length > 0) {
-      go(deletePermaKeys, deleteKeys); // async
+      go(deletePermaKeys, env, deleteKeys); // async
     }
 
     log.i(`make: reassigned pubkey ${row.pubkey} to did=${did}`);
@@ -261,21 +262,22 @@ async function vendPermaConfig(env, sessiontoken) {
 
 /**
  * Deletes any wsperma rows whose pubkeys are not present in the remote list_keys.
+ * @param {any} env - Worker environment
  * @param {Array<string>} pubkeys
  * @returns {Promise<dbx.D1Out?>}
  */
-async function deletePermaKeys(pubkeys) {
+async function deletePermaKeys(env, pubkeys) {
   try {
     // delete any rows whose keys are gone from remote
-    const delout = await dbx.deletePermasByPubkeys(db, deleteKeys);
+    const delout = await dbx.deletePermasByPubkeys(dbx.db(env), pubkeys);
     if (!delout.success) {
-      log.e(`make: db err deleting orphaned pubkeys ${deleteKeys}`);
+      log.e(`make: db err deleting orphaned pubkeys ${pubkeys}`);
     } else {
-      log.d(`make: deleted orphaned pubkeys ${deleteKeys}`);
+      log.d(`make: deleted orphaned pubkeys ${pubkeys}`);
     }
     return delout;
   } catch (ignore) {
-    log.e(`make: db err deleting orphaned pubkeys ${deleteKeys}`, ignore);
+    log.e(`make: db err deleting orphaned pubkeys ${pubkeys}`, ignore);
   }
   return null;
 }
