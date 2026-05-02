@@ -310,7 +310,7 @@ export async function upsertPlaySub(db, cid, token, linkedtoken, info = null) {
     const q =
       "INSERT INTO playorders(purchasetoken, meta, cid, linkedtoken, mtime) VALUES(?, ?, ?, ?, ?) " +
       "ON CONFLICT(purchasetoken) DO UPDATE SET " +
-      "meta=excluded.meta, linkedtoken=excluded.linkedtoken, mtime=excluded.mtime";
+      "meta=excluded.meta, linkedtoken=COALESCE(excluded.linkedtoken, playorders.linkedtoken), mtime=excluded.mtime";
     const tx = db
       .prepare(q)
       .bind(token, JSON.stringify(info), cid, linkedtoken, now());
