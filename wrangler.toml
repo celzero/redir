@@ -101,12 +101,12 @@ WS_URL = "https://api.windscribe.com/"
 STATUS = "ok"
 
 [[env.prod.d1_databases]]
-binding = "SVCDBTEST"
+binding = "REDIRDBTEST"
 database_name = "rpntest"
 database_id = "e6db9d1f-cf58-427e-aa15-bd3fbf54d69e"
 
 [[env.prod.d1_databases]]
-binding = "SVCDB"
+binding = "REDIRDB"
 database_name = "rpn"
 database_id = "fa48c37b-1a08-43c6-8644-536d21b5513d"
 
