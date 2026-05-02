@@ -7,7 +7,13 @@
  */
 
 import { emptyString } from "./buf.js";
-import { accountIdentifiersImmutable, als, ExecCtx, go, obsToken } from "./d.js";
+import {
+  accountIdentifiersImmutable,
+  als,
+  ExecCtx,
+  go,
+  obsToken,
+} from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
@@ -3971,8 +3977,8 @@ async function linkedOnetimePurchases2(
     throw new Error(`too many active purchases for ${cid}: ${others.length}`);
   }
 
-  if (consumedPurchases.length === 0) {
-    log.d(`linkedOnetimePurchases2: no active or consumed for ${cid}`);
+  if (others.length === 0) {
+    log.d(`linkedOnetimePurchases2: no other active or consumed for ${cid}`);
     return nolink;
   }
 
@@ -4722,8 +4728,8 @@ function subscriptionsMoreOrLessEqual(sub1, sub2, strict = false) {
   // check if sub1 and sub2 are equal in most ways
   if (
     accountIdentifiersImmutable() &&
-    sub1.externalAccountIdentifiers.obfuscatedExternalAccountId !==
-      sub2.externalAccountIdentifiers.obfuscatedExternalAccountId
+    sub1.externalAccountIdentifiers?.obfuscatedExternalAccountId !==
+      sub2.externalAccountIdentifiers?.obfuscatedExternalAccountId
   ) {
     return false;
   }
@@ -5007,11 +5013,12 @@ async function gerror(r) {
     if (msg == null || typeof msg !== "object") {
       return "unknown msg: " + msg;
     }
-    loge(`gerror: ${JSON.stringify(msg)}`);
+    const msgstr = `${JSON.stringify(msg)}`;
+    loge(`gerror: ${msgstr}`);
     if (msg.error && msg.error.message) {
       return msg.error.message;
     }
-    return msg;
+    return msgstr;
   } catch (e) {
     // If JSON parsing fails, return the response text
     return `err getting gerr: ${e.message}, code: ${r.status}`;

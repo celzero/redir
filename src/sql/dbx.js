@@ -356,7 +356,7 @@ export async function playActive(db, cid) {
     " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
     " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_ACTIVE' )" +
     " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
-    " AND json_extract(p.meta,'$.purchaseState')='PURCHASED' ) )" +
+    " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED' ) )" +
     " ORDER BY p.mtime DESC;";
   const tx = db.prepare(q).bind(cid);
   return run(tx, q);
@@ -378,7 +378,7 @@ export async function playOnetimeActive(db, cid, limit = -1) {
     SELECT * FROM playorders p WHERE p.cid=?
     AND p.meta IS NOT NULL
     AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'
-    AND json_extract(p.meta,'$.purchaseState') != 'CANCELLED'
+    AND json_extract(p.meta,'$.purchaseStateContext.purchaseState') != 'CANCELLED'
     AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je
     WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_YET_TO_BE_CONSUMED' )
     ORDER BY p.mtime DESC
@@ -388,7 +388,7 @@ export async function playOnetimeActive(db, cid, limit = -1) {
     "SELECT * FROM playorders p WHERE p.cid=?" +
     " AND p.meta IS NOT NULL" +
     " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
-    " AND json_extract(p.meta,'$.purchaseState') != 'CANCELLED'" +
+    " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState') != 'CANCELLED'" +
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
     " WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')='CONSUMPTION_STATE_YET_TO_BE_CONSUMED' )" +
     " ORDER BY p.mtime DESC" +

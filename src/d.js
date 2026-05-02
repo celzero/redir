@@ -194,8 +194,9 @@ export function go(fn, ...args) {
   const workctx = ols.getStore()?.workctx;
   if (workctx != null) {
     workctx.waitUntil(fn(...args));
+  } else {
+    fn(...args);
   }
-  fn(...args);
 }
 
 /**
