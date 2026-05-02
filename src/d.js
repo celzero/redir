@@ -195,6 +195,7 @@ export function go(fn, ...args) {
   if (workctx != null) {
     workctx.waitUntil(fn(...args));
   }
+  fn(...args);
 }
 
 /**
