@@ -7,7 +7,7 @@
  */
 
 import { emptyString } from "./buf.js";
-import { accountIdentifiersImmutable, als, ExecCtx, obsToken } from "./d.js";
+import { accountIdentifiersImmutable, als, ExecCtx, go, obsToken } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { mincidlength } from "./reg.js";
@@ -2833,6 +2833,8 @@ async function consumeOnetimePurchase(env, productId, cid, tok) {
   }
 
   logi(`onetime: consumed ${productId} / ${obs} for ${cid}`);
+
+  go(refreshDatabaseState, env, cid, tok);
 }
 
 /**
@@ -4120,6 +4122,36 @@ async function registerOrUpdateActiveSubscription(env, cid, pt, sub) {
   // TODO: cid must match with existing db entry, if any
   // linkedPurchaseToken is the older token this new pt must "invalidate" / supercede
   return dbx.upsertPlaySub(dbx.db(env), cid, pt, sub.linkedPurchaseToken, sub);
+}
+
+/**
+ * Refetches the purchase from Google and updates the database, retrying once on failure.
+ * @param {any} env - Worker environment
+ * @param {string} cid - Client ID associated with the purchase
+ * @param {string} pt - Purchase token of the subscription purchase to refresh
+ * @param {boolean} bg - Whether this refresh is happening in the background (e.g., after a consume) or foreground (e.g., during ack)
+ * @returns {Promise<boolean>}
+ * @throws {Error} - If the purchase cannot be refreshed after retries
+ */
+async function refreshDatabaseState(env, cid, pt) {
+  // TODO: use d.go?
+  const obs = obsToken();
+  const errs = [];
+  for (const tries of [1, 10]) {
+    await sleep(tries);
+    try {
+      const updated = await getOnetimeProductV2(env, pt);
+      await registerOrUpdateOnetimePurchase(env, cid, pt, updated);
+      logi(`onetime: post consume update ok ${obs} for ${cid}`);
+      return true;
+    } catch (err) {
+      errs.push(err);
+      logw(err);
+    }
+  }
+  const msg = errs.map((e) => e.message).join("; ");
+  loge(`refresh: err ${cid} / ${obs}: ${msg}`);
+  return false;
 }
 
 /**
