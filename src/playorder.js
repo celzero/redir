@@ -4172,6 +4172,7 @@ async function registerOrUpdateOnetimePurchase(
 ) {
   const nolinktoken = null;
   if (!emptyString(linkedtoken)) {
+    const lobs = await obfuscate(linkedtoken);
     // cid for linkedtoken if supplied must match with existing db entry, if any
     const dbres = await dbx.playSub(dbx.db(env), linkedtoken);
     if (
@@ -4180,13 +4181,13 @@ async function registerOrUpdateOnetimePurchase(
       dbres.results == null ||
       dbres.results.length <= 0
     ) {
-      throw new Error(`linked token ${linkedtoken} not found for ${cid}`);
+      throw new Error(`linked token ${lobs} not found for ${cid}`);
     }
     const linkedentry = dbres.results[0];
     const linkedcid = linkedentry.cid;
     if (accountIdentifiersImmutable() && linkedcid !== cid) {
       loge(
-        `onetime: register: linked token ${linkedtoken} cid ${linkedcid} != ${cid}`,
+        `onetime: register: linked token ${lobs} cid ${linkedcid} != ${cid}`,
       );
       throw new Error(`mismatch: linked cid != ${cid}`);
     }
