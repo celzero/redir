@@ -9,6 +9,7 @@ import {
   authorization,
   cid as cidOf,
   consumejson,
+  did as didOf,
   didTokenHeader,
   r400err,
   r401err,
@@ -66,6 +67,7 @@ export async function forwardToWs(env, r) {
 
   // permanent managed WG credential — handled separately, never forwarded
   if (isPermaReq(u)) {
+    const did = didOf(r) || "";
     return getOrCreatePermaConfig(env, cid, did, token);
   }
 
