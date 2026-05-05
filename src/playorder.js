@@ -3848,7 +3848,7 @@ export async function googlePlayGetEntitlements(env, req) {
  * @throws {Error} - If there is an issue retrieving the purchases from the database
  */
 async function getActiveOnetimePurchasesForCid(env, cid, limit = -1) {
-  const out = await dbx.playOnetimeActive(dbx.db(env), cid, limit);
+  const out = await dbx.playOnetimeCurrent(dbx.db(env), cid, limit);
   if (out == null || !out.success) {
     return []; // no linked purchase token found
   }
@@ -3863,7 +3863,8 @@ async function getActiveOnetimePurchasesForCid(env, cid, limit = -1) {
  * Returns all fully-consumed (all productLineItems consumed) onetime purchases
  * for the given cid from the database, ordered most-recently-modified first.
  * Consumed purchases may no longer be retrievable from Google APIs (purged after
- * ~60 days) but their stored meta reflects their final state.
+ * ~60 days) but their stored meta reflects their final state. All returned purchases
+ * have been acknowledged.
  * @param {any} env
  * @param {string} cid
  * @param {number} limit

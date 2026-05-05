@@ -363,16 +363,16 @@ export async function playActive(db, cid) {
 }
 
 /**
- *
+ * Current unconsumed, may be unacknowleged or acknowledged purchase.
  * @param {any} db
  * @param {string} cid
  * @param {number} limit - Max number of active purchases to retrieve; if -1, retrieves all active purchases
  * @returns {Promise<D1Out>} - D1Out object
  * @throws {Error} - on invalid args
  */
-export async function playOnetimeActive(db, cid, limit = -1) {
+export async function playOnetimeCurrent(db, cid, limit = -1) {
   if (db == null || emptyString(cid)) {
-    throw new Error("d1: playOnetimeActive: db/cid missing");
+    throw new Error("d1: playOnetimeCurrent: db/cid missing");
   }
   /*
     SELECT * FROM playorders p WHERE p.cid=?
@@ -423,6 +423,7 @@ export async function playConsumedOnetimeForCid(db, cid, limit = -1) {
     AND p.meta IS NOT NULL
     AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'
     AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED'
+    AND json_extract(p.meta,'$.acknowledgementState')='ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED'
     AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je )
     AND NOT EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je
       WHERE json_extract(je.value,'$.productOfferDetails.consumptionState')!='CONSUMPTION_STATE_CONSUMED' )
@@ -433,6 +434,7 @@ export async function playConsumedOnetimeForCid(db, cid, limit = -1) {
     " AND p.meta IS NOT NULL" +
     " AND json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
     " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED'" +
+    " AND json_extract(p.meta,'$.acknowledgementState')='ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED'" +
     // all items must be consumed: no item has consumptionState != CONSUMED
     " AND EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je )" +
     " AND NOT EXISTS ( SELECT 1 FROM json_each(p.meta,'$.productLineItem') je" +
