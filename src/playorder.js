@@ -30,6 +30,7 @@ import {
   r403play as r403j,
   r405play as r405j,
   r409play as r409j,
+  r412play as r412j,
   r500play as r500j,
   sku as skuOf,
   tot as totOf,
@@ -1636,8 +1637,10 @@ async function handleOneTimeProductNotification(env, notif) {
       // return error as there can be atmost 2 active onetime purchases allowed
       // the first purchase is assumed to be expiring soonish (like in 90d)
       // while the second one is assumed to be "taking over" when the first one does.
-      // TODO: attempt refund?
-      return r409j({
+      // TODO: attempt refund? client will not be able to get a refund through as the
+      // TODO: purchase token isn't even being added to the database (and so all relevant
+      // TODO: preconditions on refund processing will fail)
+      return r412j({
         error: "cannot link purchase",
         details: err.message,
         cid: cid,
@@ -2241,12 +2244,17 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
     return r400j({ error: "missing purchase token" });
   }
 
-  // TODO: fetch from db if onetime purchase not retrivable from Google
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
-  // the refund window depends on purchase time, and so linked purchases
-  // which adjust the expiry aren't necessary
-  // TODO: do not refund if any linked token is not consumed
-  const plan = onetimePlan(purchase2);
+  const consumed = isOnetimeAllConsumed2(purchase2);
+  if (consumed) {
+    return r412j({
+      error: "cannot refund a consumed purchase",
+      purchaseId: test ? purchaseToken : obsToken(),
+      cid: cid,
+      test: test,
+    });
+  }
+
   const refunded = isOnetimeRefunded2(purchase2);
   const fullyRefunded = isOnetimeFullyRefunded2(purchase2);
   const testPurchase = isOnetimeTest2(purchase2);
@@ -2282,6 +2290,10 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
       test: test,
     });
   }
+
+  // the refund window depends on purchase time, and so linked purchases
+  // which adjust the expiry aren't necessary
+  const plan = onetimePlan(purchase2);
 
   // let refunds go through if no such plan exists
   if (!fullyRefunded) {
@@ -2319,7 +2331,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   }
 
   logi(
-    `onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken} / deleted? ${deletedEnt} / test? ${test}`,
+    `onetime: for ${cid}; refunded order ${orderId} / tok=${obstoken} / alreadyRefund? ${fullyRefunded} / deleted? ${deletedEnt} / test? ${test}`,
   );
 
   return r200j({
@@ -2377,7 +2389,7 @@ export async function cancelSubscription(env, req) {
     ) {
       loge(`cancel: not in db ${cid} / tok: ${obstoken}; test? ${test}`);
       return r400j({
-        error: "subscription not found",
+        error: "purchase not found",
         purchaseId: obstoken,
         sku: sku,
         test: test,
@@ -2398,11 +2410,23 @@ export async function cancelSubscription(env, req) {
       });
     }
 
+    const dbmeta = productPurchaseOf(entry.meta);
+    if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
+      loge(`cancel: tok ${obstoken} for ${cid} is consumed onetime (db)`);
+      return r412j({
+        error: "cannot cancel, purchase consumed",
+        purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
+      });
+    }
+
     const obsoleted = await isLinkedPurchaseToken(env, purchaseToken);
     if (obsoleted) {
       loge(`cancel: tok ${obstoken} for ${cid} is obsoleted`);
       return r403j({
-        error: "purchase token obsolete",
+        error: "purchase obsolete",
         purchaseId: obstoken,
         sku: sku,
         test: test,
@@ -2553,7 +2577,7 @@ export async function revokeSubscription(env, req) {
     ) {
       loge(`sub: revoke not found in db ${cid} / tok: ${obstoken}`);
       return r400j({
-        error: "subscription not found",
+        error: "purchase not found",
         purchaseId: obstoken,
         sku: sku,
         test: test,
@@ -2573,13 +2597,25 @@ export async function revokeSubscription(env, req) {
       });
     }
 
+    const dbmeta = productPurchaseOf(entry.meta);
+    if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
+      loge(`cancel: tok ${obstoken} for ${cid} is consumed onetime (db)`);
+      return r412j({
+        error: "cannot cancel, purchase consumed",
+        purchaseId: obstoken,
+        sku: sku,
+        test: test,
+        cid: cid,
+      });
+    }
+
     // reject revoke on an obsoleted purchase token (it is a linkedtoken for a
     // newer purchase that supersedes it). Ack and consume are still allowed.
     const obsolete = await isLinkedPurchaseToken(env, purchaseToken);
     if (obsolete) {
       loge(`revoke: tok ${obstoken} for ${cid} is obsoleted`);
       return r403j({
-        error: "purchase token obsolete",
+        error: "purchase obsolete",
         purchaseId: obstoken,
         cid: cid,
         sku: sku,
@@ -3065,7 +3101,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // the first purchase is assumed to be expiring soonish (like in 90d)
           // while the second one is assumed to be "taking over" when the first one does.
           // client that sees 409 should attempt refund.
-          return r409j({
+          return r412j({
             error: "cannot link purchase",
             details: err.message,
             cid: cid,
@@ -3074,8 +3110,16 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             test: test,
           });
         }
-        // TODO: if fetching purchase2 from Google fails, use onetime meta from db?
-        const purchase2 = await getOnetimeProductV2(env, purchasetoken);
+
+        const dbmeta = productPurchaseOf(entry.meta);
+        // if fetching purchase2 from Google API fails, use onetime obj from db (dbmeta)
+        // this can happen for onetime purchases when a purchase has been consumed (obsolete)
+        // in favour of a new top-up purchase which then was refunded back by the user, leaving
+        // this consumed (obsoleted) purchase active again, which should fulfill its due if remaining.
+        // But Google may stop returning state for consumed onetime purchases after a certain
+        // time period, in which case, we simply rely on the latest meta stored in the db, hoping
+        // it to be a fair representation of what the last-known-good-state of the purchase had been.
+        const purchase2 = await getOnetimeProductV2(env, purchasetoken, dbmeta);
         const testPurchase = isOnetimeTest2(purchase2);
         const ackd = isOnetimeAck2(purchase2);
         const consumed = isOnetimeAllConsumed2(purchase2);
@@ -3975,6 +4019,9 @@ async function linkedOnetimePurchases2(
   const others = allPurchases.filter((p) => p.purchasetoken !== purchasetoken);
 
   if (others.length > limit) {
+    loge(
+      `onetime: too many purchases for ${cid} (${activePurchases.length} + ${consumedPurchases.length} / ${others.length}): ${JSON.stringify(others)}`,
+    );
     throw new Error(`too many active purchases for ${cid}: ${others.length}`);
   }
 
@@ -4458,6 +4505,16 @@ async function gtoken(creds) {
   }
 
   throw new Error("gtoken: could not generate");
+}
+
+/**
+ * Parses the database meta field to make ProductPurchaseV2.
+ * @param {any} dbmeta - json meta entry from the database
+ * @returns {ProductPurchaseV2?}
+ */
+function productPurchaseOf(dbmeta) {
+  const dbmetajson = dbmeta != null ? JSON.parse(dbmeta) : null;
+  return dbmetajson ? new ProductPurchaseV2(dbmetajson) : null;
 }
 
 /**

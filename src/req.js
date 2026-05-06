@@ -466,6 +466,14 @@ export function r409play(j) {
   return new Response(JSON.stringify(payload), { status: 409, headers: h });
 }
 
+/** 412 Precondition Failed with JSON body, wrapping payload in PlayErr */
+export function r412play(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 412, headers: h });
+}
+
 /** 421 Misdirected Request with JSON body */
 export function r421err(u) {
   const h = { "content-type": "application/json" };
