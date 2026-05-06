@@ -268,6 +268,10 @@ class GEntitlement {
       withinRefundWindow: this.withinRefundWindow,
     };
   }
+
+  get str() {
+    return `ent(id: ${this.productId}, base: ${this.basePlanId}, start: ${this.start.toISOString()}, expiry: ${this.expiry.toISOString()}, deferred: ${this.deferred}), withinRefundWindow: ${this.withinRefundWindow}`;
+  }
 }
 
 knownBasePlans.set(
@@ -1663,7 +1667,7 @@ async function handleOneTimeProductNotification(env, notif) {
     const plan = onetimeDeferredPlan(purchase2, linkedPurchase2);
 
     logi(
-      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} linked? ${linkedPurchaseId} ; test? ${test} / p=${JSON.stringify(plan ? plan.json : null)}`,
+      `onetime: ${notifType} / ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} all: ${productIds} + uncon: ${unconsumedProductIds} / ackd? ${ackd} con? ${consumed} linked? ${linkedPurchaseId} ; test? ${test} / p=${plan.str}`,
     );
 
     if (pending) {
@@ -2263,15 +2267,18 @@ async function refundOrder(env, orderId, revoke = true) {
  */
 async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    logw(`onetime: refund missing/invalid cid`);
     return r400j({ error: "missing/invalid client id" });
   }
   if (emptyString(purchaseToken)) {
+    logw(`onetime: refund missing purchase token`);
     return r400j({ error: "missing purchase token" });
   }
 
   const purchase2 = await getOnetimeProductV2(env, purchaseToken);
   const consumed = isOnetimeAllConsumed2(purchase2);
   if (consumed) {
+    logi(`onetime: refund rejected, purchase consumed for ${cid}`);
     return r412j({
       error: "cannot refund a consumed purchase",
       purchaseId: test ? purchaseToken : obsToken(),
@@ -2324,6 +2331,9 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   if (!fullyRefunded) {
     if (plan != null && !plan.withinRefundWindow) {
       // TODO: if refunded already, then skip to deleteWsEntitlment, if any.
+      logw(
+        `onetime: refund window exceeded for ${cid} / tok: ${obstoken} / ${plan.str}`,
+      );
       return r400j({
         error: "refund window exceeded",
         purchaseId: test ? purchaseToken : obstoken,
@@ -2381,6 +2391,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
 export async function cancelSubscription(env, req) {
   // Only allow POST requests
   if (req.method !== "POST") {
+    logw(`cancel: method not allowed ${req.method}`);
     return r405j({ error: "method not allowed" });
   }
 
@@ -2391,12 +2402,15 @@ export async function cancelSubscription(env, req) {
   // TODO: use vcode = url.path.get("vcode") to accept or reject cancellation
 
   if (emptyString(purchaseToken)) {
+    logw(`cancel: missing purchase token`);
     return r400j({ error: "missing purchase token" });
   }
   if (emptyString(sku)) {
+    logw(`cancel: missing product id`);
     return r400j({ error: "missing product id" });
   }
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    logw(`cancel: missing/invalid client id`);
     return r400j({ error: "missing/invalid client id" });
   }
 
@@ -2461,6 +2475,9 @@ export async function cancelSubscription(env, req) {
 
     if (knownOnetimeProductsAndPlans.has(sku)) {
       // TODO: do not revoke; but cancel only?
+      logi(
+        `cancel: refund onetime ${cid} / tok: ${obstoken} / sku: ${sku}; test? ${test}`,
+      );
       return await refundOnetimePurchase(env, cid, purchaseToken, test);
     }
 
@@ -2568,6 +2585,7 @@ export async function cancelSubscription(env, req) {
 export async function revokeSubscription(env, req) {
   // Only allow POST requests
   if (req.method !== "POST") {
+    logw(`revoke: method not allowed ${req.method}`);
     return r405j({ error: "method not allowed" });
   }
 
@@ -2578,12 +2596,15 @@ export async function revokeSubscription(env, req) {
   // TODO: only supported vcode = url.path("vcode") can revoke purchase
 
   if (emptyString(purchaseToken)) {
+    logw(`revoke: missing purchase token`);
     return r400j({ error: "missing purchase token" });
   }
   if (emptyString(sku)) {
+    logw(`revoke: missing product id`);
     return r400j({ error: "missing product id" });
   }
   if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+    logw(`revoke: missing/invalid client id`);
     return r400j({ error: "missing/invalid client id" });
   }
 
@@ -3051,6 +3072,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
   try {
     if (req.method !== "POST" && req.method !== "GET") {
+      logw(`ack: method not allowed ${req.method}`);
       return r405j({ error: "method not allowed" });
     }
     const post = req.method === "POST";
@@ -3063,12 +3085,15 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     // TODO: use vcode = url.path.get("vcode") to accept or reject purchases
 
     if (emptyString(purchasetoken)) {
+      logw(`ack: missing purchase token`);
       return r400j({ error: "missing purchase token" });
     }
     if (emptyString(sku)) {
+      logw(`ack: missing product id`);
       return r400j({ error: "missing product id" });
     }
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      logw(`ack: missing/invalid client id`);
       return r400j({ error: "missing/invalid client id" });
     }
 
@@ -3083,6 +3108,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           dbres.results == null ||
           dbres.results.length <= 0
         ) {
+          loge(
+            `ack: onetime purchase not found in db ${cid} / tok: ${obstoken}`,
+          );
           return r400j({
             error: "purchase not found",
             cid: cid,
@@ -3095,6 +3123,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const storedcid = entry.cid;
         // identifiers must be immutable for onetime purchases
         if (accountIdentifiersImmutable() && storedcid !== cid) {
+          loge(
+            `ack: onetime cid mismatch: ${cid} != ${storedcid} for ${obstoken}`,
+          );
           return r400j({
             error: "cid mismatch",
             cid: cid,
@@ -3174,6 +3205,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         } // else: test === testPurchase
 
         if (!paid || pending || cancelled) {
+          logw(
+            `ack: onetime purchase not paid/cancelled for ${cid} / tok: ${obstoken}; cancelled? ${cancelled} pending? ${pending}`,
+          );
           return r400j({
             error: cancelled ? "purchase cancelled" : "purchase not completed",
             purchaseId: test ? purchasetoken : obstoken,
@@ -3252,6 +3286,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             });
           }
 
+          logi(
+            `ack: onetime linked obsoleted, no orphan ent for ${cid} / tok: ${obstoken}; test? ${test}`,
+          );
           return r200j({
             success: true,
             message: "onetime linked purchase acknowledged without entitlement",
@@ -3269,6 +3306,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const gent = onetimeDeferredPlan(purchase2, linkedPurchase2);
         if (gent == null) {
           // such purchases can only be cancelled/refunded
+          loge(
+            `ack: onetime not a valid product for ${cid} / tok: ${obstoken} sku=${sku}; test? ${test}`,
+          );
           return r400j({
             error: "not a valid product; will be auto refunded",
             purchaseId: test ? purchasetoken : obstoken,
@@ -3284,9 +3324,13 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const expiry = gent.expiry;
         const ent = await getOrGenWsEntitlement(env, cid, expiry, gent.plan);
         if (!force && ent == null) {
+          loge(`ack: onetime failed to get entitlement for ${cid}`);
           return r500j({ error: "failed to get entitlement", cid: cid });
         }
         if (ent?.status === "banned" && !force) {
+          loge(
+            `ack: onetime user banned for ${cid} status=${ent?.status}; test? ${test}`,
+          );
           return r400j({
             error: "user banned",
             cid: cid,
@@ -3302,6 +3346,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
         if (ent?.status === "expired" && !force) {
+          loge(
+            `ack: onetime entitlement expired for ${cid} status=${ent?.status}; test? ${test}`,
+          );
           return r400j({
             error: "entitlement expired",
             cid: cid,
@@ -3317,6 +3364,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
         if (ent?.status !== "valid" && !force) {
+          loge(
+            `ack: onetime invalid entitlement status for ${cid} status=${ent?.status}; test? ${test}`,
+          );
           return r400j({
             error: "invalid entitlement status",
             status: ent?.status,
@@ -3340,7 +3390,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             }
           } catch (e) {
             loge(
-              `onetime: err ack/con: ${cid} / tok: ${obstoken}: ${e.message}`,
+              `onetime: err ack/con: ${cid} / tok: ${obstoken}: ${e.message}; test? ${test}`,
             );
             return r500j({
               error: "failed to ack or consume",
@@ -3362,7 +3412,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const sendPayload = ent != null;
 
         logi(
-          `onetime: ackd/con for ${cid} / tok: ${obstoken} / sentEnt? ${sendPayload}; test? ${test}`,
+          `onetime: ackd/con for ${cid} / tok: ${obstoken} / sentEnt? ${sendPayload} / force? ${force}; test? ${test}`,
         );
 
         return r200j({
@@ -3474,6 +3524,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         // Play Billing deletes a purchaseToken after 60d from expiry
         await registerOrUpdateActiveSubscription(env, cid, purchasetoken, sub);
         if (Date.now() > expiry.getTime()) {
+          loge(
+            `ack: sub expired for ${cid} / tok: ${obstoken}; expiry: ${expiry}; test? ${test}`,
+          );
           return r400j({
             error: "subscription expired",
             cid: cid,
@@ -3544,9 +3597,11 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         // TODO: check if productId grants a WSEntitlement
         const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
         if (!force && !ent) {
+          loge(`ack: sub failed to get entitlement for ${cid}`);
           return r500j({ error: "failed to get entitlement", cid: cid });
         }
         if (ent?.status === "banned" && !force) {
+          loge(`ack: sub user banned for ${cid} status=${ent?.status}`);
           return r400j({
             error: "banned user",
             cid: cid,
@@ -3559,6 +3614,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
         if (ent?.status === "expired" && !force) {
+          loge(`ack: sub entitlement expired for ${cid} status=${ent?.status}`);
           return r400j({
             error: "entitlement expired",
             cid: cid,
@@ -3572,6 +3628,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           });
         }
         if (ent?.status !== "valid" && !force) {
+          loge(
+            `ack: sub invalid entitlement status for ${cid} status=${ent?.status}`,
+          );
           return r400j({
             error: "invalid entitlement status",
             status: ent?.status,
@@ -3594,6 +3653,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           await ackSubscription(env, purchasetoken, ent);
         }
 
+        logi(
+          `ack: sub acknowledged for ${cid} / tok: ${obstoken}; sentEnt? ${sendPayload} test? ${test}`,
+        );
         return r200j({
           success: true,
           message: "subscription acknowledged",
@@ -3613,6 +3675,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
       }
     });
   } catch (err) {
+    loge(`ack: failed: ${err.message} for ${cid} / tok: ${obstoken}`);
     return r500j({
       error: "acknowledge failed",
       details: err.message,
@@ -3643,6 +3706,7 @@ export async function googlePlayConsumePurchase(env, req) {
 
   try {
     if (req.method !== "POST") {
+      logw(`onetime: con: method not allowed ${req.method}`);
       return r405j({ error: "method not allowed" });
     }
 
@@ -3652,17 +3716,21 @@ export async function googlePlayConsumePurchase(env, req) {
     test = isTest(req);
 
     if (emptyString(purchasetoken)) {
+      logw(`onetime: con: missing purchase token`);
       return r400j({ error: "missing purchase token" });
     }
     if (emptyString(sku)) {
+      logw(`onetime: con: missing product id`);
       return r400j({ error: "missing product id" });
     }
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      logw(`onetime: con: missing/invalid client id`);
       return r400j({ error: "missing/invalid client id" });
     }
 
     // consume only applies to onetime purchases
     if (!knownOnetimeProductsAndPlans.has(sku)) {
+      logw(`onetime: con: not valid sku ${sku} / cid ${cid}; test? ${test}`);
       return r400j({
         error: "consume not applicable",
         cid: cid,
@@ -3681,6 +3749,9 @@ export async function googlePlayConsumePurchase(env, req) {
         dbres.results == null ||
         dbres.results.length <= 0
       ) {
+        loge(
+          `onetime: con: purchase not found in db ${cid} / tok: ${obstoken}`,
+        );
         return r400j({
           error: "purchase not found",
           cid: cid,
@@ -3694,6 +3765,7 @@ export async function googlePlayConsumePurchase(env, req) {
       const storedcid = entry.cid;
       // identifiers must be immutable for onetime purchases
       if (accountIdentifiersImmutable() && storedcid !== cid) {
+        loge(`onetime: con: mismatch: ${cid} != ${storedcid} for ${obstoken}`);
         return r400j({
           error: "cid mismatch",
           cid: cid,
@@ -3715,7 +3787,7 @@ export async function googlePlayConsumePurchase(env, req) {
       const onetimeState = onetimePurchaseStateStr2(purchase2);
 
       logi(
-        `onetime: ack/con ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / consumed? ${consumed} test? ${test}`,
+        `onetime: con: ${onetimeState} for ${cid} / tok: ${obstoken} sku=${sku} ${productIds} / consumed? ${consumed} test? ${test}`,
       );
 
       if (testPurchase !== test) {
@@ -3731,6 +3803,9 @@ export async function googlePlayConsumePurchase(env, req) {
       } // else: test === testPurchase
 
       if (!paid || pending || cancelled) {
+        logw(
+          `onetime: con: purchase not paid/cancelled for ${cid} / tok: ${obstoken}; cancelled? ${cancelled} pending? ${pending}`,
+        );
         return r400j({
           error: cancelled ? "purchase cancelled" : "purchase not completed",
           purchaseId: test ? purchasetoken : obstoken,
@@ -3746,6 +3821,9 @@ export async function googlePlayConsumePurchase(env, req) {
       const gent = onetimePlan(purchase2);
       if (gent == null) {
         // such purchases can only be cancelled/refunded
+        loge(
+          `onetime: con: not a valid product for ${cid} / tok: ${obstoken} sku=${sku}`,
+        );
         return r400j({
           error: "not a valid product; will be auto refunded",
           purchaseId: test ? purchasetoken : obstoken,
@@ -3767,6 +3845,7 @@ export async function googlePlayConsumePurchase(env, req) {
       // consume is only allowed within 30d of expiry or anytime after expiry
       // for test domain, allow consume unconditionally.
       if (!withinConsumeWindow && !test) {
+        logw(`onetime: con: too early for ${cid} / tok: ${obstoken}`);
         return r400j({
           error: "too early to consume",
           purchaseId: test ? purchasetoken : obstoken,
@@ -3781,9 +3860,7 @@ export async function googlePlayConsumePurchase(env, req) {
       }
 
       if (consumed) {
-        logi(
-          `onetime: ack/con already consumed for ${cid} / tok: ${obstoken}; test? ${test}`,
-        );
+        logi(`onetime: con: already ${cid} / tok: ${obstoken}; test? ${test}`);
         return r200j({
           success: true,
           message: "onetime purchase already consumed",
@@ -3808,7 +3885,7 @@ export async function googlePlayConsumePurchase(env, req) {
           purchasetoken,
         );
       } catch (e) {
-        loge(`onetime: err consume: ${cid} / tok: ${obstoken}: ${e.message}`);
+        loge(`onetime: con: err: ${cid} / tok: ${obstoken}: ${e.message}`);
         return r500j({
           error: "failed to consume",
           details: e.message,
@@ -3823,7 +3900,7 @@ export async function googlePlayConsumePurchase(env, req) {
       }
 
       logi(
-        `onetime: ack/con done for ${cid} / tok: ${obstoken}; expired? ${expired} test? ${test}`,
+        `onetime: con: done ${cid} / tok: ${obstoken}; expired? ${expired}; test? ${test}`,
       );
 
       return r200j({
@@ -3840,6 +3917,7 @@ export async function googlePlayConsumePurchase(env, req) {
       });
     });
   } catch (err) {
+    loge(`onetime: con: failed: ${err.message} for ${cid} / tok: ${obstoken}`);
     return r500j({
       error: "consume failed",
       details: err.message,
@@ -3863,6 +3941,7 @@ export async function googlePlayGetEntitlements(env, req) {
   try {
     // Only allow GET requests
     if (req.method !== "GET") {
+      logw(`ent: method not allowed ${req.method}`);
       return r405j({ error: "method not allowed" });
     }
 
@@ -3870,12 +3949,14 @@ export async function googlePlayGetEntitlements(env, req) {
     const test = isTest(req);
     // TODO: use vcode = url.path.get("vcode") to accept or reject purchases
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      logw(`ent: missing/invalid client id`);
       return r400j({ error: "missing/invalid client id" });
     }
 
     // only allow test CIDs as no check for purchase token is done here; if not test,
     // anyone with just a CID will be able to retrieve the entitlement
     if (!test) {
+      logw(`ent: non-test api access for ${cid}`);
       return r400j({ error: "test api", cid: cid });
     }
 
@@ -3886,9 +3967,11 @@ export async function googlePlayGetEntitlements(env, req) {
       const ent = await creds(env, cid);
 
       if (!ent) {
+        loge(`ent: entitlement not found for ${cid}`);
         return r400j({ error: "entitlement not found", cid: cid });
       }
       if (ent.status === "banned") {
+        loge(`ent: user banned for ${cid}`);
         return r400j({ error: "user banned", cid: cid });
       }
       if (ent.status === "expired") {
@@ -3896,6 +3979,7 @@ export async function googlePlayGetEntitlements(env, req) {
       }
 
       // always send payload (test only)
+      logi(`ent: returning entitlement for ${cid}; test? ${test}`);
       return r200j({
         success: true,
         cid: cid,
@@ -3905,6 +3989,7 @@ export async function googlePlayGetEntitlements(env, req) {
       });
     });
   } catch (err) {
+    loge(`ent: failed: ${err.message}`);
     return r500j({ error: "get entitlements failed", details: err.message });
   }
 }
@@ -4882,6 +4967,7 @@ function replacing(sub) {
 export async function googlePlayGetTransaction(env, req) {
   try {
     if (req.method !== "GET") {
+      logw(`tx: method not allowed ${req.method}`);
       return r405j({ error: "method not allowed" });
     }
 
@@ -4898,9 +4984,11 @@ export async function googlePlayGetTransaction(env, req) {
     }
 
     if (!cid || cid.length < mincidlength || !/^[a-fA-F0-9]+$/.test(cid)) {
+      logw(`tx: missing/invalid client id`);
       return r400j({ error: "missing/invalid client id" });
     }
     if (emptyString(purchaseToken)) {
+      logw(`tx: missing purchase token`);
       return r400j({ error: "missing purchase token" });
     }
 
@@ -5075,6 +5163,7 @@ export async function googlePlayGetTransaction(env, req) {
       });
     });
   } catch (err) {
+    loge(`tx: failed: ${err.message} for ${cid}`);
     return r500j({ error: "get transaction failed", details: err.message });
   }
 }
