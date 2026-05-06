@@ -166,12 +166,14 @@ export function testmode(who = "any") {
     who = "any";
   }
 
+  // playorder-level test mode (as found in the play purchase objects)
   if (who === "exec" || who === "any" || who === "play") {
     /** @type {ExecCtx} */
     const cfg = als.getStore();
     if (cfg != null) innertest = cfg.test;
   }
 
+  // request-level test mode (as sent in the url by the client)
   if (who === "outer" || who === "any" || who === "request") {
     /** @type {OuterCtx} */
     const ocfg = ols.getStore();
