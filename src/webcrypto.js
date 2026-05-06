@@ -290,7 +290,7 @@ export async function obfuscate(str, salt = obssalt) {
  */
 export async function obfuscateHex(hexstr, salt = obssalt) {
   if (!emptyString(salt)) {
-    return sha256hex(hexstr + salt);
+    return sha256hex(salt + hexstr);
   }
   return sha256hex(hexstr);
 }
