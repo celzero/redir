@@ -1554,10 +1554,10 @@ async function processGooglePlayNotification(env, notif) {
     await handleOneTimeProductNotification(env, notif.onetime);
   }
   if (notif.sub) {
-    await handleSubscriptionNotification(env, notif.sub, notif.test != null);
+    await handleSubscriptionNotification(env, notif.sub);
   }
   if (notif.void) {
-    await handleVoidedPurchaseNotification(env, notif.void, notif.test != null);
+    await handleVoidedPurchaseNotification(env, notif.void);
   }
   if (notif.test) {
     await handleTestNotification(notif.test);
@@ -1776,11 +1776,10 @@ async function handleOneTimeProductNotification(env, notif) {
 /**
  * @param {any} env
  * @param {SubscriptionNotification} notif
- * @param {boolean} test
  * @returns {Promise<boolean>}
  * @throws {Error} if notif cannot be processed for any reason whatsoever.
  */
-async function handleSubscriptionNotification(env, notif, test) {
+async function handleSubscriptionNotification(env, notif) {
   // developer.android.com/google/play/billing/lifecycle/subscriptions
   // developer.android.com/google/play/billing/security#verify
   if (notif == null || notif.purchaseToken == null) {
@@ -1791,7 +1790,7 @@ async function handleSubscriptionNotification(env, notif, test) {
   const typ = notificationTypeStr(notif);
   // tokens & state not retrievable 60d after expiry
   const sub = await getSubscription(env, purchasetoken);
-  test = test || sub.testPurchase != null;
+  const test = sub.testPurchase != null;
   const revoked = notif.notificationType === 12; // SUBSCRIPTION_REVOKED
   const obstoken = await obfuscate(purchasetoken);
   // TODO: handle SUBSCRIPTION_PAUSED, SUBSCRIPTION_DEFERRED, SUBSCRIPTION_RESTORED
@@ -1966,11 +1965,11 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
 /**
  * @param {any} env
  * @param {VoidedPurchaseNotification} notif
- * @param {boolean} test
  * @returns {Promise<void>}
  */
-async function handleVoidedPurchaseNotification(env, notif, test) {
+async function handleVoidedPurchaseNotification(env, notif) {
   const obstoken = await obfuscate(notif.purchaseToken || "");
+  const isonetime = voidNotificationOnetime(notif.productType);
   const note = notif.refundType === 1 ? logi : loge;
   // the purchase has been refunded/voided;
   // if the purchaseToken exists in the database, then
@@ -1978,34 +1977,13 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
   // (like from ws table) and delete them.
   // TODO: worker analytics
   note(
-    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; test? ${test}`,
+    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; onetime? ${isonetime}, test? ${test}`,
   );
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
     const purchaseToken = notif.purchaseToken;
     // 1 = PRODUCT_TYPE_SUBSCRIPTION, 2 = PRODUCT_TYPE_ONE_TIME
     const productType = notif.productType;
-
-    // 1. Look up the purchase token in the database to get the cid
-    const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
-    if (
-      dbres == null ||
-      !dbres.success ||
-      dbres.results == null ||
-      dbres.results.length <= 0
-    ) {
-      loge(`void: ${obstoken} not found in db; test? ${test}`);
-      return;
-    }
-
-    const entry = dbres.results[0];
-    const cid = entry.cid;
-    const linkedtoken = entry.linkedtoken || null;
-
-    if (emptyString(cid)) {
-      loge(`void: no cid for ${obstoken}; test? ${test}`);
-      return;
-    }
 
     // fetch fresh meta from Google and update the DB if non-nil
     let freshMeta = null;
@@ -2028,6 +2006,29 @@ async function handleVoidedPurchaseNotification(env, notif, test) {
         `void: err fetching meta for ${cid} / ${obstoken}: ${err.message}; test? ${test}`,
       );
     }
+
+    // xxx: check if purchasetoken was ever in the db?
+    /*
+    const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
+    if (
+      dbres == null ||
+      dbres.success === false ||
+      dbres.results == null ||
+      dbres.results.length <= 0
+    ) {
+      loge(`void: ${obstoken} not found in db; test? ${test}`);
+      return;
+    }
+
+    const entry = dbres.results[0];
+    const cid = entry.cid;
+    const linkedtoken = entry.linkedtoken || null;
+
+    if (emptyString(cid)) {
+      loge(`void: no cid for ${obstoken}; test? ${test}`);
+      return;
+    }
+    */
 
     if (freshMeta != null) {
       try {
@@ -2174,10 +2175,32 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
  * ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/get
  * @param {any} env
  * @param {string} purchaseToken
+ * @param {ProductPurchaseV2?} def - Default value to return if purchaseToken is invalid (ex: expired token for a subscription); if null, then an error will be thrown instead.
+ * @returns {Promise<ProductPurchaseV2>} - may be def
+ * @throws {Error} - If the response is not as expected.
+ */
+async function getOnetimeProductV2(env, purchaseToken, def = null) {
+  try {
+    return await getOnetimeProductV2Api(env, purchaseToken);
+  } catch (err) {
+    if (def != null) {
+      logw(`onetime: err returning default; err: ${err.message}`);
+      return def;
+    } else {
+      throw err;
+    }
+  }
+}
+
+/**
+ * ref: developers.google.com/android-publisher/api-ref/rest/v3/purchases.productsv2/get
+ * @param {any} env
+ * @param {string} purchaseToken
+ * @param {ProductPurchaseV2?} def - Default value to return if purchaseToken is invalid (ex: expired token for a subscription); if null, then an error will be thrown instead.
  * @returns {Promise<ProductPurchaseV2>}
  * @throws {Error} - If the response is not as expected.
  */
-async function getOnetimeProductV2(env, purchaseToken) {
+async function getOnetimeProductV2Api(env, purchaseToken) {
   // GET
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/productsv2/tokens/{purchaseToken}'
   // -H 'Accept: application/json' \
@@ -4571,6 +4594,11 @@ function onetimeNotificationTypeStr(notif) {
     default:
       return "UNKNOWN_" + no;
   }
+}
+
+/** @param {VoidedPurchaseNotification} notif */
+function voidNotificationOnetime(notif) {
+  return notif.productType === 2; // 1 - sub, 2 - onetime
 }
 
 /**
