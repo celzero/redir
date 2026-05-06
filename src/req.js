@@ -425,6 +425,14 @@ export function r400play(j) {
   return new Response(JSON.stringify(payload), { status: 400, headers: h });
 }
 
+/** 401 Unauthorized with JSON body, wrapping payload in PlayErr */
+export function r401play(j) {
+  const h = { "content-type": "application/json" };
+  if (typeof j === "string") j = { error: j };
+  const payload = j instanceof PlayErr ? j.json : new PlayErr(j).json;
+  return new Response(JSON.stringify(payload), { status: 401, headers: h });
+}
+
 /** 401 Unauthorized with JSON body */
 export function r401err(w) {
   const h = { "content-type": "application/json" };

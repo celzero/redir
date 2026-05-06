@@ -28,6 +28,7 @@ import {
   r200play,
   r200t,
   r400play as r400j,
+  r401play,
   r403play as r403j,
   r405play as r405j,
   r409play as r409j,
@@ -4909,7 +4910,8 @@ export async function googlePlayGetTransaction(env, req) {
     );
 
     return await als.run(new ExecCtx(env, test, obstoken), async () => {
-      // look up the requested purchase token
+      // look up the requested purchase token; if it doesn't exist
+      // the client (cid) is unauthorized to access any other details.
       const tokenRes = await dbx.playSub(dbx.db(env), purchaseToken);
       if (
         tokenRes == null ||
@@ -4917,8 +4919,9 @@ export async function googlePlayGetTransaction(env, req) {
         tokenRes.results == null ||
         tokenRes.results.length === 0
       ) {
-        return r400j({
-          error: "purchase token not found",
+        logw(`tx: token ${obstoken} not found for cid ${cid}`);
+        return r401play({
+          error: "purchase not found",
           purchaseId: obstoken,
           cid: cid,
           test: test,
@@ -4928,7 +4931,8 @@ export async function googlePlayGetTransaction(env, req) {
       const entry = tokenRes.results[0];
       // verify the token belongs to the claimed cid
       if (entry.cid !== cid) {
-        return r400j({
+        logw(`tx: cid mismatch: token ${obstoken} / ${entry.cid} != ${cid}`);
+        return r401play({
           error: "cid mismatch",
           purchaseId: obstoken,
           cid: cid,
@@ -4978,12 +4982,15 @@ export async function googlePlayGetTransaction(env, req) {
       const parsedEntry = parseRow(entry);
 
       if (!activeOnly && tot === 0) {
-        // simplest case: just return the single row
+        logd(
+          `tx: returning 1 row for token ${obstoken} / cid ${cid}; activeOnly? ${activeOnly} tot? ${tot}`,
+        );
+        // just return the single row
         return r200j({
           success: true,
           cid: cid,
           purchaseId: obstoken,
-          tx: parsedEntry,
+          tx: [parsedEntry],
           test: test,
         });
       }
@@ -4991,8 +4998,9 @@ export async function googlePlayGetTransaction(env, req) {
       if (activeOnly) {
         // only proceed if the sent purchaseToken is itself active
         if (!isRowActive(parsedEntry)) {
+          logw(`tx: token ${obstoken} for cid ${cid} is not active`);
           return r400j({
-            error: "purchase token is not active",
+            error: "purchase not current",
             purchaseId: obstoken,
             cid: cid,
             test: test,
@@ -5000,6 +5008,9 @@ export async function googlePlayGetTransaction(env, req) {
         }
 
         if (tot === 0) {
+          logd(
+            `tx: returning 1 active row for token ${obstoken} / cid ${cid}; activeOnly? ${activeOnly} tot? ${tot}`,
+          );
           // just the single active row
           return r200j({
             success: true,
@@ -5025,6 +5036,9 @@ export async function googlePlayGetTransaction(env, req) {
           ? activeRows
           : [parsedEntry, ...activeRows].slice(0, tot);
 
+        logd(
+          `tx: returning ${txActive.length} active rows for token ${obstoken} / cid ${cid}; activeOnly? ${activeOnly}, hasActive? ${hasActiveToken}, tot? ${tot}`,
+        );
         return r200j({
           success: true,
           cid: cid,
@@ -5034,7 +5048,7 @@ export async function googlePlayGetTransaction(env, req) {
         });
       }
 
-      // tot > 0, no activeOnly: return up to `tot` past/active rows for this cid
+      // tot > 0, no activeOnly: return up to tot past/active rows for this cid
       const histRes = await dbx.playByCid(dbx.db(env), cid, tot);
       const histRows =
         histRes != null && histRes.success && histRes.results != null
@@ -5049,6 +5063,9 @@ export async function googlePlayGetTransaction(env, req) {
         ? histRows
         : [parsedEntry, ...histRows].slice(0, tot);
 
+      logd(
+        `tx: returning ${txHist.length} hist+active rows for token ${obstoken} / cid ${cid}; activeOnly? ${activeOnly}, hasHist? ${hasHistToken}, tot? ${tot}`,
+      );
       return r200j({
         success: true,
         cid: cid,
