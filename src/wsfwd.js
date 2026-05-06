@@ -91,20 +91,20 @@ export async function forwardToWs(env, r) {
   }
 
   try {
-    const r = await fetch(u, cloned);
-    if (!r.ok) {
-      log.w(`get session: ${r.status}`);
-      return r;
+    const resp = await fetch(u, cloned);
+    if (!resp.ok) {
+      log.w(`get session: ${resp.status}`);
+      return resp;
     }
     // j = { data: { ... }, metadata: { ... } }
-    const j = await consumejson(r);
+    const j = await consumejson(resp);
     if (j == null || j.data == null) {
-      throw new Error(`wsf: empty/unexpected response (${r.status})`);
+      throw new Error(`wsf: empty/unexpected response (${resp.status})`);
     }
     const wsuser = new WSUser(j.data);
     const hasSensitiveData = !emptyString(wsuser.sessionAuthHash);
     const newSensitiveData =
-      hasSensitiveData && wsuser.sessionAuthHash != token;
+      hasSensitiveData && wsuser.sessionAuthHash !== token;
 
     log.d(
       `forwardToWs: enc/sen/diff? ${mustEncrypt} ${hasSensitiveData} ${newSensitiveData}`,
@@ -221,11 +221,22 @@ async function bearerAndCidForWs(env, req) {
   const enctoken = authVals[1];
   const toks = enctoken.split(":");
   if (toks.length > 4) {
+    // token arrived unencrypted; require a valid cid to re-encrypt it
+    if (!validcid) {
+      // TODO: throw error since mustEncrypt cannot possible re-encrypt without cid?
+      log.e(`bearerAndCidForWs: unencrypted token but no cid; discard token`);
+      return [null, null, null, /*needsAuth*/ true, /*mustEncrypt*/ true];
+    }
     const reenc = await encryptText(env, cid, enctoken);
+    if (emptyString(reenc)) {
+      log.e(
+        `bearerAndCidForWs: failed to re-encrypt unencrypted token for ${cid}`,
+      );
+      return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false];
+    }
     log.w(
-      `bearerAndCidForWs: token unecrypted ${toks[0]}; re-enc ${reenc} for ${cid}`,
+      `bearerAndCidForWs: unencrypted token ${toks[0]}; re-encrypted for ${cid}`,
     );
-    // already decrypted (or was left unencrypted)
     return [cid, enctoken, reenc, /*needsAuth*/ true, /*mustEncrypt*/ false];
   }
 
@@ -254,9 +265,9 @@ function reqType(u) {
     const typ = s.get("rpn");
     // wsassetstest or wstestassets are both test environments
     const test = !emptyString(typ) && typ.indexOf("test") >= 0;
-    // /Session contains SessionAuthHash in its output
+    // /session contains SessionAuthHash in its output
     // which must be re-encrypted
-    const sensitive = p.indexOf("/Session") >= 0;
+    const sensitive = p.toLowerCase().indexOf("/session") >= 0;
     return [typ, sensitive, test];
   }
   return ["", false, false];

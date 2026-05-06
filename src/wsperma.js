@@ -87,14 +87,23 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
 
   const db = dbx.db(env);
 
-  // if row found, verify pubkey is still registered remotely
-  // step 2: look for a null-did row whose pubkey is in remoteKeys
-  const out = await dbx.getPermasByCid(db, cid);
-  const allRows = out.results || [];
+  // fetch all existing rows for this cid (used by step 1 and step 2 below)
+  const dbout = await dbx.getPermasByCid(db, cid);
+  if (!dbout.success) {
+    log.e(`make: db error fetching permas for cid=${cid}`);
+    return r500err("wsperma: make: db error");
+  }
+  const allRows = dbout.results || [];
 
-  const remoteKeys = await listkeys(env, sessiontoken);
+  let remoteKeys;
+  try {
+    remoteKeys = await listkeys(env, sessiontoken);
+  } catch (e) {
+    log.e("make: failed to list remote keys", e);
+    return r500err("wsperma: make: could not list remote keys");
+  }
 
-  // step 1: check for an existing row belonging to this did
+  // check for an existing row belonging to this did
   const onerow = allRows.filter((r) => r.did === did);
   if (onerow.length > 0) {
     // TODO: len(out.results) == 1?
@@ -112,7 +121,7 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
     }
   }
 
-  // step 2: look for an orphaned row (did=null) if any whose pubkey is in remoteKeys
+  // look for an orphaned row (did=null) if any whose pubkey is in remoteKeys
   const deleteKeys = [];
   for (const row of allRows) {
     if (!remoteKeys.includes(row.pubkey)) {
@@ -124,8 +133,8 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
     if (row.did != null) continue;
 
     // reassign this orphaned row to the current did
-    const out = await dbx.reassignPermaDid(db, row.pubkey, did);
-    if (!out.success) {
+    const reassignOut = await dbx.reassignPermaDid(db, row.pubkey, did);
+    if (!reassignOut.success) {
       log.e(`make: db err reassign pubkey ${row.pubkey} to did=${did}`);
       continue; // try next one if any
     }
@@ -193,11 +202,11 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
       return r500err("wsperma: make: db encryption failure");
     }
 
-    const out = await dbx.upsertPerma(db, pubkey, did, cid, encmeta);
-    if (!out.success) {
+    const upsertOut = await dbx.upsertPerma(db, pubkey, did, cid, encmeta);
+    if (!upsertOut.success) {
       // TODO: retry?
       log.e("wsperma: make: upsert failed");
-      log.o(out);
+      log.o(upsertOut);
       return r500err(`wsperma: make: db failure`);
     }
 
