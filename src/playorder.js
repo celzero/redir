@@ -13,6 +13,7 @@ import {
   ExecCtx,
   go,
   obsToken,
+  testmode,
 } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
@@ -4020,11 +4021,16 @@ async function linkedOnetimePurchases2(
     return nolink;
   }
 
+  const test = testmode("play");
+
   const limit = 2; // link up to 2 purchases incl. fn arg "purchasetoken"
   // Gather unconsumed (traditionally "active") purchases and consumed purchases
   // with future expiry (linked predecessors).  Unconsumed take precedence.
   const [activePurchases, consumedPurchases] = await Promise.all([
-    getActiveOnetimePurchasesForCid(env, cid),
+    // limit to the latest active purchase in test envs as there are botched
+    // yet purchases considered "active" / "current" as the database has either
+    // missed updates through bugs or other inconsistencies.
+    getActiveOnetimePurchasesForCid(env, cid, test ? 1 : -1),
     getConsumedOnetimePurchasesForCid(env, cid),
   ]);
 
