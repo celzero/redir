@@ -24,6 +24,8 @@ export const didTokenHeader = "x-rethink-app-did-token";
 export const cidHeader = "x-rethink-app-cid";
 // device identifier
 export const didHeader = "x-rethink-app-did";
+// purchase token
+export const purchaseTokenHeader = "x-rethink-app-purchase-token";
 
 const log = new Log("req");
 
@@ -192,12 +194,17 @@ export function isTest(req) {
 }
 
 /**
- * Returns the purchase token from the "purchaseToken" (or lowercase
- * "purchasetoken") URL query parameter.
+ * Returns the purchase token from the "x-rethink-app-purchase-token" header,
+ * falling back to the "purchaseToken" (or lowercase "purchasetoken") URL query parameter.
  * @param {Request?} req
  * @returns {string|null}
  */
 export function purchaseToken(req) {
+  const r = getreq(req);
+  if (r != null) {
+    const h = r.headers.get(purchaseTokenHeader);
+    if (h != null && h.length > 0) return h;
+  }
   const u = geturl(req);
   if (u == null) return null;
   const p = u.searchParams;
