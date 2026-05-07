@@ -190,7 +190,6 @@ export function testmode(who = "any") {
       who !== "request" &&
       who !== "any")
   ) {
-    log.e(`testmode: invalid who ${who}; using any...`);
     who = "any";
   }
 

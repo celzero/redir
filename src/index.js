@@ -565,9 +565,11 @@ async function respond(promisedResponse, authr) {
 export default {
   async fetch(req, env, ctx) {
     env = d.wrap(env, req);
-    const dbs = dbx.db2(env, false);
-    const dbstest = dbx.db2(env, true);
+
+    const dbs = dbx.db2(env, false) || null;
+    const dbstest = dbx.db2(env, true) || null;
     const octx = new d.OuterCtx(env, req, ctx, dbs, dbstest);
+
     return d.ols.run(octx, handle, req, env, ctx);
   },
 };
