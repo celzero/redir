@@ -557,10 +557,14 @@ async function respond(promisedResponse, authr) {
   const token = authr.headers.get(didTokenHeader);
   const prodmark = d.dbsessionBookmark(/*test*/ false);
   const testmark = d.dbsessionBookmark(/*test*/ true);
+  const test = testmode();
 
   const r = await promisedResponse;
 
-  if (emptyString(token) && emptyString(prodmark) && emptyString(testmark)) {
+  if (
+    emptyString(token) &&
+    ((!test && emptyString(prodmark)) || (test && emptyString(testmark)))
+  ) {
     return r;
   }
 
@@ -569,8 +573,8 @@ async function respond(promisedResponse, authr) {
   // set did token, if any
   if (token) newr.headers.append(didTokenHeader, token);
   // set database session headers, if any
-  if (prodmark) newr.headers.append(dbSessionHeader, prodmark);
-  if (testmark) newr.headers.append(dbSessionHeaderTest, testmark);
+  if (prodmark && !test) newr.headers.append(dbSessionHeader, prodmark);
+  if (testmark && test) newr.headers.append(dbSessionHeaderTest, testmark);
   return newr;
 }
 

@@ -13,6 +13,7 @@ import { emptyString } from "./buf";
 
 export const d1sessionHeader = "x-db-rpn-session";
 export const d1sessionHeaderTest = "x-db-rpn-test-session";
+export const defaultDbSessionBookmark = "first-unconstrained";
 
 export class ExecCtx {
   /**
@@ -286,8 +287,8 @@ export function wrap(env, r) {
   if (env.REDIRDBTEST == null) env.DBTEST = env.SVCDBTEST;
   else env.DBTEST = env.REDIRDBTEST;
 
-  env.DBSESS = r.headers.get(d1sessionHeader) || "";
-  env.DBSESSTEST = r.headers.get(d1sessionHeaderTest) || "";
+  env.DBSBOOKMARK = r.headers.get(d1sessionHeader) || null;
+  env.DBSBOOKMARKTEST = r.headers.get(d1sessionHeaderTest) || null;
 
   if (env.TEN_10s_AC == null) env.TEN_10s_AC = null;
   if (env.TWO_10s_AC == null) env.TWO_10s_AC = null;

@@ -7,7 +7,7 @@
  */
 
 import { emptyString } from "../buf.js";
-import { dbsession, hasctx, testmode } from "../d.js";
+import { dbsession, defaultDbSessionBookmark, hasctx, testmode } from "../d.js";
 import * as glog from "../log.js";
 
 const log = new glog.Log("dbx");
@@ -168,16 +168,17 @@ function dbbinding(env, testdomain = false) {
  * Creates a D1 session from the appropriate binding. Reads are served from the
  * nearest replica that is up-to-date with bookmark; writes are forwarded to primary.
  * developers.cloudflare.com/d1/worker-api/d1-database/#withsession
+ * @see https://developers.cloudflare.com/d1/best-practices/read-replication/
  * @param {any} env - Worker environment
  * @param {boolean} testdomain - when true uses the test DB binding
  * @returns {any} D1 session
  * @throws {Error} - if the D1 binding is not available
  */
 export function db2(env, testdomain = false) {
-  const def = "first-primary";
+  const def = defaultDbSessionBookmark;
   const b = dbbinding(env, testdomain);
-  const dbsess = testdomain ? env.DBSESSTEST : env.DBSESS;
-  const dbs = b.withSession(dbsess || def);
+  const bookmark = testdomain ? env.DBSBOOKMARKTEST : env.DBSBOOKMARK;
+  const dbs = b.withSession(bookmark || def);
   if (!dbs) return b.withSession(def);
   return dbs;
 }
