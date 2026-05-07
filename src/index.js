@@ -7,7 +7,7 @@
  */
 
 import * as ac from "./ac.js";
-import { b64AsBytes, emptyBuf } from "./buf.js";
+import { b64AsBytes, emptyBuf, emptyString } from "./buf.js";
 import * as d from "./d.js";
 import { Log } from "./log.js";
 import {
@@ -39,6 +39,8 @@ import {
   colo,
   consumejson,
   country,
+  dbSessionHeader,
+  dbSessionHeaderTest,
   didTokenHeader,
   postalcode,
   r200j,
@@ -553,12 +555,22 @@ function mustWsFwd(url) {
  */
 async function respond(promisedResponse, authr) {
   const token = authr.headers.get(didTokenHeader);
-  if (!token) return await promisedResponse;
+  const prodmark = d.dbsessionBookmark(/*test*/ false);
+  const testmark = d.dbsessionBookmark(/*test*/ true);
 
   const r = await promisedResponse;
-  // developers.cloudflare.com/workers/examples/alter-headers/
+
+  if (emptyString(token) && emptyString(prodmark) && emptyString(testmark)) {
+    return r;
+  }
+
+  // developers.cloudflare.com/workers/examples/alter-headers
   const newr = new Response(r.body, r);
-  newr.headers.append(didTokenHeader, token);
+  // set did token, if any
+  if (token) newr.headers.append(didTokenHeader, token);
+  // set database session headers, if any
+  if (prodmark) newr.headers.append(dbSessionHeader, prodmark);
+  if (testmark) newr.headers.append(dbSessionHeaderTest, testmark);
   return newr;
 }
 
@@ -566,10 +578,12 @@ export default {
   async fetch(req, env, ctx) {
     env = d.wrap(env, req);
 
-    const dbs = dbx.db2(env, false) || null;
-    const dbstest = dbx.db2(env, true) || null;
-    const octx = new d.OuterCtx(env, req, ctx, dbs, dbstest);
+    const testdomain = true;
+    const prod = false;
+    const dbs = dbx.db2(env, prod) || null;
+    const dbstest = dbx.db2(env, testdomain) || null;
 
+    const octx = new d.OuterCtx(env, req, ctx, dbs, dbstest);
     return d.ols.run(octx, handle, req, env, ctx);
   },
 };

@@ -166,17 +166,20 @@ function dbbinding(env, testdomain = false) {
 
 /**
  * Creates a D1 session from the appropriate binding. Reads are served from the
- * nearest read replica; writes are forwarded to primary.
+ * nearest replica that is up-to-date with bookmark; writes are forwarded to primary.
  * developers.cloudflare.com/d1/worker-api/d1-database/#withsession
  * @param {any} env - Worker environment
  * @param {boolean} testdomain - when true uses the test DB binding
- * @param {string} bookmark - Optional bookmark for the DB session (default: "first-primary")
  * @returns {any} D1 session
  * @throws {Error} - if the D1 binding is not available
  */
-export function db2(env, testdomain = false, bookmark = "first-primary") {
+export function db2(env, testdomain = false) {
+  const def = "first-primary";
   const b = dbbinding(env, testdomain);
-  return b.withSession(bookmark);
+  const dbsess = testdomain ? env.DBSESSTEST : env.DBSESS;
+  const dbs = b.withSession(dbsess || def);
+  if (!dbs) return b.withSession(def);
+  return dbs;
 }
 
 /**

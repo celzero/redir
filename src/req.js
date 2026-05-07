@@ -11,6 +11,8 @@ import {
   PlayOk,
   ResErr,
   ResOK,
+  d1sessionHeader,
+  d1sessionHeaderTest,
   request as outerReq,
   url as outerUrl,
 } from "./d.js";
@@ -26,6 +28,10 @@ export const cidHeader = "x-rethink-app-cid";
 export const didHeader = "x-rethink-app-did";
 // purchase token
 export const purchaseTokenHeader = "x-rethink-app-purchase-token";
+// d1 session header prod (replica bookmark)
+export const dbSessionHeader = d1sessionHeader;
+// d1 session header test (replica bookmark)
+export const dbSessionHeaderTest = d1sessionHeaderTest;
 
 const log = new Log("req");
 

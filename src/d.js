@@ -11,6 +11,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { emptyString } from "./buf";
 
+export const d1sessionHeader = "x-db-rpn-session";
+export const d1sessionHeaderTest = "x-db-rpn-test-session";
+
 export class ExecCtx {
   /**
    * @param {any} env - Worker environment
@@ -174,6 +177,17 @@ export function dbsession(test) {
 }
 
 /**
+ * @see https://developers.cloudflare.com/d1/worker-api/d1-database/#getbookmark
+ * @param {boolean} test
+ * @returns {string?} - current bookmark for session tracked by outerctx; it may return null.
+ */
+export function dbsessionBookmark(test) {
+  const sess = dbsession(test);
+  if (sess == null) return null;
+  return sess.getBookmark() || null;
+}
+
+/**
  * @param {"any"|"exec"|"outer"|"request"|"play"} who - contexts to check for test mode;
  *   "any" checks both contexts and returns true if either is in test mode
  * @returns {boolean} - Whether this execution is in test domain.
@@ -271,6 +285,9 @@ export function wrap(env, r) {
   // both bindings point to "rpn-test" d1 database
   if (env.REDIRDBTEST == null) env.DBTEST = env.SVCDBTEST;
   else env.DBTEST = env.REDIRDBTEST;
+
+  env.DBSESS = r.headers.get(d1sessionHeader) || "";
+  env.DBSESSTEST = r.headers.get(d1sessionHeaderTest) || "";
 
   if (env.TEN_10s_AC == null) env.TEN_10s_AC = null;
   if (env.TWO_10s_AC == null) env.TWO_10s_AC = null;
