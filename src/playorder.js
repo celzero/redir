@@ -52,6 +52,12 @@ const r200j = r200play;
 /** @type {boolean} - whether to attach entitlement with IAP acknowledgment */
 const attachEntitlementToAck = false;
 
+/** @type {boolean} - whether to always include the obfuscated purchase token in responses */
+const alwaysSendObsToken = true;
+/** @returns {string} purchaseId for a response, "" when token should not be sent */
+const sendobs = (token, obs, istest) =>
+  !alwaysSendObsToken ? (istest ? token : obs) : obs;
+
 // setup: developers.google.com/android-publisher/getting_started
 // developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptionsv2
 const androidscope = ["https://www.googleapis.com/auth/androidpublisher"];
@@ -1650,7 +1656,7 @@ async function handleOneTimeProductNotification(env, notif) {
         error: "cannot link purchase",
         details: err.message,
         cid: cid,
-        purchaseId: test ? purchasetoken : obstoken,
+        purchaseId: sendobs(purchasetoken, obstoken, test),
         sku: sku,
         test: test,
       });
@@ -2281,7 +2287,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
     logi(`onetime: refund rejected, purchase consumed for ${cid}`);
     return r412j({
       error: "cannot refund a consumed purchase",
-      purchaseId: test ? purchaseToken : obsToken(),
+      purchaseId: sendobs(purchaseToken, obsToken(), test),
       cid: cid,
       test: test,
     });
@@ -2300,7 +2306,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
     );
     return r400j({
       error: "cannot refund, test mode mismatch",
-      purchaseId: testPurchase ? purchaseToken : obstoken,
+      purchaseId: sendobs(purchaseToken, obstoken, testPurchase),
       orderId: testPurchase ? orderId : undefined,
       cid: cid,
       test: test,
@@ -2316,7 +2322,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
   if (emptyString(orderId)) {
     return r400j({
       error: "missing product order",
-      purchaseId: test ? purchaseToken : obstoken,
+      purchaseId: sendobs(purchaseToken, obstoken, test),
       orderId: test ? orderId : undefined,
       cid: cid,
       test: test,
@@ -2336,7 +2342,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
       );
       return r400j({
         error: "refund window exceeded",
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         orderId: test ? orderId : undefined,
         windowDays: plan.refundWindowDays,
         start: plan.startDate,
@@ -2375,7 +2381,7 @@ async function refundOnetimePurchase(env, cid, purchaseToken, test) {
     hadEntitlement: plan != null,
     deletedEntitlement: deletedEnt,
     wasAlreadyFullyRefunded: fullyRefunded,
-    purchaseId: test ? purchaseToken : obstoken,
+    purchaseId: sendobs(purchaseToken, obstoken, test),
     orderId: test ? orderId : undefined,
     test: test,
     cid: cid,
@@ -2493,7 +2499,7 @@ export async function cancelSubscription(env, req) {
       );
       return r400j({
         error: "cannot cancel, test domain mismatch",
-        purchaseId: testPurchase ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, testPurchase),
         sku: sku,
         test: test,
         cid: cid,
@@ -2504,7 +2510,7 @@ export async function cancelSubscription(env, req) {
       loge(`cancel: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
         error: "cannot cancel, subscription mismatch",
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2524,7 +2530,7 @@ export async function cancelSubscription(env, req) {
         expired: expired,
         cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2557,7 +2563,7 @@ export async function cancelSubscription(env, req) {
       loge(`cancel: sub err: ${cid} / tok: ${obstoken}; ${r.status} ${gerr}`);
       return r400j({
         error: `failed to cancel subscription: ${r.status} ${gerr}`,
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2567,7 +2573,7 @@ export async function cancelSubscription(env, req) {
       return r200j({
         success: true,
         message: "cancelled subscription",
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2684,7 +2690,7 @@ export async function revokeSubscription(env, req) {
       );
       return r400j({
         error: "cannot revoke, test domain mismatch",
-        purchaseId: testPurchase ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, testPurchase),
         sku: sku,
         test: test,
         cid: cid,
@@ -2695,7 +2701,7 @@ export async function revokeSubscription(env, req) {
       loge(`revoke: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
         error: "cannot revoke, subscription mismatch",
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2715,7 +2721,7 @@ export async function revokeSubscription(env, req) {
         expired: expired,
         cancelled: cancelled,
         cancelCtx: sub.canceledStateContext,
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2735,7 +2741,7 @@ export async function revokeSubscription(env, req) {
         windowDays: gprod.refundWindowDays,
         start: gprod.startDate,
         expiry: gprod.expiryDate,
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2784,7 +2790,7 @@ export async function revokeSubscription(env, req) {
       // TODO: retry for 3 days with pipeline?
       return r400j({
         error: `failed to revoke subscription: ${r.status} ${gerr}`,
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -2795,7 +2801,7 @@ export async function revokeSubscription(env, req) {
         success: true,
         hadEntitlement: gprod != null,
         message: "revoked subscription",
-        purchaseId: test ? purchaseToken : obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         test: test,
         cid: cid,
         sku: sku,
@@ -3130,7 +3136,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "cid mismatch",
             cid: cid,
             storedCid: test ? storedcid : undefined,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             sku: sku,
             test: test,
           });
@@ -3161,7 +3167,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "cannot link purchase",
             details: err.message,
             cid: cid,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             sku: sku,
             test: test,
           });
@@ -3194,7 +3200,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         if (testPurchase !== test) {
           return r400j({
             error: "test domain mismatch",
-            purchaseId: testPurchase ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, testPurchase),
             linkedPurchaseId: testPurchase ? linkedPurchaseId : undefined,
             state: onetimeState,
             sku: sku,
@@ -3210,7 +3216,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           );
           return r400j({
             error: cancelled ? "purchase cancelled" : "purchase not completed",
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
             state: onetimeState,
             sku: sku,
@@ -3273,7 +3279,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               state: onetimeState,
               allProducts: productIds,
               unconsumedProducts: unconsumedProductIds,
-              purchaseId: test ? purchasetoken : obstoken,
+              purchaseId: sendobs(purchasetoken, obstoken, test),
               linkedPurchaseId: test ? linkedPurchaseId : undefined,
               expiry: sendPayload ? orphanGent.expiryDate : undefined,
               sku: sku,
@@ -3296,7 +3302,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             state: onetimeState,
             allProducts: productIds,
             unconsumedProducts: unconsumedProductIds,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
             sku: sku,
             test: test,
@@ -3311,7 +3317,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           );
           return r400j({
             error: "not a valid product; will be auto refunded",
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
             cid: cid,
             state: onetimeState,
@@ -3341,7 +3347,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             unconsumedProducts: unconsumedProductIds,
             expiry: gent.expiryDate,
             test: test,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
@@ -3359,7 +3365,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             unconsumedProducts: unconsumedProductIds,
             expiry: gent.expiryDate,
             test: test,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
@@ -3376,7 +3382,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             unconsumedProducts: unconsumedProductIds,
             expiry: gent.expiryDate,
             test: test,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             linkedPurchaseId: test ? linkedPurchaseId : undefined,
           });
         }
@@ -3396,7 +3402,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               error: "failed to ack or consume",
               details: e.message,
               status: ent?.status,
-              purchaseId: test ? purchasetoken : obstoken,
+              purchaseId: sendobs(purchasetoken, obstoken, test),
               linkedPurchaseId: test ? linkedPurchaseId : undefined,
               cid: cid,
               sku: sku,
@@ -3422,7 +3428,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           state: onetimeState,
           allProducts: productIds,
           unconsumedProducts: unconsumedProductIds,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           linkedPurchaseId: test ? linkedPurchaseId : undefined,
           expiry: gent.expiryDate,
           sku: sku,
@@ -3481,7 +3487,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           loge(`ack: err test domain mismatch for ${cid} with ${obstoken}`);
           return r400j({
             error: "test domain mismatch",
-            purchaseId: testPurchase ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, testPurchase),
             state: state,
             sku: sku,
             allProducts: productIds,
@@ -3496,7 +3502,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           loge(`ack: err inactive: ${cid}, state: ${state}`);
           return r400j({
             error: "subscription not active",
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             state: state,
           });
         }
@@ -3507,7 +3513,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           loge(`ack: sub err invalid product for ${obstoken}`);
           return r400j({
             error: "not a valid product subscription; will be auto refunded",
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             cid: cid,
             sku: sku,
             allProducts: productIds,
@@ -3532,7 +3538,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             cid: cid,
             sku: sku,
             allProducts: productIds,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             expiry: gprod.expiryDate,
             test: test,
             state: state,
@@ -3548,7 +3554,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
               `ack: cid (us!=them) ${existingCid} != ${cid} for ${obstoken}`,
             );
             return r400j({
-              purchaseId: test ? purchasetoken : obstoken,
+              purchaseId: sendobs(purchasetoken, obstoken, test),
               cid: cid,
               sku: sku,
               allProducts: productIds,
@@ -3562,7 +3568,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           // returning 409 should trigger a refund workflow on the client
           // ref: handleSubscriptionNotification
           return r409j({
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             error: "invalid cid; cannot acknowledge",
             details: e.message,
             cid: cid,
@@ -3583,7 +3589,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             success: true,
             message: "subscription acknowledged without entitlement",
             cid: cid,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             expiry: gprod.expiryDate,
             sku: sku,
             allProducts: productIds,
@@ -3606,7 +3612,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "banned user",
             cid: cid,
             status: ent?.status,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             sku: sku,
             allProducts: productIds,
             test: test,
@@ -3619,7 +3625,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "entitlement expired",
             cid: cid,
             status: ent?.status,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             expiry: gprod.expiryDate,
             sku: sku,
             allProducts: productIds,
@@ -3635,7 +3641,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             error: "invalid entitlement status",
             status: ent?.status,
             cid: cid,
-            purchaseId: test ? purchasetoken : obstoken,
+            purchaseId: sendobs(purchasetoken, obstoken, test),
             sku: sku,
             allProducts: productIds,
             test: test,
@@ -3660,7 +3666,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
           success: true,
           message: "subscription acknowledged",
           cid: cid,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           expiry: gprod.expiryDate,
           test: test,
           sku: sku,
@@ -3679,7 +3685,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
     return r500j({
       error: "acknowledge failed",
       details: err.message,
-      purchaseId: test ? purchasetoken : obstoken,
+      purchaseId: sendobs(purchasetoken, obstoken, test),
       cid: cid,
       sku: sku,
       allProducts: [],
@@ -3756,7 +3762,7 @@ export async function googlePlayConsumePurchase(env, req) {
           error: "purchase not found",
           cid: cid,
           sku: sku,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           test: test,
         });
       }
@@ -3770,7 +3776,7 @@ export async function googlePlayConsumePurchase(env, req) {
           error: "cid mismatch",
           cid: cid,
           storedCid: test ? storedcid : undefined,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           sku: sku,
           test: test,
         });
@@ -3793,7 +3799,7 @@ export async function googlePlayConsumePurchase(env, req) {
       if (testPurchase !== test) {
         return r400j({
           error: "test domain mismatch",
-          purchaseId: testPurchase ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, testPurchase),
           state: onetimeState,
           sku: sku,
           allProducts: productIds,
@@ -3808,7 +3814,7 @@ export async function googlePlayConsumePurchase(env, req) {
         );
         return r400j({
           error: cancelled ? "purchase cancelled" : "purchase not completed",
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           state: onetimeState,
           sku: sku,
           allProducts: productIds,
@@ -3826,7 +3832,7 @@ export async function googlePlayConsumePurchase(env, req) {
         );
         return r400j({
           error: "not a valid product; will be auto refunded",
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           cid: cid,
           state: onetimeState,
           sku: sku,
@@ -3848,7 +3854,7 @@ export async function googlePlayConsumePurchase(env, req) {
         logw(`onetime: con: too early for ${cid} / tok: ${obstoken}`);
         return r400j({
           error: "too early to consume",
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           cid: cid,
           state: onetimeState,
           sku: sku,
@@ -3868,7 +3874,7 @@ export async function googlePlayConsumePurchase(env, req) {
           state: onetimeState,
           allProducts: productIds,
           unconsumedProducts: unconsumedProductIds,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           expiry: gent.expiryDate,
           sku: sku,
           expired: expired,
@@ -3889,7 +3895,7 @@ export async function googlePlayConsumePurchase(env, req) {
         return r500j({
           error: "failed to consume",
           details: e.message,
-          purchaseId: test ? purchasetoken : obstoken,
+          purchaseId: sendobs(purchasetoken, obstoken, test),
           cid: cid,
           sku: sku,
           allProducts: productIds,
@@ -3910,7 +3916,7 @@ export async function googlePlayConsumePurchase(env, req) {
         state: onetimeState,
         allProducts: productIds,
         unconsumedProducts: unconsumedProductIds,
-        purchaseId: test ? purchasetoken : obstoken,
+        purchaseId: sendobs(purchasetoken, obstoken, test),
         expiry: gent.expiryDate,
         sku: sku,
         test: test,
@@ -3921,7 +3927,7 @@ export async function googlePlayConsumePurchase(env, req) {
     return r500j({
       error: "consume failed",
       details: err.message,
-      purchaseId: test ? purchasetoken : obstoken,
+      purchaseId: sendobs(purchasetoken, obstoken, test),
       cid: cid,
       sku: sku,
       allProducts: [],
