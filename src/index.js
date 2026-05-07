@@ -52,6 +52,7 @@ import {
   vcode as vcodeOf,
 } from "./req.js";
 import { finalizeOrder, generateToken, stripeCheckout } from "./rpnorder.js";
+import * as dbx from "./sql/dbx.js";
 import { forwardToWs } from "./wsfwd.js";
 import * as xc from "./xc.js";
 
@@ -564,6 +565,9 @@ async function respond(promisedResponse, authr) {
 export default {
   async fetch(req, env, ctx) {
     env = d.wrap(env, req);
-    return d.ols.run(new d.OuterCtx(env, req, ctx), handle, req, env, ctx);
+    const dbs = dbx.db2(env, false);
+    const dbstest = dbx.db2(env, true);
+    const octx = new d.OuterCtx(env, req, ctx, dbs, dbstest);
+    return d.ols.run(octx, handle, req, env, ctx);
   },
 };

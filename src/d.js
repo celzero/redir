@@ -39,8 +39,10 @@ export class OuterCtx extends ExecCtx {
    * @param {any} env - Worker environment
    * @param {Request} req - Incoming request object
    * @param {any} workctx - developers.cloudflare.com/workers/runtime-apis/context
+   * @param {any} dbs - D1 session for the prod DB, if any.
+   * @param {any} dbstest - D1 session for the test DB, if any.
    */
-  constructor(env, req, workctx) {
+  constructor(env, req, workctx, dbs, dbstest) {
     const u = new URL(req.url);
     const test = u.searchParams.has("test");
 
@@ -58,6 +60,18 @@ export class OuterCtx extends ExecCtx {
      * @type {any} - developers.cloudflare.com/workers/runtime-apis/context
      */
     this.workctx = workctx;
+    /**
+     * D1 session for the prod DB.
+     * @see developers.cloudflare.com/d1/worker-api/d1-database/#withsession
+     * @type {any|null}
+     */
+    this.dbs = dbs || null;
+    /**
+     * D1 session for the test DB.
+     * @see developers.cloudflare.com/d1/worker-api/d1-database/#withsession
+     * @type {any|null}
+     */
+    this.dbstest = dbstest || null;
   }
 }
 
@@ -143,6 +157,20 @@ function rayid(req) {
  */
 export function hasctx() {
   return ols.getStore() != null || als.getStore() != null;
+}
+
+/**
+ * Returns the D1 session for the given test domain from the outer context,
+ * or null if no session is available in the outer context.
+ * The caller must always supply the boolean test argument explicitly.
+ * @param {boolean} test - when true, returns the test DB session; otherwise the prod DB session
+ * @returns {any|null} D1 session, or null if not available
+ */
+export function dbsession(test) {
+  /** @type {OuterCtx} */
+  const octx = ols.getStore();
+  if (octx == null) return null;
+  return test ? octx.dbstest : octx.dbs;
 }
 
 /**
@@ -238,12 +266,12 @@ export function wrap(env, r) {
   if (env.SVCDB == null) env.SVCDB = null;
   if (env.SVCDBTEST == null) env.SVCDBTEST = null;
 
-  if (env.REDIRDB == null)
-    env.DB = env.SVCDB; // "rpn" d1 database
-  else env.DB = env.REDIRDB; // "rpn"
-  if (env.REDIRDBTEST == null)
-    env.DBTEST = env.SVCDBTEST; // "rpn-test"
-  else env.DBTEST = env.REDIRDBTEST; // "rpn-test"
+  // both bindings point to "rpn" d1 database
+  if (env.REDIRDB == null) env.DB = env.SVCDB;
+  else env.DB = env.REDIRDB;
+  // both bindings point to "rpn-test" d1 database
+  if (env.REDIRDBTEST == null) env.DBTEST = env.SVCDBTEST;
+  else env.DBTEST = env.REDIRDBTEST;
 
   if (env.TEN_10s_AC == null) env.TEN_10s_AC = null;
   if (env.TWO_10s_AC == null) env.TWO_10s_AC = null;

@@ -7,7 +7,7 @@
  */
 
 import { emptyString } from "../buf.js";
-import { ExecCtx, hasctx, OuterCtx, testmode } from "../d.js";
+import { dbsession, hasctx, testmode } from "../d.js";
 import * as glog from "../log.js";
 
 const log = new glog.Log("dbx");
@@ -126,30 +126,57 @@ class D1OutMeta {
 }
 
 /**
- * Get the D1 binding based on the environment.
+ * Get the D1 session (or raw binding as fallback) based on the environment.
+ * When replica is true (default), prefers the pre-created D1 session stored in
+ * OuterCtx (dbs / dbstest), which routes reads to a local read replica and
+ * forwards writes to primary. Falls back to the raw binding when no session is
+ * available or when replica is explicitly false.
  * @param {any} env - Worker environment
- * @param {ExecCtx|OuterCtx} cfg - caller configuration
- * @returns the D1 binding based on env.TEST
+ * @param {boolean} replica - when true (default), prefer the outerctx session
+ * @returns the D1 session or binding
  * @throws {Error} - if the D1 binding is not available
- * */
-export function db(env, cfg = null) {
-  if (cfg != null) {
-    // cfg.test overrides testmode()
-    return db2(env, cfg.test);
-  } else if (hasctx()) {
+ */
+export function db(env, replica = true) {
+  if (replica) {
+    const session = dbsession(testmode());
+    if (session != null) return session;
+  }
+  // fallback: raw binding
+  if (hasctx()) {
     // testmode() overrides env.TEST
-    return db2(env, testmode());
+    return dbbinding(env, testmode());
   } else {
-    return db2(env, env.TEST);
+    return dbbinding(env, env.TEST);
   }
 }
 
-export function db2(env, testdomain = false) {
-  let out = testdomain ? env.DBTEST : env.DB;
-  if (out == null) {
-    throw new Error("database binding missing");
-  }
+/**
+ * Returns a raw D1 binding (no session). Used internally and to create
+ * per-request D1 sessions stored in OuterCtx.
+ * @param {any} env - Worker environment
+ * @param {boolean} testdomain - when true uses the test DB binding
+ * @returns {any} raw D1 binding
+ * @throws {Error} - if the D1 binding is not available
+ */
+function dbbinding(env, testdomain = false) {
+  const out = testdomain ? env.DBTEST : env.DB;
+  if (out == null) throw new Error("database binding missing");
   return out;
+}
+
+/**
+ * Creates a D1 session from the appropriate binding. Reads are served from the
+ * nearest read replica; writes are forwarded to primary.
+ * developers.cloudflare.com/d1/worker-api/d1-database/#withsession
+ * @param {any} env - Worker environment
+ * @param {boolean} testdomain - when true uses the test DB binding
+ * @param {string} bookmark - Optional bookmark for the DB session (default: "first-primary")
+ * @returns {any} D1 session
+ * @throws {Error} - if the D1 binding is not available
+ */
+export function db2(env, testdomain = false, bookmark = "first-primary") {
+  const b = dbbinding(env, testdomain);
+  return b.withSession(bookmark);
 }
 
 /**
