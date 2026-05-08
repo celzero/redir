@@ -111,11 +111,11 @@ export class WSUser {
     /**
      * @type {number} - location revision
      */
-    this.locRev = json.loc_rev;
+    this.locRev = json.loc_rev != null ? json.loc_rev : 0;
     /**
      * @type {string} - location hash (hex)
      */
-    this.locHash = json.loc_hash;
+    this.locHash = json.loc_hash || null;
   }
 
   jsonable() {
@@ -444,7 +444,7 @@ export async function creds(env, cid, op = "get") {
     return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, test);
   } else if (wsstatus === "invalid") {
     // TODO: also call /Delete? but will it fail anyway?
-    await dbx.deleteCreds(dbx.db(env), cid);
+    await dbx.deleteCreds(db, cid);
   }
   log.w(`cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
   return null; // need new credentials
@@ -948,7 +948,7 @@ async function deleteCreds(env, sessiontoken) {
         const errmsg = await consumejson(r);
         errstr = errmsg != null ? JSON.stringify(errmsg) : "err null";
         log.w(`deleteCreds: attempt ${tries} err: ${errstr}`);
-        if (errmsg.errorCode === 701) {
+        if (errmsg != null && errmsg.errorCode === 701) {
           return true; // Session is invalid, can never delete
         }
         if (r.status === 403) {
