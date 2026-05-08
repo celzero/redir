@@ -74,7 +74,10 @@ export async function forwardToWs(env, r) {
   const [typ, sensitive, test] = reqType(u);
   const cloned = new Request(r);
 
-  withWsHostname(u, typ);
+  if (!withWsHostname(u, typ)) {
+    log.w("forwardToWs: unknown typ", typ);
+    return r400err(`wsf: unknown destination`);
+  }
   tryAddAuthHeader(cloned, token);
   removeHeader(cloned, didTokenHeader);
   removeCmds(u);
@@ -143,15 +146,30 @@ export async function forwardToWs(env, r) {
 /**
  * @param {URL} u
  * @param {string} typ - request type
- * @returns {URL} - modified URL with the correct hostname
+ * @returns {boolean} - true if a recognised WS host was set, false if typ is unknown
  */
 function withWsHostname(u, typ) {
-  if (typ == wsprodquery) u.hostname = wsApiProd;
-  if (typ == wstestquery) u.hostname = wsApiTest;
-  if (typ == wsassetsquery) u.hostname = wsAssetsProd;
-  if (typ == wsassetstestquery1) u.hostname = wsAssetsTest;
-  if (typ == wsassetstestquery2) u.hostname = wsAssetsTest;
-  return u;
+  if (typ == wsprodquery) {
+    u.hostname = wsApiProd;
+    return true;
+  }
+  if (typ == wstestquery) {
+    u.hostname = wsApiTest;
+    return true;
+  }
+  if (typ == wsassetsquery) {
+    u.hostname = wsAssetsProd;
+    return true;
+  }
+  if (typ == wsassetstestquery1) {
+    u.hostname = wsAssetsTest;
+    return true;
+  }
+  if (typ == wsassetstestquery2) {
+    u.hostname = wsAssetsTest;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -267,7 +285,7 @@ function reqType(u) {
     const test = !emptyString(typ) && typ.indexOf("test") >= 0;
     // /session contains SessionAuthHash in its output
     // which must be re-encrypted
-    const sensitive = p.toLowerCase().indexOf("/session") >= 0;
+    const sensitive = p.toLowerCase().startsWith(wssessionpath);
     return [typ, sensitive, test];
   }
   return ["", false, false];
