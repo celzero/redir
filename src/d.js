@@ -11,8 +11,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { emptyString } from "./buf";
 
-export const d1sessionHeader = "x-db-rpn-session";
-export const d1sessionHeaderTest = "x-db-rpn-test-session";
+export const d1sessionHeader = "x-rethink-db-rpn-session";
+export const d1sessionHeaderTest = "x-rethink-db-rpn-test-session";
 export const defaultDbSessionBookmark = "first-unconstrained";
 
 export class ExecCtx {
