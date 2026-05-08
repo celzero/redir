@@ -4187,6 +4187,11 @@ async function getCidThenPersist(env, sub) {
   return getOrGenAndPersistCid(env, sub, !gen, persist);
 }
 
+/**
+ * @param {any} env
+ * @param {SubscriptionPurchaseV2} sub
+ * @returns {Promise<string|null>}
+ */
 async function getCid(env, sub) {
   const gen = true;
   const persist = true;
@@ -4251,7 +4256,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
     throw new Error("sub: missing cid for purchase: err? " + msg);
   }
   if (insert) {
-    const clientinfo = sub.subscribeWithGoogleInfo;
+    const clientinfo = sub.subscribeWithGoogleInfo || null;
     const out = await dbx.insertClient(db, cid, clientinfo, kind);
     if (out == null || !out.success) {
       throw new Error(`sub: failed to get or insert ${cid}`);
@@ -4977,13 +4982,14 @@ function replacing(sub) {
  * @returns {Promise<Response>}
  */
 export async function googlePlayGetTransaction(env, req) {
+  let cid;
   try {
     if (req.method !== "GET") {
       logw(`tx: method not allowed ${req.method}`);
       return r405j({ error: "method not allowed" });
     }
 
-    const cid = cidOf(req);
+    cid = cidOf(req);
     const purchaseToken = purchaseTokenOf(req);
     const test = isTest(req);
     const activeOnly = activeOnlyOf(req);
