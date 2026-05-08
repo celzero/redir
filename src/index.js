@@ -151,6 +151,8 @@ async function handle(r, env, ctx) {
         // d/reg?did=hex&cid=hex&vcode=[&test]
         // metadata as json in the body
         return await registerDevice(env, r);
+      } else {
+        return r400(`d: unknown resource ${p2}`);
       }
     } else if (p[1] === urlstripe) {
       // s; stripe webhook
@@ -557,7 +559,7 @@ async function respond(promisedResponse, authr) {
   const token = authr.headers.get(didTokenHeader);
   const prodmark = d.dbsessionBookmark(/*test*/ false);
   const testmark = d.dbsessionBookmark(/*test*/ true);
-  const test = testmode();
+  const test = d.testmode();
 
   const r = await promisedResponse;
 
