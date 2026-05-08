@@ -1988,6 +1988,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
   // retrieve the corresponding entitlements
   // (like from ws table) and delete them.
   // TODO: worker analytics
+  let test = false;
   note(
     `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; onetime? ${isonetime}, test? ${test}`,
   );
@@ -1999,23 +2000,28 @@ async function handleVoidedPurchaseNotification(env, notif) {
 
     // fetch fresh meta from Google and update the DB if non-nil
     let freshMeta = null;
+    let cid = null;
     try {
       if (productType === 1) {
         // PRODUCT_TYPE_SUBSCRIPTION
         freshMeta = await getSubscription(env, purchaseToken);
+        test = freshMeta?.testPurchase != null;
+        cid = await getCid(env, freshMeta);
       } else if (productType === 2) {
         // PRODUCT_TYPE_ONE_TIME
         freshMeta = await getOnetimeProductV2(env, purchaseToken);
+        test = isOnetimeTest2(freshMeta);
+        cid = await getCidProduct(env, freshMeta);
       } else {
         logw(
-          `void: unknown productType ${productType} for ${cid} / ${obstoken}; test? ${test}`,
+          `void: unknown productType ${productType} for ${obstoken}; test? ${test}`,
         );
       }
     } catch (err) {
       // Token may have expired or been purged by Google (tokens are deleted 60d
       // after subscription expiry); log and proceed to delete the entitlement.
       logw(
-        `void: err fetching meta for ${cid} / ${obstoken}: ${err.message}; test? ${test}`,
+        `void: err fetching meta for ${obstoken}: ${err.message}; test? ${test}`,
       );
     }
 
@@ -2033,7 +2039,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
     }
 
     const entry = dbres.results[0];
-    const cid = entry.cid;
+    cid = entry.cid;
     const linkedtoken = entry.linkedtoken || null;
 
     if (emptyString(cid)) {
@@ -2042,7 +2048,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
     }
     */
 
-    if (freshMeta != null) {
+    if (freshMeta != null && cid != null) {
       try {
         await dbx.upsertPlaySub(
           dbx.db(env),
