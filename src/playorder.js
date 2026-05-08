@@ -1980,51 +1980,55 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
  * @returns {Promise<void>}
  */
 async function handleVoidedPurchaseNotification(env, notif) {
-  const obstoken = await obfuscate(notif.purchaseToken || "");
-  const isonetime = voidNotificationOnetime(notif.productType);
-  const note = notif.refundType === 1 ? logi : loge;
+  const purchaseToken = notif.purchaseToken;
+  // 1 = PRODUCT_TYPE_SUBSCRIPTION, 2 = PRODUCT_TYPE_ONE_TIME
+  const productType = notif.productType;
+  const orderId = notif.orderId || "";
+  const refundType = notif.refundType; // 1 = full, 2 = partial
+  const obstoken = await obfuscate(purchaseToken || "");
+  const isonetime = voidNotificationOnetime(notif);
+  const note = refundType === 1 ? logi : loge;
   // the purchase has been refunded/voided;
   // if the purchaseToken exists in the database, then
   // retrieve the corresponding entitlements
   // (like from ws table) and delete them.
   // TODO: worker analytics
+
+  // Fetch meta before als.run so ExecCtx is constructed with the correct test
+  // value. dbx.db(env) resolves prod vs test DB via testmode() from the ExecCtx,
+  // so test must be known at construction time.
+  let freshMeta = null;
   let test = false;
+  let cid = null;
+  try {
+    if (productType === 1) {
+      // PRODUCT_TYPE_SUBSCRIPTION
+      freshMeta = await getSubscription(env, purchaseToken);
+      test = freshMeta?.testPurchase != null;
+      cid = await getCid(env, freshMeta);
+    } else if (productType === 2) {
+      // PRODUCT_TYPE_ONE_TIME
+      freshMeta = await getOnetimeProductV2(env, purchaseToken);
+      test = isOnetimeTest2(freshMeta);
+      cid = await getCidProduct(env, freshMeta);
+    } else {
+      logw(
+        `void: unknown productType ${productType} for ${obstoken}; test? ${test}`,
+      );
+    }
+  } catch (err) {
+    // Token may have expired or been purged by Google (tokens are deleted 60d
+    // after subscription expiry); log and proceed to delete the entitlement.
+    logw(
+      `void: err fetching meta for ${obstoken}: ${err.message}; test? ${test}`,
+    );
+  }
+
   note(
-    `void: purchase ${obstoken}, ${notif.orderId}, ${notif.productType}, ${notif.refundType}; onetime? ${isonetime}, test? ${test}`,
+    `void: purchase ${obstoken}, ${orderId}, ${productType}, ${refundType}; onetime? ${isonetime}, test? ${test}`,
   );
 
   return als.run(new ExecCtx(env, test, obstoken), async () => {
-    const purchaseToken = notif.purchaseToken;
-    // 1 = PRODUCT_TYPE_SUBSCRIPTION, 2 = PRODUCT_TYPE_ONE_TIME
-    const productType = notif.productType;
-
-    // fetch fresh meta from Google and update the DB if non-nil
-    let freshMeta = null;
-    let cid = null;
-    try {
-      if (productType === 1) {
-        // PRODUCT_TYPE_SUBSCRIPTION
-        freshMeta = await getSubscription(env, purchaseToken);
-        test = freshMeta?.testPurchase != null;
-        cid = await getCid(env, freshMeta);
-      } else if (productType === 2) {
-        // PRODUCT_TYPE_ONE_TIME
-        freshMeta = await getOnetimeProductV2(env, purchaseToken);
-        test = isOnetimeTest2(freshMeta);
-        cid = await getCidProduct(env, freshMeta);
-      } else {
-        logw(
-          `void: unknown productType ${productType} for ${obstoken}; test? ${test}`,
-        );
-      }
-    } catch (err) {
-      // Token may have expired or been purged by Google (tokens are deleted 60d
-      // after subscription expiry); log and proceed to delete the entitlement.
-      logw(
-        `void: err fetching meta for ${obstoken}: ${err.message}; test? ${test}`,
-      );
-    }
-
     // xxx: check if purchasetoken was ever in the db?
     /*
     const dbres = await dbx.playSub(dbx.db(env), purchaseToken);
@@ -2054,7 +2058,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
           dbx.db(env),
           cid,
           purchaseToken,
-          linkedtoken,
+          null, // linkedtoken not available without DB lookup; COALESCE preserves existing
           freshMeta,
         );
         logi(`void: updated meta for ${cid} / ${obstoken}; test? ${test}`);
@@ -2065,18 +2069,24 @@ async function handleVoidedPurchaseNotification(env, notif) {
       }
     }
 
-    // delete the entitlement for this cid
-    for (const tries of [1, 10]) {
-      await sleep(tries); // wait 1s, then 10s
-      try {
-        await deleteWsEntitlement(env, cid);
-        logi(`void: deleted ent for ${cid} / ${obstoken}; test? ${test}`);
-        break;
-      } catch (e) {
-        loge(
-          `void: err deleting ent for ${cid} / ${obstoken}: ${e.message}; test? ${test}`,
-        );
+    // delete the entitlement for this cid (only when cid is known)
+    if (cid != null) {
+      for (const tries of [1, 10]) {
+        await sleep(tries); // wait 1s, then 10s
+        try {
+          await deleteWsEntitlement(env, cid);
+          logi(`void: deleted ent for ${cid} / ${obstoken}; test? ${test}`);
+          break;
+        } catch (e) {
+          loge(
+            `void: err deleting ent for ${cid} / ${obstoken}: ${e.message}; test? ${test}`,
+          );
+        }
       }
+    } else {
+      logw(
+        `void: skipping ent delete for ${obstoken}: cid unknown; test? ${test}`,
+      );
     }
 
     // for voided onetime purchases, check whether a consumed predecessor
@@ -2657,9 +2667,9 @@ export async function revokeSubscription(env, req) {
 
     const dbmeta = productPurchaseOf(entry.meta);
     if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
-      loge(`cancel: tok ${obstoken} for ${cid} is consumed onetime (db)`);
+      loge(`revoke: tok ${obstoken} for ${cid} is consumed onetime (db)`);
       return r412j({
-        error: "cannot cancel, purchase consumed",
+        error: "cannot revoke, purchase consumed",
         purchaseId: obstoken,
         sku: sku,
         test: test,
@@ -4853,7 +4863,9 @@ function isOnetimeRefunded2(purchase2) {
  * @returns {boolean}
  */
 function isOnetimeFullyRefunded2(purchase2) {
-  return purchase2.productLineItem.every(
+  const items = purchase2.productLineItem;
+  if (!items || items.length === 0) return false;
+  return items.every(
     (item) => item.productOfferDetails?.refundableQuantity === 0,
   );
 }
@@ -5028,7 +5040,7 @@ export async function googlePlayGetTransaction(env, req) {
         logw(`tx: token ${obstoken} not found for cid ${cid}`);
         return r401play({
           error: "purchase not found",
-          purchaseId: obstoken,
+          purchaseId: sendobs(purchaseToken, obstoken, test),
           cid: cid,
           test: test,
         });
@@ -5036,11 +5048,11 @@ export async function googlePlayGetTransaction(env, req) {
 
       const entry = tokenRes.results[0];
       // verify the token belongs to the claimed cid
-      if (entry.cid !== cid) {
+      if (accountIdentifiersImmutable() && entry.cid !== cid) {
         logw(`tx: cid mismatch: token ${obstoken} / ${entry.cid} != ${cid}`);
         return r401play({
           error: "cid mismatch",
-          purchaseId: obstoken,
+          purchaseId: sendobs(purchaseToken, obstoken, test),
           cid: cid,
           test: test,
         });
@@ -5095,7 +5107,7 @@ export async function googlePlayGetTransaction(env, req) {
         return r200j({
           success: true,
           cid: cid,
-          purchaseId: obstoken,
+          purchaseId: sendobs(purchaseToken, obstoken, test),
           tx: [parsedEntry],
           test: test,
         });
@@ -5107,7 +5119,7 @@ export async function googlePlayGetTransaction(env, req) {
           logw(`tx: token ${obstoken} for cid ${cid} is not active`);
           return r400j({
             error: "purchase not current",
-            purchaseId: obstoken,
+            purchaseId: sendobs(purchaseToken, obstoken, test),
             cid: cid,
             test: test,
           });
@@ -5121,7 +5133,7 @@ export async function googlePlayGetTransaction(env, req) {
           return r200j({
             success: true,
             cid: cid,
-            purchaseId: obstoken,
+            purchaseId: sendobs(purchaseToken, obstoken, test),
             tx: [parsedEntry],
             test: test,
           });
@@ -5148,7 +5160,7 @@ export async function googlePlayGetTransaction(env, req) {
         return r200j({
           success: true,
           cid: cid,
-          purchaseId: obstoken,
+          purchaseId: sendobs(purchaseToken, obstoken, test),
           tx: txActive,
           test: test,
         });
@@ -5175,7 +5187,7 @@ export async function googlePlayGetTransaction(env, req) {
       return r200j({
         success: true,
         cid: cid,
-        purchaseId: obstoken,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
         tx: txHist,
         test: test,
       });
