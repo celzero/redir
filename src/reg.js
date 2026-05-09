@@ -202,7 +202,14 @@ async function authorizeLegacy(env, cid, did) {
  * @param {object|null} devicemeta
  * @returns {Promise<Response>}
  */
-async function registerLegacyDevice(env, cid, did, clientmeta, devicemeta) {
+async function registerLegacyDevice(
+  env,
+  cid,
+  did,
+  clientmeta,
+  devicemeta,
+  test = false,
+) {
   try {
     const db = dbx.db(env);
     const isNewDid = emptyString(did);
@@ -237,7 +244,7 @@ async function registerLegacyDevice(env, cid, did, clientmeta, devicemeta) {
     if (isNewDid) {
       return r200j(new ResClientReg({ cid, did: targetDid }).json);
     }
-    return retrieveDevices(env, cid, false);
+    return retrieveDevices(env, cid, test);
   } catch (e) {
     log.e("registerLegacyDevice err:", e);
     return r500(`db error: ${e.message}`);
@@ -491,6 +498,7 @@ export async function registerDevice(env, req) {
         did,
         meta?.client ?? null,
         meta?.device ?? null,
+        test,
       );
     }
     return r401("cid verification failed");
@@ -537,6 +545,7 @@ export async function registerDevice(env, req) {
               did,
               meta?.client ?? null,
               meta?.device ?? null,
+              test,
             );
           }
 
@@ -559,6 +568,7 @@ export async function registerDevice(env, req) {
               did,
               meta?.client ?? null,
               meta?.device ?? null,
+              test,
             );
           }
 
@@ -649,14 +659,17 @@ export async function retrieveDevices(env, cid, test) {
   const db = dbx.db(env);
   const out = await dbx.getDevices(db, cid);
 
-  log.d("get dev for c:", cid, "test?", test, "found", out.success);
-
   if (out == null || !out.success) {
+    log.e("retrieveDevices db err:", out);
     return r500("database error");
   }
+
   if (out.results == null || out.results.length <= 0) {
+    log.w("retrieveDevices: not found for", cid, "test?", test);
     return r404("no devices found");
   }
+
+  log.d("retrieveDevices: for", cid, "test?", test, "n:", out.results.length);
 
   const devices = [];
   for (const entry of out.results) {
