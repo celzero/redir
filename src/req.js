@@ -351,6 +351,14 @@ export function r400txt(msg) {
 }
 
 /** @param {string} msg @returns {Response} */
+export function r405txt(msg) {
+  return new Response(msg, {
+    status: 405,
+    headers: { "Content-Type": "text/plain" },
+  });
+}
+
+/** @param {string} msg @returns {Response} */
 export function r500txt(msg) {
   return new Response(msg, {
     status: 500,

@@ -26,8 +26,11 @@ const log = new glog.Log("xc");
  * @returns {Promise<Response>} - Response with encrypted cert
  */
 export async function certfile(env, req) {
-  if (env == null || req == null || req.method != "GET") {
-    return r400txt("args missing");
+  if (env == null || req == null) {
+    return r500txt("xc: bad invocation");
+  }
+  if (req.method !== "GET") {
+    return r405txt("xc: method not allowed");
   }
   return als.run(new ExecCtx(env, env.TEST), async () => {
     const part0 = env.FLY_TLS_CERTKEY0;
@@ -38,8 +41,9 @@ export async function certfile(env, req) {
     try {
       const crt = part0 + part1;
       const enccrthex = await encryptText(env, req, crt);
-      if (bin.emptyString(enccrthex)) {
-        return r500txt("xc: could not encrypt cert");
+      if (enccrthex == null) {
+        // auth or request validation failure (bad time window, bad HMAC, bad headers)
+        return r400txt("xc: unauthorized");
       }
       return new Response(enccrthex, {
         headers: {
@@ -152,7 +156,7 @@ async function encryptText(env, req, plaintext) {
     return ivciphertaghex;
   } catch (err) {
     log.e("encrypt: failed", err);
-    return null;
+    throw err; // server error; caller returns r500
   }
 }
 
