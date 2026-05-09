@@ -74,6 +74,8 @@ const sigcache = new LfuCache("regsig", 6_000);
 // Caches the HMAC sig computed for a did token so re-verification skips hmacsign.
 const didtokencache = new LfuCache("regtok", 3_000);
 
+const ciddidcache = new LfuCache("regciddid", 3_000);
+
 const sigok = "valid";
 const signotok = "invalid";
 
@@ -105,7 +107,7 @@ function sigkey2(rand16, rand8, test) {
  * @param {number} expiry - epoch seconds
  * @returns {string}
  */
-function didtokkey(cid, did, expiry) {
+function mkdidkey(cid, did, expiry = 0) {
   return `${cid}:${did}:${expiry}`;
 }
 
@@ -763,7 +765,8 @@ async function generateDidToken(
     const sigbuf = await hmacsign(k, msg);
     const sig = buf2hex(new Uint8Array(sigbuf));
     // populate token cache so subsequent verifications skip hmacsign
-    didtokencache.put(didtokkey(cid, did, expiry), sig);
+    didtokencache.put(mkdidkey(cid, did, expiry), sig);
+    ciddidcache.put(mkdidkey(cid, did), expiry);
     return `${sig}:${expiry}`;
   } catch (e) {
     log.e("generateDidToken err:", e);
@@ -772,25 +775,44 @@ async function generateDidToken(
 }
 
 /**
- * Verifies a did token. Returns true only if the HMAC is valid and the token hasn't expired.
+ * Verifies did or token. Returns true only if the HMAC is valid and the token hasn't expired.
  * @param {CryptoKey} k - HMAC key (derived from cid's rand16 via hmacclientkey)
  * @param {string} cid - client id (hex)
  * @param {string} did - device id (hex)
- * @param {string} token - token string "<hmac_hex>:<expiry_epoch_secs>"
+ * @param {string?} token - token string "<hmac_hex>:<expiry_epoch_secs>"
  * @returns {Promise<boolean>}
  */
-async function verifyDidToken(k, cid, did, token) {
+async function verifyDid(k, cid, did, token) {
   try {
+    if (emptyString(token)) {
+      const k = mkdidkey(cid, did);
+      const v = ciddidcache.get(k);
+      if (v === false) {
+        log.w(`verifyDid: no cache entry for ${cid}:${did}`);
+        return false;
+      }
+      const fresh = unixsec() > v;
+      if (!fresh) {
+        // invalidate (falsify) cache entry
+        ciddidcache.put(k, false);
+        log.w(`verifyDid: expired ${cid}:${did} at ${v}`);
+        return false;
+      }
+      log.d(`verifyDid: cache hit for ${cid}:${did}, expires at ${v}`);
+      return true;
+    }
+
     const sep = token.lastIndexOf(":");
     if (sep < 0) return false;
     const claimedSigHex = token.slice(0, sep);
     const claimedExpiry = parseInt(token.slice(sep + 1), 10);
     if (isNaN(claimedExpiry) || claimedExpiry <= unixsec()) {
+      log.d(`verifyDid: expired ${cid}:${did}; exp: ${claimedExpiry}`);
       return false; // expired or unparseable
     }
     // token cache fast path: if we've already computed the expected sig for
     // this (cid, did, expiry), compare directly without another hmacsign
-    const tkey = didtokkey(cid, did, claimedExpiry);
+    const tkey = mkdidkey(cid, did, claimedExpiry);
     const cachedSig = didtokencache.get(tkey);
     if (cachedSig !== false) {
       return cachedSig === claimedSigHex;
@@ -809,7 +831,7 @@ async function verifyDidToken(k, cid, did, token) {
     const claimedSig = hex2buf(claimedSigHex);
     return safeEq(claimedSig, expectedSig);
   } catch (e) {
-    log.e("verifyDidToken err:", e);
+    log.e("verifyDid err:", e);
     return false;
   }
 }
@@ -892,7 +914,7 @@ export async function authorizeDevice(env, req) {
       const claimedExpiry = parseInt(incomingToken.slice(sep + 1), 10);
       if (!isNaN(claimedExpiry) && claimedExpiry > unixsec()) {
         const cachedTokSig = didtokencache.get(
-          didtokkey(cid, did, claimedExpiry),
+          mkdidkey(cid, did, claimedExpiry),
         );
         if (cachedTokSig === claimedSigHex) {
           log.d("authorizeDevice: sig+token cached ok", cid, ":", did);
@@ -965,14 +987,12 @@ export async function authorizeDevice(env, req) {
   }
 
   // token fast path: skip the database if the client presents a valid did token
-  if (!emptyString(incomingToken)) {
-    const valid = await verifyDidToken(k, cid, did, incomingToken);
-    if (valid) {
-      log.d("authorizeDevice: token ok for", cid, ":", did);
-      return r204(); // authorized; existing token still valid, no re-issue needed
-    }
-    log.d("authorizeDevice: token invalid/expired", cid, ":", did);
+  const valid = await verifyDid(k, cid, did, incomingToken);
+  if (valid) {
+    log.d("authorizeDevice: token ok for", cid, ":", did);
+    return r204(); // authorized; existing token still valid, no re-issue needed
   }
+  log.d("authorizeDevice: token invalid/expired", cid, ":", did);
 
   // fallback: verify via database
   let devres;
@@ -982,7 +1002,7 @@ export async function authorizeDevice(env, req) {
     return r500(`db err: ${ex.message}`);
   }
 
-  log.d("authorize:", cid, ":", did, "t?", test, "ok?", devres?.success);
+  log.d(`authorizeDevice: ${cid}: ${did}; ok? ${devres?.success} t? ${test}`);
 
   // getDevice excludes banned devices (kind != -1) and matches both cid+did;
   // no result means the device is unregistered or banned.
