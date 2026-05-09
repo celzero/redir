@@ -153,6 +153,11 @@ export async function getOrCreatePermaConfig(env, cid, did, sessiontoken) {
     return r200jstr(plain);
   }
 
+  // no reassignment found; flush any stale remote keys collected above
+  if (deleteKeys.length > 0) {
+    go(deletePermaKeys, env, deleteKeys); // async
+  }
+
   // step 3: check cap before creating a new credential
   // count all rows (including null-did); once created they are permanent
   if (remoteKeys.length >= maxpermacreds) {
