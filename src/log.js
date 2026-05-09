@@ -37,7 +37,7 @@ export class Log {
     }
     if (this.level > 1) return;
     if (this.trace) {
-      args.unshift(ministack());
+      args.push(ministack());
     }
     console.info(this.tag, ...args);
   }
@@ -47,7 +47,7 @@ export class Log {
     }
     if (this.level > 2) return;
     if (this.trace) {
-      args.unshift(ministack());
+      args.push(ministack());
     }
     console.warn(this.tag, ...args);
   }
@@ -57,7 +57,7 @@ export class Log {
     }
     if (this.level > 3) return;
     if (this.trace) {
-      args.unshift(ministack());
+      args.push(ministack());
     }
     console.error(this.tag, ...args);
   }
@@ -67,7 +67,7 @@ export class Log {
     }
     if (this.level > 0) return;
     if (this.trace) {
-      args.unshift(ministack());
+      args.push(ministack());
     }
     console.debug(this.tag, ...args);
   }
@@ -75,6 +75,7 @@ export class Log {
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE object:");
       console.dir(obj);
+      return;
     }
     this.i("object:");
     console.dir(obj);
@@ -86,31 +87,6 @@ export class Log {
   get debug() {
     return this.level === 0;
   }
-}
-
-// TODO: remove unused global log funcs: i, w, e, d, o
-export function i(...args) {
-  if (loglevel > 1) return;
-  console.info(ministack(), ...args);
-}
-
-export function w(...args) {
-  if (loglevel > 2) return;
-  console.warn(ministack(), ...args);
-}
-
-export function e(...args) {
-  if (loglevel > 3) return;
-  console.error(ministack(), ...args);
-}
-
-export function d(...args) {
-  if (loglevel > 0) return;
-  console.debug(ministack(), ...args);
-}
-
-export function o(obj) {
-  console.dir(obj);
 }
 
 /**
