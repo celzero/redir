@@ -663,10 +663,12 @@ export async function retrieveDevices(env, cid, test) {
     const did = entry.did || "";
     const obs = !emptyString(did) ? await obfuscateHex(did) : "";
     const meta = entry.meta != null ? JSON.parse(entry.meta) : null;
-    const ctime =
-      entry.ctime != null ? new Date(entry.ctime).toISOString() : null;
-    const mtime =
-      entry.mtime != null ? new Date(entry.mtime).toISOString() : null;
+    const ctime = !emptyString(entry.ctime)
+      ? dbx.sqliteutc(entry.ctime).toISOString()
+      : null;
+    const mtime = !emptyString(entry.mtime)
+      ? dbx.sqliteutc(entry.mtime).toISOString()
+      : null;
     devices.push(
       new ResDevice({ did: obs, meta, created: ctime, updated: mtime }),
     );
@@ -785,16 +787,16 @@ async function generateDidToken(
 async function verifyDid(k, cid, did, token) {
   try {
     if (emptyString(token)) {
-      const k = mkdidkey(cid, did);
-      const v = ciddidcache.get(k);
+      const cacheKey = mkdidkey(cid, did);
+      const v = ciddidcache.get(cacheKey);
       if (v === false) {
         log.w(`verifyDid: no cache entry for ${cid}:${did}`);
         return false;
       }
-      const fresh = unixsec() > v;
-      if (!fresh) {
+      const expired = unixsec() >= v;
+      if (expired) {
         // invalidate (falsify) cache entry
-        ciddidcache.put(k, false);
+        ciddidcache.put(cacheKey, false);
         log.w(`verifyDid: expired ${cid}:${did} at ${v}`);
         return false;
       }

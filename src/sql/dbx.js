@@ -229,8 +229,8 @@ export async function getDevice(db, cid, did) {
   if (db == null || emptyString(cid) || emptyString(did)) {
     throw new Error("d1: getDevice: db/cid/did missing");
   }
-  const q = "SELECT * FROM devices WHERE cid = ? AND did = ? AND kind >= 0";
-  const tx = db.prepare(q).bind(cid, did);
+  const q = "SELECT * FROM devices WHERE did = ? AND cid = ? AND kind >= 0";
+  const tx = db.prepare(q).bind(did, cid);
   return run(tx, q);
 }
 
@@ -365,7 +365,7 @@ export async function playSub(db, token) {
     throw new Error("d1: playsub: db/cid/token missing");
   }
   // TODO: limit to androidpublisher#subscriptionPurchase or androidpublisher#subscriptionPurchaseV2 info only
-  const q = "SELECT * from playorders where purchasetoken = ?";
+  const q = "SELECT * from playorders WHERE purchasetoken = ?";
   const tx = db.prepare(q).bind(token);
   return run(tx, q);
 }
@@ -537,7 +537,7 @@ export async function firstLinkedPurchaseTokenEntry(db, token) {
     throw new Error("d1: playsub: db/cid/token missing");
   }
   const q =
-    "SELECT * from playorders where linkedtoken = ? ORDER BY mtime DESC LIMIT 1";
+    "SELECT * from playorders WHERE linkedtoken = ? ORDER BY mtime DESC LIMIT 1";
   const tx = db.prepare(q).bind(token);
   return run(tx, q);
 }
@@ -600,9 +600,9 @@ export async function deleteCreds(db, cid) {
 }
 
 /**
- * Retrieves the wsperma row whose did matches, if any.
+ * Deletes wsperma rows whose pubkey matches any of the given public keys.
  * @param {any} db - D1 binding
- * @param {string} did - device identifier
+ * @param {string[]} pubkeys - WG public keys to delete
  * @returns {Promise<D1Out>}
  */
 export async function deletePermasByPubkeys(db, pubkeys) {
