@@ -91,7 +91,7 @@ export async function decryptText(env, cid, ivtaggedciphertext) {
  */
 export async function encryptText(env, cid, plainstr) {
   const pthex = bin.str2byt2hex(plainstr);
-  return await encrypt(env, cid, pthex);
+  return encrypt(env, cid, pthex);
 }
 
 /**

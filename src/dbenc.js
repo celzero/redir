@@ -30,13 +30,13 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
     // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
     keyctx = "dbenc";
   }
-  const enckey = await key(env, cid, keyctx);
-  const iv = await fixedNonce(uniq, cid);
-  if (!enckey || !iv) {
-    log.e("decrypt: key/iv missing");
-    return null;
-  }
   try {
+    const enckey = await key(env, cid, keyctx);
+    const iv = await fixedNonce(uniq, cid);
+    if (!enckey || !iv) {
+      log.e("decrypt: key/iv missing");
+      return null;
+    }
     const cipher = bin.hex2buf(taggedciphertext);
     const aad = bin.hex2buf(aadhex ?? "");
     const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
@@ -83,18 +83,18 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
     log.e("encrypt: cid/uniq missing");
     return null;
   }
+  // not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
   let keyctx = "";
   if (!bin.emptyString(aadhex)) {
-    // do not use ctx if aad is missing (see: dbenc.aadRequirementStartTime)
     keyctx = "dbenc";
   }
-  const enckey = await key(env, cid, keyctx);
-  const iv = await fixedNonce(uniq, cid);
-  if (!enckey || !iv) {
-    log.e("encrypt: key/iv missing");
-    return null;
-  }
   try {
+    const enckey = await key(env, cid, keyctx);
+    const iv = await fixedNonce(uniq, cid);
+    if (!enckey || !iv) {
+      log.e("encrypt: key/iv missing");
+      return null;
+    }
     const pt = bin.hex2buf(plaintext);
     const aad = bin.hex2buf(aadhex ?? "");
     const taggedciphertext = await encryptAesGcm(enckey, iv, pt, aad);
