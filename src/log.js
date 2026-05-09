@@ -13,7 +13,7 @@ import { rayId } from "./d.js";
  * 0 = debug, 1 = info, 2 = warn, 3 = error
  * @type {number}
  */
-export let loglevel = 1;
+export let loglevel = 0;
 
 export class Log {
   constructor(tag, level = 0, trace = true) {
@@ -32,8 +32,10 @@ export class Log {
   }
 
   i(...args) {
+    if (loglevel > 1) return;
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE", ...args);
+      return;
     }
     if (this.level > 1) return;
     if (this.trace) {
@@ -42,8 +44,10 @@ export class Log {
     console.info(this.tag, ...args);
   }
   w(...args) {
+    if (loglevel > 2) return;
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE", ...args);
+      return;
     }
     if (this.level > 2) return;
     if (this.trace) {
@@ -52,8 +56,10 @@ export class Log {
     console.warn(this.tag, ...args);
   }
   e(...args) {
+    if (loglevel > 3) return;
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE", ...args);
+      return;
     }
     if (this.level > 3) return;
     if (this.trace) {
@@ -62,8 +68,10 @@ export class Log {
     console.error(this.tag, ...args);
   }
   d(...args) {
+    if (loglevel > 0) return;
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE", ...args);
+      return;
     }
     if (this.level > 0) return;
     if (this.trace) {
@@ -72,11 +80,13 @@ export class Log {
     console.debug(this.tag, ...args);
   }
   o(obj) {
+    if (loglevel > 0) return;
     if (this instanceof Log === false) {
       console.warn("NOINSTANCE object:");
       console.dir(obj);
       return;
     }
+    if (this.level > 1) return;
     this.i("object:");
     console.dir(obj);
   }
@@ -85,6 +95,9 @@ export class Log {
     return rid ? `${this.ctag} [${rid}]` : this.ctag;
   }
   get debug() {
+    if (this instanceof Log === false) {
+      return loglevel === 0;
+    }
     return this.level === 0;
   }
 }
