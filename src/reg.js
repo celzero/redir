@@ -612,11 +612,11 @@ export async function registerDevice(env, req) {
   } // else: only cid provided: generate a new did
 
   try {
-    const rand8 = crand(8);
-    const didmsg = cat(rand8, devicemsg);
+    const newRand8 = crand(8);
+    const didmsg = cat(newRand8, devicemsg);
     const didsigbuf = await hmacsign(k, didmsg);
     const didsig8 = new Uint8Array(didsigbuf).slice(0, 8);
-    const newdid = buf2hex(cat(rand8, didsig8));
+    const newdid = buf2hex(cat(newRand8, didsig8));
 
     const db = dbx.db(env);
     const cout = await dbx.upsertClient(
@@ -675,13 +675,26 @@ export async function retrieveDevices(env, cid, test) {
   for (const entry of out.results) {
     const did = entry.did || "";
     const obs = !emptyString(did) ? await obfuscateHex(did) : "";
-    const meta = entry.meta != null ? JSON.parse(entry.meta) : null;
-    const ctime = !emptyString(entry.ctime)
-      ? dbx.sqliteutc(entry.ctime).toISOString()
+    let meta = null;
+    try {
+      meta = entry.meta != null ? JSON.parse(entry.meta) : null;
+    } catch (_) {
+      meta = null;
+    }
+    const ctimeDate = !emptyString(entry.ctime)
+      ? dbx.sqliteutc(entry.ctime)
       : null;
-    const mtime = !emptyString(entry.mtime)
-      ? dbx.sqliteutc(entry.mtime).toISOString()
+    const ctime =
+      ctimeDate != null && !isNaN(ctimeDate.getTime())
+        ? ctimeDate.toISOString()
+        : null;
+    const mtimeDate = !emptyString(entry.mtime)
+      ? dbx.sqliteutc(entry.mtime)
       : null;
+    const mtime =
+      mtimeDate != null && !isNaN(mtimeDate.getTime())
+        ? mtimeDate.toISOString()
+        : null;
     devices.push(
       new ResDevice({ did: obs, meta, created: ctime, updated: mtime }),
     );
@@ -830,6 +843,7 @@ async function verifyDid(k, cid, did, token) {
     const tkey = mkdidkey(cid, did, claimedExpiry);
     const cachedSig = didtokencache.get(tkey);
     if (cachedSig !== false) {
+      // TODO: use safeEq?
       return cachedSig === claimedSigHex;
     }
     // cache miss: compute expected sig, store it, then compare
@@ -931,7 +945,10 @@ export async function authorizeDevice(env, req) {
         const cachedTokSig = didtokencache.get(
           mkdidkey(cid, did, claimedExpiry),
         );
-        if (cachedTokSig === claimedSigHex) {
+        if (
+          cachedTokSig !== false &&
+          safeEq(hex2buf(claimedSigHex), hex2buf(cachedTokSig))
+        ) {
           log.d("authorizeDevice: sig+token cached ok", cid, ":", did);
           return r204();
         }
