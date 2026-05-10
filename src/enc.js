@@ -45,9 +45,13 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
     log.e("decrypt: cid missing");
     return null;
   }
+  if (bin.emptyString(ivtaggedciphertext)) {
+    log.e("decrypt: ivtaggedciphertext missing");
+    return null;
+  }
   const enckey = await clientkey(env, bin.hex2buf(cid), ctx2);
-  if (!enckey || !ivtaggedciphertext) {
-    log.e("decrypt: key/ivtaggedciphertext missing");
+  if (!enckey) {
+    log.e("decrypt: key missing");
     return null;
   }
   try {
@@ -90,6 +94,10 @@ export async function decryptText(env, cid, ivtaggedciphertext) {
  * @throws {Error} - If the plaintext is not a valid string or if encryption fails
  */
 export async function encryptText(env, cid, plainstr) {
+  if (bin.emptyString(plainstr)) {
+    log.e("encryptText: plaintext missing");
+    return null;
+  }
   const pthex = bin.str2byt2hex(plainstr);
   return encrypt(env, cid, pthex);
 }
@@ -102,12 +110,12 @@ export async function encryptText(env, cid, plainstr) {
  * @returns {Promise<string|null>} - encrypted tagged ciphertext (hex) or null
  */
 export async function encrypt(env, cid, plaintext) {
-  const iv = crand(aesivsz);
   const enckey = await clientkey(env, bin.hex2buf(cid), ctx2);
-  if (!enckey || !iv) {
-    log.e("encrypt: key/iv missing");
+  if (!enckey) {
+    log.e("encrypt: key missing");
     return null;
   }
+  const iv = crand(aesivsz);
   try {
     const pt = bin.hex2buf(plaintext);
     const taggedcipher = await encryptAesGcm(enckey, iv, pt);
@@ -140,6 +148,10 @@ async function clientkey(env, ctx1, ctx2) {
  */
 function skseed(env) {
   env = !env ? workersEnv() : env;
+  if (!env) {
+    log.e("key: env missing");
+    return null;
+  }
   // same secret across test domain and regular domain
   const seed = env.KDF_SECRET_CLIENT;
   if (!seed) {

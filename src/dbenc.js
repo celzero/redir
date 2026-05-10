@@ -12,7 +12,6 @@ const log = new glog.Log("dbenc");
 export const aadRequirementStartTime = 1752256401335;
 
 /**
- *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} uniq - uniq nonce (hex string)
@@ -32,11 +31,11 @@ export async function decrypt(env, cid, uniq, aadhex, taggedciphertext) {
   }
   try {
     const enckey = await key(env, cid, keyctx);
-    const iv = await fixedNonce(uniq, cid);
-    if (!enckey || !iv) {
-      log.e("decrypt: key/iv missing");
+    if (!enckey) {
+      log.e("decrypt: key missing");
       return null;
     }
+    const iv = await fixedNonce(uniq, cid);
     const cipher = bin.hex2buf(taggedciphertext);
     const aad = bin.hex2buf(aadhex ?? "");
     const plaintext = await decryptAesGcm(enckey, iv, cipher, aad);
@@ -90,11 +89,11 @@ export async function encrypt(env, cid, uniq, aadhex, plaintext) {
   }
   try {
     const enckey = await key(env, cid, keyctx);
-    const iv = await fixedNonce(uniq, cid);
-    if (!enckey || !iv) {
-      log.e("encrypt: key/iv missing");
+    if (!enckey) {
+      log.e("encrypt: key missing");
       return null;
     }
+    const iv = await fixedNonce(uniq, cid);
     const pt = bin.hex2buf(plaintext);
     const aad = bin.hex2buf(aadhex ?? "");
     const taggedciphertext = await encryptAesGcm(enckey, iv, pt, aad);
@@ -224,7 +223,6 @@ export async function decryptText2(env, cid, aadstr, ivtaggedciphertext) {
 }
 
 /**
- *
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string?} ctxstr - context for key generation (string)
@@ -245,6 +243,10 @@ async function key(env, cid, ctxstr = "") {
 }
 
 /**
+ * Generate a nonce from lo & hi, where lo identifies the plaintext
+ * and hi is bound to the symmetrics encryption key by a KDF run.
+ * Both lo & hi must not be secret. A good idea to instead use nonce
+ * from the output of the KDF which binds "hi" to the key derivation key.
  * @param {string} lo - hex string
  * @param {string} hi - hex string
  * @returns {Promise<Uint8Array>} - 12-byte fixed nonce
