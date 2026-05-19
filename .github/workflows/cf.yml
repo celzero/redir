@@ -70,7 +70,7 @@ jobs:
 
       - name: 📚 Publish
         # github.com/cloudflare/wrangler-action
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           # input overrides env-defaults, regardless
