@@ -17,7 +17,7 @@ import {
 } from "./d.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
-import { mincidlength } from "./reg.js";
+import { isCidValid, mincidlength } from "./reg.js";
 import {
   activeOnly as activeOnlyOf,
   cid as cidOf,
@@ -1623,7 +1623,7 @@ async function handleOneTimeProductNotification(env, notif) {
       cid = await getCidThenPersistProduct(env, purchase2);
     } catch (err) {
       loge(
-        `onetime: no cid ${cid} / tok: ${obstoken} ${sku}/${productIds}: ${err.message}; test? ${test}`,
+        `onetime: no cid ${cid}; auto-refund tok: ${obstoken} ${sku}/${productIds}: ${err.message}; test? ${test}`,
       );
       // TODO: leave upto the client to trigger a refund like done for subs?
       // refund the purchase as we have no way to link it to a user; otherwise it will be "lost" and unrevokable forever.
@@ -1817,11 +1817,12 @@ async function handleSubscriptionNotification(env, notif) {
       cid = await getCidThenPersist(env, sub);
     } catch (err) {
       loge(
-        `sub: no cid ${cid} / tok: ${obstoken} for ${typ}: ${err.message}; test? ${test}`,
+        `sub: no cid ${cid}; auto-refund tok: ${obstoken} for ${typ}: ${err.message}; test? ${test}`,
       );
       // the client would attempt to acknowledge the purchase as we haven't
       // via googlePlayAcknowledgePurchase; and failing to persist cid
       // should prompt the client (if we return 409) to trigger a refund
+      return refundOrder(env, sub.latestOrderId);
     }
 
     return processSubscription(env, cid, sub, purchasetoken, revoked);
@@ -4201,6 +4202,7 @@ async function getCidThenPersist(env, sub) {
  * @param {any} env
  * @param {SubscriptionPurchaseV2} sub
  * @returns {Promise<string|null>}
+ * @throws {Error} - If cid cannot be retrieved or is invalid.
  */
 async function getCid(env, sub) {
   const gen = true;
@@ -4212,6 +4214,7 @@ async function getCid(env, sub) {
  * @param {any} env
  * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @returns {Promise<string|null>}
+ * @throws {Error} - If cid cannot be retrieved or generated.
  */
 async function getCidThenPersistProduct(env, purchase) {
   return getOrGenAndPersistCidFromProduct(
@@ -4226,6 +4229,7 @@ async function getCidThenPersistProduct(env, purchase) {
  * @param {any} env
  * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
  * @returns {Promise<string|null>}
+ * @throws {Error} - If cid cannot be retrieved or is invalid.
  */
 async function getCidProduct(env, purchase) {
   return getOrGenAndPersistCidFromProduct(
@@ -4258,6 +4262,7 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
     // If we can't get the CID, generate a new one
     logi(`sub: no cid: ${msg}, may be gen new...`);
   }
+  // TODO: generate cid from reg.js
   if (!cid || cid.length < mincidlength) {
     cid = crandHex(64);
     kind = 1; // generated
@@ -4265,6 +4270,15 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
   if (kind == 1 && !gen) {
     throw new Error("sub: missing cid for purchase: err? " + msg);
   }
+
+  const test = sub.testPurchase != null;
+
+  // verify the cid; if not, issue a developer-initiated refund...
+  if (cid != null && !gen && !(await isCidValid(env, cid, test))) {
+    loge(`sub: invalid cid ${cid} / ${obstoken}; refunding; test? ${test}`);
+    throw new Error(`invalid cid ${cid}`);
+  }
+
   if (insert) {
     const clientinfo = sub.subscribeWithGoogleInfo || null;
     const out = await dbx.insertClient(db, cid, clientinfo, kind);
@@ -4277,20 +4291,23 @@ async function getOrGenAndPersistCid(env, sub, gen = true, insert = true) {
 
 /**
  * @param {any} env
- * @param {ProductPurchaseV2|ProductPurchaseV1} purchase
+ * @param {ProductPurchaseV2} purchase2
  * @param {boolean} gen
  * @param {boolean} insert
  * @returns {Promise<string|null>}
+ * @throws {Error} - If cid cannot be retrieved or generated.
  */
 async function getOrGenAndPersistCidFromProduct(
   env,
-  purchase,
+  purchase2,
   gen = true,
   insert = true,
 ) {
   let kind = 0; // 0 play client, 1 generated, 2 stripe
-  let cid = purchase.obfuscatedExternalAccountId;
+  let cid = purchase2.obfuscatedExternalAccountId;
+  const test = isOnetimeTest2(purchase2);
 
+  // TODO: generate cid from reg.js
   if (!cid || cid.length < mincidlength) {
     cid = crandHex(64);
     kind = 1; // generated
@@ -4298,6 +4315,13 @@ async function getOrGenAndPersistCidFromProduct(
   if (kind == 1 && !gen) {
     throw new Error("onetime: cid missing; discarding purchase");
   }
+
+  // verify the cid; if not, issue a developer-initiated refund...
+  if (cid != null && !gen && !(await isCidValid(env, cid, test))) {
+    loge(`sub: invalid cid ${cid} / ${obstoken}; refunding; test? ${test}`);
+    throw new Error(`invalid cid ${cid}`);
+  }
+
   if (insert) {
     const out = await dbx.insertClient(dbx.db(env), cid, null, kind);
     if (out == null || !out.success) {
