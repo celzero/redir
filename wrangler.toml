@@ -93,6 +93,15 @@ routes = [
   # google rtdn webhook
   "svc.rethinkdns.com/g/*",
   "svc.bravedns.com/g/*",
+  # device
+  "svc.rethinkdns.com/d/*",
+  "svc.bravedns.com/d/*",
+  # cross service
+  "svc.rethinkdns.com/x/*",
+  "svc.bravedns.com/x/*",
+  # rpn ws forward proxy
+  "svc.rethinkdns.com/*",
+  "svc.bravedns.com/*",
 ]
 
 # update vars in d.js for snippets compat
