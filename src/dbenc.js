@@ -279,25 +279,13 @@ export async function aeskeygen(seedhex, cid, ctxhex) {
       const sk256 = sk.slice(0, hkdfalgkeysz);
       // info must always of a fixed size for ALL KDF calls
       const info512 = await sha512(bin.hex2buf(cid + ctxhex));
-      return await gen(sk256, info512); // hdkf aes key
+      // salt for hkdf can be zero: stackoverflow.com/a/64403302
+      // exportable: crypto.subtle.exportKey("raw", key);
+      return hkdfaes(sk256, info512); // hdkf aes key
     } catch (ignore) {
       log.d("keygen: err", ignore);
     }
   }
   log.d("keygen: invalid seed/ctx");
   return null;
-}
-
-/**
- * salt for hkdf can be zero: stackoverflow.com/a/64403302
- * @param {Uint8Array} secret - The secret key to derive from
- * @param {Uint8Array} info - The context information to use for key derivation
- * @param {Uint8Array} [salt=bin.ZEROBUF] - Optional
- */
-async function gen(secret, info, salt = bin.ZEROBUF) {
-  if (bin.emptyBuf(secret) || bin.emptyBuf(info)) {
-    throw new Error("empty secret/info");
-  }
-  // exportable: crypto.subtle.exportKey("raw", key);
-  return hkdfaes(secret, info, salt);
 }

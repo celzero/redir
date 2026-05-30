@@ -7,7 +7,7 @@ import { aesivsz, hkdfaes, hkdfalgkeysz, hkdfhmac, sha512 } from "./hmac.js";
 import * as glog from "./log.js";
 import { crand, decryptAesGcm, encryptAesGcm } from "./webcrypto.js";
 
-const log = new glog.Log("dbenc");
+const log = new glog.Log("enc");
 
 const ctx2 = bin.str2byte("encryptforclient");
 
@@ -61,7 +61,9 @@ export async function decrypt(env, cid, ivtaggedciphertext) {
     const plaintext = await decryptAesGcm(enckey, iv, cipher);
     return bin.buf2hex(plaintext);
   } catch (err) {
-    log.e("decrypt: failed for " + ivtaggedciphertext, err);
+    // typically fails when dbenc ciphertext (lifted from db) is used here;
+    // this decrypt routine is for client entitlements only (not for db).
+    log.e("decrypt: failed for " + cid + " / " + ivtaggedciphertext, err);
     return null;
   }
 }
@@ -80,7 +82,7 @@ export async function decryptText(env, cid, ivtaggedciphertext) {
   try {
     return bin.hex2byt2str(plainhex);
   } catch (err) {
-    log.e("decryptText: failed decode hex2str " + ivtaggedciphertext, err);
+    log.e("decryptText: failed" + cid + " / " + ivtaggedciphertext, err);
   }
   return null;
 }

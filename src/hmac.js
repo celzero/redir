@@ -52,12 +52,18 @@ export async function hmacverify(ck, mac, m) {
   return crypto.subtle.verify("HMAC", ck, mac, m);
 }
 
-// with hkdf, salt is optional and public, but if used,
-// for a given secret (Z) it needn't be unique per use,
-// but it *must* be random:
-// cendyne.dev/posts/2023-01-30-how-to-use-hkdf.html
-// info adds entropy to extracted keys, and must be unique:
-// see: soatok.blog/2021/11/17/understanding-hkdf
+/**
+ * With hkdf, salt is optional and public, but if used,
+ * for a given secret (Z) it needn't be unique per use,
+ * but it *must* be random:
+ * cendyne.dev/posts/2023-01-30-how-to-use-hkdf.html
+ * info adds entropy to extracted keys, and must be unique:
+ * see: soatok.blog/2021/11/17/understanding-hkdf
+ * @param {BufferSource} skaes
+ * @param {BufferSource} usectx
+ * @param {BufferSource} salt
+ * @returns {Promise<CryptoKey>} - The derived AES key
+ */
 export async function hkdfaes(skaes, usectx, salt = bin.ZEROBUF) {
   const dk = await hkdf(skaes);
   return crypto.subtle.deriveKey(

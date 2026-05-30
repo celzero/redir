@@ -59,7 +59,7 @@ export async function forwardToWs(env, r) {
   const [cid, token, enctoken, needsAuth, mustEncrypt] =
     await bearerAndCidForWs(env, r);
   if (needsAuth) {
-    if (emptyString(token)) return r401err("wsf: needs cid or auth");
+    if (emptyString(token)) return r401err("wsf: cid or auth or token invalid");
     if (mustEncrypt && emptyString(cid)) {
       return r401err("wsf: needs cid");
     }
@@ -268,7 +268,7 @@ async function bearerAndCidForWs(env, req) {
     return [cid, null, null, /*needsAuth*/ true, /*mustEncrypt*/ false]; // no cid or token
   }
 
-  const dectok = await decryptText(env, cid, enctoken);
+  const dectok = await decryptText(env, cid, enctoken); // may return null on errs
   return [cid, dectok, enctoken, needsAuth, /*mustEncrypt*/ true];
 }
 
