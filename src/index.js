@@ -7,6 +7,7 @@
  */
 
 import * as ac from "./ac.js";
+import { handleAdmin } from "./admin.js";
 import { b64AsBytes, emptyBuf, emptyString } from "./buf.js";
 import * as d from "./d.js";
 import { Log } from "./log.js";
@@ -66,6 +67,7 @@ const urlsproxy = "p"; // sproxy metadata
 const urlgplay = "g"; // redirect to play store
 const crosssvc = "x"; // cross-service calls
 const urldevice = "d"; // device registration
+const urladmin = "a"; // admin endpoints
 const paramwsfwd = "rpn"; // if url param is present, forward to ws
 
 const blindRsaPublicKeyPrefix = "PUBLIC_KEY_BLINDRSA_";
@@ -297,6 +299,9 @@ async function handle(r, env, ctx) {
           pubkey: pk,
         }).json,
       );
+    } else if (p[1] === urladmin) {
+      // a; admin endpoints (no rate limiting)
+      return await handleAdmin(env, r);
     } else {
       log.w(`p: unknown path`, path);
     }

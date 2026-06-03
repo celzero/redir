@@ -455,6 +455,14 @@ export function r401err(w) {
   return new Response(JSON.stringify(payload), { status: 401, headers: h });
 }
 
+/** 403 Forbidden with JSON body */
+export function r403err(w) {
+  const h = { "content-type": "application/json" };
+  if (typeof w === "string") w = { error: w };
+  const payload = w instanceof ResErr ? w.json : new ResErr(w).json;
+  return new Response(JSON.stringify(payload), { status: 403, headers: h });
+}
+
 /** 404 Not Found with JSON body */
 export function r404err(w) {
   const h = { "content-type": "application/json" };

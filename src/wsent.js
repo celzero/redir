@@ -15,11 +15,10 @@ import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 
 const resourceuser = "Users";
-const resourcesession = "Session";
 const creatuser = resourceuser + "?session_type_id=4&plan=";
 const updateuser = resourceuser + "?plan=";
-
-const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
+export const resourcesession = "Session";
+export const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
 
 const log = new glog.Log("wse");
 
@@ -362,7 +361,7 @@ export async function deleteWsEntitlement(env, cid) {
   try {
     c = await creds(env, cid, "del");
   } catch (e) {
-    log.w(`ws: no creds for ${cid}; nothing to delete? ${e.message}`);
+    log.w(`del: no creds for ${cid}; nothing to delete? ${e.message}`);
   }
   if (c == null) {
     // do not throw on no creds (client code may keep retrying otherwise)
@@ -370,14 +369,14 @@ export async function deleteWsEntitlement(env, cid) {
   }
 
   if (c.test && !testmode("exec")) {
-    log.e(`ws: deleting test user ${cid} in non-test mode?`);
+    log.e(`del: deleting test user ${cid} in non-test mode?`);
   }
 
   // TODO: check if c.test and testmode() match?
 
   // TODO: do not allow deletion of banned users?
   if (c.status === "banned") {
-    log.e(`ws: deleting banned user ${cid} ${c.status}; test? ${c.test}`);
+    log.e(`del: deleting banned user ${cid} ${c.status}; test? ${c.test}`);
   }
   const deleted = await deleteCreds(env, c.sessiontoken);
   if (!deleted) {
@@ -385,13 +384,13 @@ export async function deleteWsEntitlement(env, cid) {
     throw new Error(`ws: could not delete creds for ${cid}`);
   }
   log.i(
-    `ws: deleted remote win creds for ${cid}; deleting from db...; test? ${c.test}`,
+    `del: deleted remote win creds for ${cid}; deleting from db...; test? ${c.test}`,
   );
   const out = await dbx.deleteCreds(db, cid);
   if (!out || !out.success) {
-    throw new Error(`ws: db delete err for ${cid} ${c.status}`);
+    throw new Error(`del: db delete err for ${cid} ${c.status}`);
   }
-  log.i(`ws: deleted both remote and local creds for ${cid}; test? ${c.test}`);
+  log.i(`del: deleted both remote and local creds for ${cid}; test? ${c.test}`);
   return true; // successfully deleted the entitlement
 }
 
@@ -407,6 +406,7 @@ export async function creds(env, cid, op = "get") {
   const out = await dbx.wsCreds(db, cid);
   // TODO: handle !out.success; throw error?
   if (!out.results || out.results.length <= 0) {
+    log.d(`cr: no existing old creds for ${cid} on ${op}`);
     return null; // No existing credentials
   }
   // TODO: types for DB results
@@ -415,7 +415,7 @@ export async function creds(env, cid, op = "get") {
   const enctok = row.sessiontoken || null; // encrypted session token
   const ctime = dbx.sqliteutc(row.ctime);
   if (bin.emptyString(uid) || bin.emptyString(enctok)) {
-    log.d(`err ${op} creds for ${cid} missing uid or enctok; no-op`);
+    log.d(`cr: err ${op} creds for ${cid} missing uid or enctok; no-op`);
     return null; // No existing credentials
   }
   const uhex = bin.str2byt2hex(uid);
@@ -424,7 +424,7 @@ export async function creds(env, cid, op = "get") {
     aadhex = bin.str2byt2hex(wstokaad);
   }
   log.d(
-    `ws: ${op} creds for ${cid}, uid: ${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`,
+    `cr: ${op} creds for ${cid}, uid: ${uid}/${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`,
   );
   const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tokhex)) {
@@ -443,10 +443,13 @@ export async function creds(env, cid, op = "get") {
   ) {
     return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, test);
   } else if (wsstatus === "invalid") {
+    log.i(
+      `cr: ${op} creds for ${cid} / ${uid} may be invalid or deleted: ${wsstatus}, test? ${test}`,
+    );
     // TODO: also call /Delete? but will it fail anyway?
     await dbx.deleteCreds(db, cid);
   }
-  log.w(`cannot ${op} old creds for ${cid} invalid/exp? ${wsstatus}`);
+  log.w(`cr: cannot ${op} old creds for ${cid} / ${uid} / s? ${wsstatus}`);
   return null; // need new credentials
 }
 
@@ -491,7 +494,7 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot update entitlement; subscription expiring soon: ${subExpiry}`,
+      `ws: cannot update entitlement; subscription expiring soon: ${subExpiry}`,
     );
   }
 
@@ -636,7 +639,7 @@ async function newCreds(env, expiry, requestedPlan) {
 
   if (plan == "unknown" || execCount <= 0) {
     throw new Error(
-      `cannot create (test? ${testing}) entitlement; subscription expiring imminently`,
+      `ws: cannot create (test? ${testing}) entitlement; subscription expiring imminently`,
     );
   }
 
