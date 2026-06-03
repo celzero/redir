@@ -344,7 +344,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       }
     }
   }
-  log.d(`getOrGen: use existing for ${c.cid} ${c.status}`);
+  log.d(`getOrGen: use new? ${wasCreated} for ${c.cid} ${c.status}`);
   return c;
 }
 
@@ -369,7 +369,7 @@ export async function deleteWsEntitlement(env, cid) {
   }
 
   if (c.test && !testmode("exec")) {
-    log.e(`del: deleting test user ${cid} in non-test mode?`);
+    log.e(`del: deleting test ${cid} / ${c.sessiontoken} in non-test mode?`);
   }
 
   // TODO: check if c.test and testmode() match?
@@ -444,9 +444,20 @@ export async function creds(env, cid, op = "get") {
     return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, test);
   } else if (wsstatus === "invalid") {
     log.i(
-      `cr: ${op} creds for ${cid} / ${uid} may be invalid or deleted: ${wsstatus}, test? ${test}`,
+      `cr: ${op} creds for ${cid} / ${uid} invalid or deleted: ${wsstatus}; deleting from db...; test? ${test}`,
     );
     // TODO: also call /Delete? but will it fail anyway?
+    // potential for existing "wsuser" to go un-refunded; esp if the "invalid"
+    // wsuser belongs to another domain (test wsuser but prod ws-wl api creds
+    // & vice versa); that using test ws-wl creds to get status of a prod
+    // wsuser & vice versa will always result in "invalid" status; but
+    // we're skipping deleting ("refunding") it; as other parts of the code
+    // may actually end up recreating a new wsuser (in test / prod as approp)
+    // while leaving this user undeleted (un-refunded) with windscribe.
+    // on the other hand, if we do call /Delete here, we should call it for
+    // both prod and test windscribe endpoints and not worry whether it
+    // succeeds or fails but continue as-is with caller's business logic.
+    // TODO: worker analytics
     await dbx.deleteCreds(db, cid);
   }
   log.w(`cr: cannot ${op} old creds for ${cid} / ${uid} / s? ${wsstatus}`);
