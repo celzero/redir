@@ -181,6 +181,7 @@ namespace_id = "53"
 # WS_WL_TOKEN = "string"
 # WS_WL_ID_TEST = "string"
 # WS_WL_TOKEN_TEST = "string"
-
+# admin endpoint token secret (same for prod and test)
+# ADMIN_SECRET = "64-chars-hex..."
 
 # update secrets in d.js for snippets compat
