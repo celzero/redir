@@ -7,7 +7,7 @@
  */
 
 import * as bin from "./buf.js";
-import { testmode } from "./d.js";
+import { hasctx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
 import * as glog from "./log.js";
@@ -286,7 +286,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
         // means this new wsuser was not inserted at all.
         const deleted = await deleteCreds(env, wsuser.sessionAuthHash);
         log.e(
-          `err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} ${wsuser.expiry} in favour of current expiry ${c?.expiry} / asked: ${exp} ${plan}`,
+          `getOrGen: err insert or get creds for ${cid} deleted? ${deleted} ${wsuser.userId} ${wsuser.expiry} in favour of current expiry ${c?.expiry} / asked: ${exp} ${plan}`,
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
@@ -305,7 +305,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   }
   if (c.status === "banned") {
     // c.status === invalid may point to expired or deleted creds
-    log.e(`cannot use existing creds for ${cid} ${c.status}`);
+    log.e(`getOrGen: cannot use existing creds for ${cid} ${c.status}`);
     return c;
   }
   // if WSEntitlement has "expired", attempt to renew it.
@@ -1081,42 +1081,33 @@ function daysUntil(t, base = new Date()) {
 }
 
 /**
- * @param {any} env - Worker environment
- * @returns
+ * @param {any} env - Worker environment.
+ * @returns {string} - Windscribe API URL endpoint (staging or production).
+ * @throws {Error} - if there is no execution context.
  */
 export function apiurl(env) {
-  if (testmode("exec")) {
-    return env.WS_URL_TEST;
-  } else if (env.TEST) {
-    return env.WS_URL_TEST;
-  }
-  return env.WS_URL;
+  if (!hasctx("exec")) throw new Error("apiurl: no exec ctx");
+  return testmode("exec") ? env.WS_URL_TEST : env.WS_URL;
 }
 
 /**
- * @param {any} env - Worker environment
- * @returns
+ * @param {any} env - Worker environment.
+ * @returns {string} - Windscribe API ID (staging or production).
+ * @throws {Error} - if there is no execution context.
  */
 function apiaccess(env) {
-  if (testmode("exec")) {
-    return env.WS_WL_ID_TEST;
-  } else if (env.TEST) {
-    return env.WS_WL_ID_TEST;
-  }
-  return env.WS_WL_ID;
+  if (!hasctx("exec")) throw new Error("apiaccess: no exec ctx");
+  return testmode("exec") ? env.WS_WL_ID_TEST : env.WS_WL_ID;
 }
 
 /**
- * @param {any} env - Worker environment
- * @returns
+ * @param {any} env - Worker environment.
+ * @returns {string} - Windscribe API token (staging or production).
+ * @throws {Error} - if there is no execution context.
  */
 function apisecret(env) {
-  if (testmode("exec")) {
-    return env.WS_WL_TOKEN_TEST;
-  } else if (env.TEST) {
-    return env.WS_WL_TOKEN_TEST;
-  }
-  return env.WS_WL_TOKEN;
+  if (!hasctx("exec")) throw new Error("apisecret: no exec ctx");
+  return testmode("exec") ? env.WS_WL_TOKEN_TEST : env.WS_WL_TOKEN;
 }
 
 async function sleep(sec) {

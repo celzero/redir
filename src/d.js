@@ -157,10 +157,37 @@ function rayid(req) {
 }
 
 /**
+ * @param {"any"|"exec"|"outer"|"request"|"play"} who - contexts to check for;
+ *   "any" checks both contexts and returns true if either is in test mode.
  * @returns {boolean} - Whether any execution context available.
  */
-export function hasctx() {
-  return ols.getStore() != null || als.getStore() != null;
+export function hasctx(who = "any") {
+  if (
+    emptyString(who) ||
+    (who !== "exec" &&
+      who !== "play" &&
+      who !== "outer" &&
+      who !== "request" &&
+      who !== "any")
+  ) {
+    who = "any";
+  }
+
+  // playorder-level test mode (as found in the play purchase objects)
+  if (who === "exec" || who === "any" || who === "play") {
+    /** @type {ExecCtx} */
+    const cfg = als.getStore();
+    if (cfg != null) return true;
+  }
+
+  // request-level test mode (as sent in the url by the client)
+  if (who === "outer" || who === "any" || who === "request") {
+    /** @type {OuterCtx} */
+    const ocfg = ols.getStore();
+    if (ocfg != null) return true;
+  }
+
+  return false;
 }
 
 /**
