@@ -117,6 +117,16 @@ export async function hmac512key(sk) {
   );
 }
 
+export async function hmackey3(sk) {
+  return crypto.subtle.importKey(
+    "raw",
+    sk,
+    hmac256opts3(),
+    false, // extractable? always false for use as derivedKey
+    ["sign", "verify"], // usage
+  );
+}
+
 export async function hkdf(sk) {
   return crypto.subtle.importKey(
     "raw",
@@ -133,6 +143,10 @@ export function hmac256opts() {
 
 export function hmac512opts() {
   return { name: "HMAC", hash: "SHA-512" };
+}
+
+export function hmac256opts3() {
+  return { name: "HMAC", hash: "SHA3-256" }; // length: 512 (in bits; default)
 }
 
 /**

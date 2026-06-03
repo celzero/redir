@@ -336,6 +336,7 @@ export function wrap(env, r) {
   if (env.WS_WL_ID_TEST == null) env.WS_WL_ID_TEST = null;
   if (env.WS_WL_TOKEN == null) env.WS_WL_TOKEN = null;
   if (env.WS_WL_TOKEN_TEST == null) env.WS_WL_TOKEN_TEST = null;
+  if (env.ADMIN_SECRET == null) env.ADMIN_SECRET = null;
 
   // developers.cloudflare.com/fundamentals/reference/http-headers/#cf-ray
   env.CF_RAY = r.headers.get("Cf-Ray") || "";

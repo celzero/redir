@@ -4,7 +4,7 @@
 import * as bin from "./buf.js";
 import { testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
-import { hmackey, hmacsign } from "./hmac.js";
+import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import { consumejson, r200j, r400err, r401err, r403err } from "./req.js";
 import * as dbx from "./sql/dbx.js";
@@ -64,7 +64,7 @@ async function authenticate(env, req) {
 
   try {
     const sk = bin.hex2buf(adminSecret); // 32 bytes
-    const key = await hmackey(sk);
+    const key = await hmackey3(sk);
     // message is unixepochmillis as string'd number converted to utf8 bytes
     const msg = bin.str2byte(tsStr);
     const sig = await hmacsign(key, msg);
