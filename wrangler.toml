@@ -171,6 +171,7 @@ namespace_id = "53"
 # KDF_SECRET_D1_TEST = "64-chars-hex..."
 # KDF key for encrypted payloads sent publicly
 # KDF_SECRET_CLIENT = "64-chars-hex..."
+# test remains unused
 # KDF_SECRET_CLIENT_TEST = "64-chars-hex..."
 # KDF key for cross-service calls (from max, for example)
 # KDF_XSVC = "64-chars-hex..."

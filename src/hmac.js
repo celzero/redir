@@ -65,33 +65,33 @@ export async function hmacverify(ck, mac, m) {
  * @returns {Promise<CryptoKey>} - The derived AES key
  */
 export async function hkdfaes(skaes, usectx, salt = bin.ZEROBUF) {
-  const dk = await hkdf(skaes);
+  const dk = await hkdfkey(skaes);
   return crypto.subtle.deriveKey(
-    hkdf256(salt, usectx),
-    dk,
-    aesgcm256opts(),
+    hkdf256(salt, usectx), // kdf opts
+    dk, // ikm
+    aesgcm256opts(), // usage
     false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["encrypt", "decrypt"], // usage
   );
 }
 
 export async function hkdfaescbc(skaescbc, usectx, salt = bin.ZEROBUF) {
-  const dk = await hkdf(skaescbc);
+  const dk = await hkdfkey(skaescbc);
   return crypto.subtle.deriveKey(
-    hkdf256(salt, usectx),
-    dk,
-    aescbc256opts(),
+    hkdf2563(salt, usectx), // kdf opts
+    dk, // ikm
+    aescbc256opts(), // usage
     false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["encrypt", "decrypt"], // usage
   );
 }
 
 export async function hkdfhmac(skmac, usectx, salt = bin.ZEROBUF) {
-  const dk = await hkdf(skmac);
+  const dk = await hkdfkey(skmac);
   return await crypto.subtle.deriveKey(
-    hkdf256(salt, usectx),
-    dk,
-    hmac256opts(),
+    hkdf256(salt, usectx), // kdf opts
+    dk, // ikm
+    hmac256opts(), // usage
     false, // extractable: false; raw key material must not leave the SubtleCrypto boundary
     ["sign", "verify"], // usage
   );
@@ -127,7 +127,7 @@ export async function hmackey3(sk) {
   );
 }
 
-export async function hkdf(sk) {
+export async function hkdfkey(sk) {
   return crypto.subtle.importKey(
     "raw",
     sk,
@@ -173,6 +173,10 @@ export function aescbc256opts() {
 
 export function hkdf256(salt, usectx) {
   return { name: "HKDF", hash: "SHA-256", salt: salt, info: usectx };
+}
+
+export function hkdf2563(salt, usectx) {
+  return { name: "HKDF", hash: "SHA3-256", salt: salt, info: usectx };
 }
 
 export async function sha256(b) {
