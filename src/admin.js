@@ -14,11 +14,15 @@ const log = new glog.Log("admin");
 
 const adminTokenHeader = "x-rethink-admin-token";
 const adminTsHeader = "x-rethink-admin-ts";
-const adminTokenWindowMs = 30 * 1000; // +/- 30 seconds
+const adminTokenWindowMs = 100 * 1000; // +/- 100 seconds
 
 const wsSessionPath = "/" + resourcesession;
 const wsRawPaymentsPath = "/WhitelabelPayments/rawpayments";
 const wsStatsPath = "/WhitelabelPayments/stats/";
+
+const wsresource = "ws";
+const rawpaymentsquery = "pay";
+const paymentstatsdate = "date";
 
 /**
  * Authenticates an admin request using HMAC over unix epoch millis.
@@ -251,16 +255,18 @@ async function adminMonthlyStats(env, req) {
  * @returns {Promise<Response>}
  */
 export async function handleAdmin(env, req) {
+  const tsStr = req.headers.get(adminTsHeader);
+  const tsMillis = parseInt(tsStr, 10);
+  const nowMs = Date.now();
+  const diffMs = Math.abs(nowMs - tsMillis);
+  if (!isNaN(tsMillis) && diffMs > adminTokenWindowMs) {
+    log.e(`admin: ${tsStr} out of window of ${nowMs} (${diffMs}ms)`);
+    return r403err("retry");
+  }
+
   // Step 1: authenticate
   const ok = await authenticate(env, req);
   if (!ok) {
-    // Distinguish between time-out-of-window (403) and sig mismatch (401)
-    const tsStr = req.headers.get(adminTsHeader);
-    const tsMillis = parseInt(tsStr, 10);
-    const nowMs = Date.now();
-    if (!isNaN(tsMillis) && Math.abs(nowMs - tsMillis) > adminTokenWindowMs) {
-      return r403err("timestamp out of window");
-    }
     return r401err("unauthorized");
   }
 
@@ -269,12 +275,12 @@ export async function handleAdmin(env, req) {
   const p = u.pathname.split("/");
 
   // p = ["", "a", "ws"] for /a/ws, or ["", "a", ...]
-  const resource = p[2] ? p[2].toLowerCase() : "";
+  const x = p[2] ? p[2].toLowerCase() : "";
 
-  if (resource === "ws") {
+  if (x === wsresource) {
     const q = u.searchParams;
-    const hasPay = q.has("pay");
-    const hasDate = q.has("date");
+    const hasPay = q.has(rawpaymentsquery);
+    const hasDate = q.has(paymentstatsdate);
 
     if (hasPay && hasDate) {
       return await adminMonthlyStats(env, req);
@@ -286,5 +292,5 @@ export async function handleAdmin(env, req) {
     }
   }
 
-  return r400err(`unknown resource ${resource}`);
+  return r400err(`unknown resource ${x}`);
 }
