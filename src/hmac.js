@@ -117,11 +117,13 @@ export async function hmac512key(sk) {
   );
 }
 
+// TODO: sha3 as of yet not supported by workers in node compat mode
+// also: wicg.github.io/webcrypto-modern-algos/
 export async function hmackey3(sk) {
   return crypto.subtle.importKey(
     "raw",
     sk,
-    hmac256opts3(),
+    hmac256opts(),
     false, // extractable? always false for use as derivedKey
     ["sign", "verify"], // usage
   );
@@ -145,9 +147,10 @@ export function hmac512opts() {
   return { name: "HMAC", hash: "SHA-512" };
 }
 
-export function hmac256opts3() {
-  return { name: "HMAC", hash: "SHA3-256" }; // length: 512 (in bits; default)
-}
+// unsupported on workers despite node-compat
+// export function hmac256opts3() {
+//  return { name: "HMAC", hash: "SHA3-256" }; // length: 512 (in bits; default)
+// }
 
 /**
  * https://developer.mozilla.org/en-US/docs/Web/API/AesKeyGenParams
