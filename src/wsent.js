@@ -14,7 +14,7 @@ import * as glog from "./log.js";
 import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 
-const resourceuser = "Users";
+export const resourceuser = "Users";
 const creatuser = resourceuser + "?session_type_id=4&plan=";
 const updateuser = resourceuser + "?plan=";
 export const resourcesession = "Session";

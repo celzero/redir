@@ -8,19 +8,21 @@ import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import { consumejson, r200j, r400err, r401err, r403err } from "./req.js";
 import * as dbx from "./sql/dbx.js";
-import { resourcesession, wstokaad } from "./wsent.js";
+import { resourcesession, resourceuser, wstokaad } from "./wsent.js";
 
 const log = new glog.Log("admin");
 
-const adminTokenHeader = "x-rethink-admin-token";
-const adminTsHeader = "x-rethink-admin-ts";
+const adminTokenHeader = "x-rethink-app-admin-token";
+const adminTsHeader = "x-rethink-app-admin-ts";
 const adminTokenWindowMs = 100 * 1000; // +/- 100 seconds
 
 const wsSessionPath = "/" + resourcesession;
 const wsRawPaymentsPath = "/WhitelabelPayments/rawpayments";
 const wsStatsPath = "/WhitelabelPayments/stats/";
+const wsUsersPath = "/" + resourceuser;
 
 const wsresource = "ws";
+const wsuser = "u";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
 
@@ -278,6 +280,11 @@ export async function handleAdmin(env, req) {
   const x = p[2] ? p[2].toLowerCase() : "";
 
   if (x === wsresource) {
+    const x2 = p[3] ? p[3].toLowerCase() : "";
+    if (x2 === wsuser) {
+      return await updateUser(env, req);
+    }
+
     const q = u.searchParams;
     const hasPay = q.has(rawpaymentsquery);
     const hasDate = q.has(paymentstatsdate);
@@ -293,4 +300,51 @@ export async function handleAdmin(env, req) {
   }
 
   return r400err(`unknown resource ${x}`);
+}
+
+/**
+ * PUT /a/ws/u
+ * Proxies an update to Windscribe /Users, passing through query params,
+ * headers, and body while stripping local ones.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function updateUser(env, req) {
+  // Build target URL with filtered query params
+  const targetUrl = new URL(wsBaseUrl(env) + wsUsersPath);
+  const u = new URL(req.url);
+  for (const [k, v] of u.searchParams.entries()) {
+    if (k !== "ws" && k !== "cid" && k !== "did") {
+      targetUrl.searchParams.set(k, v);
+    }
+  }
+
+  // Filter headers: pass through everything except x-rethink* headers,
+  // then add Windscribe whitelabel credentials
+  const [wlId, wlToken] = wsWlHeaders(env);
+  const headers = new Headers();
+  for (const [k, v] of req.headers.entries()) {
+    if (!k.toLowerCase().startsWith("x-rethink")) {
+      headers.set(k, v);
+    }
+  }
+  headers.set("X-WS-WL-ID", wlId);
+  headers.set("X-WS-WL-Token", wlToken);
+
+  try {
+    const r = await fetch(targetUrl.toString(), {
+      method: req.method,
+      headers: headers,
+      body: req.body,
+    });
+    const j = await consumejson(r);
+    if (j == null) {
+      return r400err(`update: empty response from WS (${r.status})`);
+    }
+    return r200j(j);
+  } catch (err) {
+    log.e("update: fetch err", err);
+    return r400err(`update: ${err.message}`);
+  }
 }
