@@ -6,7 +6,7 @@ import { testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { consumejson, r200j, r400err, r401err, r403err } from "./req.js";
+import { cid, consumejson, r200j, r400err, r401err, r403err } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import { resourcesession, resourceuser, wstokaad } from "./wsent.js";
 
@@ -25,6 +25,44 @@ const wsresource = "ws";
 const wsuser = "u";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
+
+const localQueryParams = new Set(["ws", "cid", "did", "test"]);
+
+/**
+ * Builds a Windscribe target URL, copying query params from req except local
+ * ones (ws, cid, did, test) and any extraLocalParams.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @param {string} path - The WS API path (e.g., "/Session", "/Users")
+ * @param {string[]} [extraLocalParams] - Additional query params to strip
+ * @returns {URL} - The target URL to forward to
+ */
+function buildTargetUrl(env, req, path, extraLocalParams = []) {
+  const targetUrl = new URL(wsBaseUrl(env) + path);
+  const u = new URL(req.url);
+  const skip = new Set([...localQueryParams, ...extraLocalParams]);
+  for (const [k, v] of u.searchParams.entries()) {
+    if (!skip.has(k)) {
+      targetUrl.searchParams.set(k, v);
+    }
+  }
+  return targetUrl;
+}
+
+/**
+ * Copies headers from req, filtering out local x-rethink prefixed ones.
+ * @param {Request} req - The incoming request
+ * @returns {Headers} - Filtered headers
+ */
+function buildHeaders(req) {
+  const headers = new Headers();
+  for (const [k, v] of req.headers.entries()) {
+    if (!k.toLowerCase().startsWith("x-rethink")) {
+      headers.set(k, v);
+    }
+  }
+  return headers;
+}
 
 /**
  * Authenticates an admin request using HMAC over unix epoch millis.
@@ -120,16 +158,15 @@ function wsWlHeaders(env) {
  * @returns {Promise<Response>}
  */
 async function adminSession(env, req) {
-  const u = new URL(req.url);
-  const cid = u.searchParams.get("cid");
+  const c = cid(req);
 
-  if (bin.emptyString(cid)) {
+  if (bin.emptyString(c)) {
     return r400err("sess: missing cid");
   }
 
   // Look up ws creds from DB
   const db = dbx.db(env);
-  const out = await dbx.wsCreds(db, cid);
+  const out = await dbx.wsCreds(db, c);
   if (!out.results || out.results.length <= 0) {
     return r400err("sess: no ws creds for cid");
   }
@@ -150,7 +187,7 @@ async function adminSession(env, req) {
     aadhex = bin.str2byt2hex(wstokaad);
   }
   log.d(
-    `admin/ws: cid=${cid}, uid=${uid}/${uhex}, aad=${aadhex}, enctok=${enctok}, ctime=${ctime.toISOString()}`,
+    `admin/ws: cid=${c}, uid=${uid}/${uhex}, aad=${aadhex}, enctok=${enctok}, ctime=${ctime.toISOString()}`,
   );
 
   const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
@@ -161,13 +198,12 @@ async function adminSession(env, req) {
   const sessiontoken = bin.hex2byt2str(tokhex);
 
   // Call Windscribe /Session
-  const url = wsBaseUrl(env) + wsSessionPath;
-  const headers = {
-    Authorization: `Bearer ${sessiontoken}`,
-  };
+  const targetUrl = buildTargetUrl(env, req, wsSessionPath);
+  const headers = buildHeaders(req);
+  headers.set("Authorization", `Bearer ${sessiontoken}`);
 
   try {
-    const r = await fetch(url, { method: "GET", headers });
+    const r = await fetch(targetUrl, { method: "GET", headers });
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`sess: empty response (${r.status})`);
@@ -185,19 +221,18 @@ async function adminSession(env, req) {
  * GET /a/ws?pay
  * Retrieves raw payments info from Windscribe /WhitelabelPayments/rawpayments.
  * @param {any} env - Worker environment
- * @param {Request} req - The incoming request (unused; kept for consistency)
+ * @param {Request} req - The incoming request
  * @returns {Promise<Response>}
  */
-async function adminRawPayments(env, _req) {
-  const url = wsBaseUrl(env) + wsRawPaymentsPath;
+async function adminRawPayments(env, req) {
+  const targetUrl = buildTargetUrl(env, req, wsRawPaymentsPath);
   const [wlId, wlToken] = wsWlHeaders(env);
-  const headers = {
-    "X-WS-WL-ID": wlId,
-    "X-WS-WL-Token": wlToken,
-  };
+  const headers = buildHeaders(req);
+  headers.set("X-WS-WL-ID", wlId);
+  headers.set("X-WS-WL-Token", wlToken);
 
   try {
-    const r = await fetch(url, { method: "GET", headers });
+    const r = await fetch(targetUrl, { method: "GET", headers });
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`pay: empty response from WS (${r.status})`);
@@ -229,15 +264,14 @@ async function adminMonthlyStats(env, req) {
     return r400err("stats: invalid date format; expected yyyy-mm");
   }
 
-  const url = wsBaseUrl(env) + wsStatsPath + date;
+  const targetUrl = buildTargetUrl(env, req, wsStatsPath + date, ["date"]);
   const [wlId, wlToken] = wsWlHeaders(env);
-  const headers = {
-    "X-WS-WL-ID": wlId,
-    "X-WS-WL-Token": wlToken,
-  };
+  const headers = buildHeaders(req);
+  headers.set("X-WS-WL-ID", wlId);
+  headers.set("X-WS-WL-Token", wlToken);
 
   try {
-    const r = await fetch(url, { method: "GET", headers });
+    const r = await fetch(targetUrl, { method: "GET", headers });
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`stats: empty response from WS (${r.status})`);
@@ -311,38 +345,60 @@ export async function handleAdmin(env, req) {
  * @returns {Promise<Response>}
  */
 async function updateUser(env, req) {
-  // Build target URL with filtered query params
-  const targetUrl = new URL(wsBaseUrl(env) + wsUsersPath);
-  const u = new URL(req.url);
-  for (const [k, v] of u.searchParams.entries()) {
-    if (k !== "ws" && k !== "cid" && k !== "did") {
-      targetUrl.searchParams.set(k, v);
-    }
+  if (req.method !== "PUT") {
+    return r400err("only PUT allowed");
   }
 
-  // Filter headers: pass through everything except x-rethink* headers,
-  // then add Windscribe whitelabel credentials
-  const [wlId, wlToken] = wsWlHeaders(env);
-  const headers = new Headers();
-  for (const [k, v] of req.headers.entries()) {
-    if (!k.toLowerCase().startsWith("x-rethink")) {
-      headers.set(k, v);
-    }
+  const c = cid(req);
+
+  if (bin.emptyString(c)) {
+    return r400err("update: missing cid");
   }
+
+  const db = dbx.db(env);
+  const out = await dbx.wsCreds(db, c);
+  if (!out.results || out.results.length <= 0) {
+    return r400err("update: no ws creds for cid");
+  }
+
+  const row = out.results[0];
+  const uid = row.userid || null;
+  const enctok = row.sessiontoken || null;
+  const ctime = dbx.sqliteutc(row.ctime);
+
+  if (bin.emptyString(uid) || bin.emptyString(enctok)) {
+    log.e(`update: missing uid or sessiontoken for cid ${c} / userid ${uid}`);
+    return r400err("update: missing uid or sessiontoken for cid");
+  }
+
+  const uhex = bin.str2byt2hex(uid);
+  let aadhex = null;
+  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
+    aadhex = bin.str2byt2hex(wstokaad);
+  }
+
+  const tokhex = await dbenc.decrypt(env, c, uhex, aadhex, enctok);
+  if (bin.emptyString(tokhex)) {
+    return r400err("update: failed to decrypt sessiontoken for cid");
+  }
+
+  const sessiontoken = bin.hex2byt2str(tokhex);
+
+  const targetUrl = buildTargetUrl(env, req, wsUsersPath);
+  const [wlId, wlToken] = wsWlHeaders(env);
+  const headers = buildHeaders(req);
+  headers.set("Authorization", `Bearer ${sessiontoken}`);
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
   try {
-    const r = await fetch(targetUrl.toString(), {
+    const r = await fetch(targetUrl, {
       method: req.method,
       headers: headers,
       body: req.body,
     });
-    const j = await consumejson(r);
-    if (j == null) {
-      return r400err(`update: empty response from WS (${r.status})`);
-    }
-    return r200j(j);
+
+    return new Response(r.body, r);
   } catch (err) {
     log.e("update: fetch err", err);
     return r400err(`update: ${err.message}`);
