@@ -398,15 +398,18 @@ export async function deleteWsEntitlement(env, cid) {
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
  * @param {string} op - Reason for fetching creds (default: "get"). For logging only.
+ * @param {string} execctx - Execution context for testmode (default: "exec")
  * @returns {Promise<WSEntitlement|null>} - [userid, unencrypted sessiontoken] or null if no existing credentials
  * @throws {Error} - If there is an error decrypting credentials
  */
-export async function creds(env, cid, op = "get") {
+export async function creds(env, cid, op = "get", execctx = "exec") {
+  execctx = execctx || "exec";
+
   const db = dbx.db(env);
   const out = await dbx.wsCreds(db, cid);
   // TODO: handle !out.success; throw error?
   if (!out.results || out.results.length <= 0) {
-    log.d(`cr: no existing old creds for ${cid} on ${op}`);
+    log.d(`cr: no existing old creds for ${cid} on ${op} ${execctx}`);
     return null; // No existing credentials
   }
   // TODO: types for DB results
@@ -415,7 +418,9 @@ export async function creds(env, cid, op = "get") {
   const enctok = row.sessiontoken || null; // encrypted session token
   const ctime = dbx.sqliteutc(row.ctime);
   if (bin.emptyString(uid) || bin.emptyString(enctok)) {
-    log.d(`cr: err ${op} creds for ${cid} missing uid or enctok; no-op`);
+    log.d(
+      `cr: err ${op} ${execctx} creds for ${cid} missing uid or enctok; no-op`,
+    );
     return null; // No existing credentials
   }
   const uhex = bin.str2byt2hex(uid);
@@ -424,15 +429,15 @@ export async function creds(env, cid, op = "get") {
     aadhex = bin.str2byt2hex(wstokaad);
   }
   log.d(
-    `cr: ${op} creds for ${cid}, uid: ${uid}/${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`,
+    `cr: ${op} ${execctx} creds for ${cid}, uid: ${uid}/${uhex}, aad: ${aadhex}, enctok: ${enctok}, ctime: ${ctime.toISOString()}`,
   );
   const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
   if (bin.emptyString(tokhex)) {
     throw new Error(`ws: err ${op} decrypt(token) for ${cid}`);
   }
-  const test = testmode("exec");
+  const test = testmode(execctx);
   const tok = bin.hex2byt2str(tokhex);
-  const [wsstatus, wsuser] = await credsStatus(env, tok);
+  const [wsstatus, wsuser] = await credsStatus(env, tok, execctx);
   // TODO: insert into db depending on "op"?
   // dbx.upsertCredsMeta
   if (
@@ -444,7 +449,7 @@ export async function creds(env, cid, op = "get") {
     return new WSEntitlement(cid, tok, wsuser?.expiry, wsstatus, test);
   } else if (wsstatus === "invalid") {
     log.i(
-      `cr: ${op} creds for ${cid} / ${uid} invalid or deleted: ${wsstatus}; deleting from db...; test? ${test}`,
+      `cr: ${op} ${execctx} creds for ${cid} / ${uid} invalid or deleted: ${wsstatus}; deleting from db...; test? ${test}`,
     );
     // TODO: also call /Delete? but will it fail anyway?
     // potential for existing "wsuser" to go un-refunded; esp if the "invalid"
@@ -460,7 +465,9 @@ export async function creds(env, cid, op = "get") {
     // TODO: worker analytics
     await dbx.deleteCreds(db, cid);
   }
-  log.w(`cr: cannot ${op} old creds for ${cid} / ${uid} / s? ${wsstatus}`);
+  log.w(
+    `cr: cannot ${op} ${execctx} old creds for ${cid} / ${uid} / s? ${wsstatus}`,
+  );
   return null; // need new credentials
 }
 
@@ -830,6 +837,7 @@ async function newCreds(env, expiry, requestedPlan) {
  * The returned wsuser does not contain session auth hash.
  * @param {any} env - Worker environment
  * @param {string} sessiontoken - id:type:timestamp:sig1:sig2
+ * @param {string} execctx - Execution context for testmode (default: "exec")
  * @return {Promise<["valid"|"invalid"|"banned"|"expired"|"unknown", WSUser]>} statuses:
  * - "valid" if the session token is ok,
  * - "invalid" if it is not ok,
@@ -838,10 +846,11 @@ async function newCreds(env, expiry, requestedPlan) {
  * - "unknown" if the status is unknown (due to errors)
  * WSUser: The entitlement.
  */
-async function credsStatus(env, sessiontoken) {
+async function credsStatus(env, sessiontoken, execctx = "exec") {
   // curl --request GET 'https://api-staging.windscribe.com/Session'
   // --header 'Authorization: Bearer sessiontoken'
-  const url = apiurl(env) + resourcesession;
+  const apiu = apiurl(env, execctx);
+  const url = apiu + resourcesession;
   const headers = {
     Authorization: `Bearer ${sessiontoken}`,
   };
@@ -852,7 +861,7 @@ async function credsStatus(env, sessiontoken) {
       if (d && d.data) {
         const wsuser = new WSUser(d.data);
         log.d(
-          `creds status: got session: ${wsuser?.userId} expiry ${wsuser.expiry}`,
+          `creds status: got session from ${apiu}: ${wsuser?.userId} expiry ${wsuser.expiry}`,
         );
         return [wsStatus(wsuser), wsuser];
       } // else: fallthrough and return "unknown"
@@ -867,7 +876,9 @@ async function credsStatus(env, sessiontoken) {
     */
     if (r.status >= 400) {
       const err = await consumejson(r);
-      log.w(`creds status: ${r.status} forbidden: ${JSON.stringify(err)}`);
+      log.w(
+        `creds status: ${r.status} from ${apiu} forbidden: ${JSON.stringify(err)}`,
+      );
       if (err != null && err.errorCode === 701) {
         return ["invalid", null]; // Session is invalid
       }
@@ -882,7 +893,7 @@ async function credsStatus(env, sessiontoken) {
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
   } catch (err) {
-    log.e(`creds status: error checking session token:`, err);
+    log.e(`creds status: from ${apiu} error checking session token:`, err);
   }
   return ["unknown", null]; // Unknown status
 }
@@ -1093,12 +1104,13 @@ function daysUntil(t, base = new Date()) {
 
 /**
  * @param {any} env - Worker environment.
+ * @param {string} execctx - Execution context for testmode (default: "exec")
  * @returns {string} - Windscribe API URL endpoint (staging or production).
  * @throws {Error} - if there is no execution context.
  */
-export function apiurl(env) {
-  if (!hasctx("exec")) throw new Error("apiurl: no exec ctx");
-  return testmode("exec") ? env.WS_URL_TEST : env.WS_URL;
+export function apiurl(env, execctx = "exec") {
+  if (!hasctx(execctx)) throw new Error(`apiurl: no ${execctx} ctx`);
+  return testmode(execctx) ? env.WS_URL_TEST : env.WS_URL;
 }
 
 /**

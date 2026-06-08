@@ -162,7 +162,7 @@ async function adminSession(env, req) {
     return r400err("sess: missing cid");
   }
 
-  const cred = await creds(env, c);
+  const cred = await creds(env, c, "adminsess", "any");
   if (cred == null) {
     return r400err("sess: no ws creds for cid");
   }
@@ -325,7 +325,7 @@ async function adminUpdateUser(env, req) {
     return r400err("update: missing cid");
   }
 
-  const cred = await creds(env, c);
+  const cred = await creds(env, c, "adminupdate", "any");
   if (cred == null) {
     return r400err("update: no ws creds for cid");
   }
