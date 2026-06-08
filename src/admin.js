@@ -180,6 +180,8 @@ async function adminSession(env, req) {
       return r400err(`sess: empty response (${r.status})`);
     }
     j.session_auth_hash = sessiontoken;
+    j.test = cred.test;
+    j.exp = cred.expiry;
     return r200j(j);
   } catch (err) {
     log.e("sess: fetch err", err);
