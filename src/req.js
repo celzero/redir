@@ -55,6 +55,17 @@ export function clientIp(req) {
 }
 
 /**
+ * Get the content length from the response headers.
+ * @param {Response} res - The response object.
+ * @returns {number} - The content length, if available. Negative values indicate missing or invalid content length.
+ */
+function contentlen(res = null) {
+  if (!res || !res.headers) return -2;
+  const cl = res.headers.get("Content-Length");
+  return cl ? parseInt(cl, 10) : -1;
+}
+
+/**
  * Get the country from the request headers.
  * developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties
  * @param {Request} req - The incoming request object.

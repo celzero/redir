@@ -5,7 +5,15 @@ import * as bin from "./buf.js";
 import { testmode } from "./d.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { cid, consumejson, r200j, r400err, r401err, r403err } from "./req.js";
+import {
+  cid,
+  consumejson,
+  contentlen,
+  r200j,
+  r400err,
+  r401err,
+  r403err,
+} from "./req.js";
 import { creds, resourcesession, resourceuser } from "./wsent.js";
 
 const log = new glog.Log("admin");
@@ -173,8 +181,13 @@ async function adminSession(env, req) {
   const headers = buildHeaders(req);
   headers.set("Authorization", `Bearer ${sessiontoken}`);
 
+  log.d("sess: forwarding...", targetUrl.href);
+
   try {
     const r = await fetch(targetUrl, { method: "GET", headers });
+
+    log.d("sess: response...", targetUrl.href, r.status, contentlen(r));
+
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`sess: empty response (${r.status})`);
@@ -203,8 +216,13 @@ async function adminRawPayments(env, req) {
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
+  log.d("pay: forwarding...", targetUrl.href);
+
   try {
     const r = await fetch(targetUrl, { method: "GET", headers });
+
+    log.d("pay: response...", targetUrl.href, r.status, contentlen(r));
+
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`pay: empty response from WS (${r.status})`);
@@ -242,8 +260,13 @@ async function adminMonthlyStats(env, req) {
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
+  log.d("stats: forwarding...", targetUrl.href);
+
   try {
     const r = await fetch(targetUrl, { method: "GET", headers });
+
+    log.d("stats: response...", targetUrl.href, contentlen(r));
+
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`stats: empty response from WS (${r.status})`);
@@ -252,6 +275,61 @@ async function adminMonthlyStats(env, req) {
   } catch (err) {
     log.e("stats: fetch err", err);
     return r400err(`stats: ${err.message}`);
+  }
+}
+
+/**
+ * PUT /a/ws/u
+ * Proxies an update to Windscribe /Users, passing through query params,
+ * headers, and body while stripping local ones.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function adminUpdateUser(env, req) {
+  if (req.method !== "PUT") {
+    return r400err("only PUT allowed");
+  }
+
+  const c = cid(req);
+
+  if (bin.emptyString(c)) {
+    return r400err("update: missing cid");
+  }
+
+  const cred = await creds(env, c, "adminupdate", "any");
+  if (cred == null) {
+    return r400err("update: no ws creds for cid");
+  }
+
+  if (bin.emptyString(cred.sessiontoken)) {
+    return r400err("update: missing sessiontoken for cid");
+  }
+
+  const sessiontoken = cred.sessiontoken;
+
+  const targetUrl = buildTargetUrl(env, req, wsUsersPath);
+  const [wlId, wlToken] = wsWlHeaders(env);
+  const headers = buildHeaders(req);
+  headers.set("Authorization", `Bearer ${sessiontoken}`);
+  headers.set("X-WS-WL-ID", wlId);
+  headers.set("X-WS-WL-Token", wlToken);
+
+  log.d("update: forwarding...", targetUrl.href);
+
+  try {
+    const r = await fetch(targetUrl, {
+      method: req.method,
+      headers: headers,
+      body: req.body,
+    });
+
+    log.d("update: response...", targetUrl.href, r.status, contentlen(r));
+
+    return new Response(r.body, r);
+  } catch (err) {
+    log.e("update: fetch err", err);
+    return r400err(`update: ${err.message}`);
   }
 }
 
@@ -306,55 +384,4 @@ export async function handleAdmin(env, req) {
   }
 
   return r400err(`unknown resource ${x}`);
-}
-
-/**
- * PUT /a/ws/u
- * Proxies an update to Windscribe /Users, passing through query params,
- * headers, and body while stripping local ones.
- * @param {any} env - Worker environment
- * @param {Request} req - The incoming request
- * @returns {Promise<Response>}
- */
-async function adminUpdateUser(env, req) {
-  if (req.method !== "PUT") {
-    return r400err("only PUT allowed");
-  }
-
-  const c = cid(req);
-
-  if (bin.emptyString(c)) {
-    return r400err("update: missing cid");
-  }
-
-  const cred = await creds(env, c, "adminupdate", "any");
-  if (cred == null) {
-    return r400err("update: no ws creds for cid");
-  }
-
-  if (bin.emptyString(cred.sessiontoken)) {
-    return r400err("update: missing sessiontoken for cid");
-  }
-
-  const sessiontoken = cred.sessiontoken;
-
-  const targetUrl = buildTargetUrl(env, req, wsUsersPath);
-  const [wlId, wlToken] = wsWlHeaders(env);
-  const headers = buildHeaders(req);
-  headers.set("Authorization", `Bearer ${sessiontoken}`);
-  headers.set("X-WS-WL-ID", wlId);
-  headers.set("X-WS-WL-Token", wlToken);
-
-  try {
-    const r = await fetch(targetUrl, {
-      method: req.method,
-      headers: headers,
-      body: req.body,
-    });
-
-    return new Response(r.body, r);
-  } catch (err) {
-    log.e("update: fetch err", err);
-    return r400err(`update: ${err.message}`);
-  }
 }
