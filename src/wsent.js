@@ -397,7 +397,7 @@ export async function deleteWsEntitlement(env, cid) {
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID (hex string)
- * @param {string} op - Reason for getting credentials (default: "get")
+ * @param {string} op - Reason for fetching creds (default: "get"). For logging only.
  * @returns {Promise<WSEntitlement|null>} - [userid, unencrypted sessiontoken] or null if no existing credentials
  * @throws {Error} - If there is an error decrypting credentials
  */

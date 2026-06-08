@@ -3,12 +3,10 @@
 
 import * as bin from "./buf.js";
 import { testmode } from "./d.js";
-import * as dbenc from "./dbenc.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import { cid, consumejson, r200j, r400err, r401err, r403err } from "./req.js";
-import * as dbx from "./sql/dbx.js";
-import { resourcesession, resourceuser, wstokaad } from "./wsent.js";
+import { creds, resourcesession, resourceuser } from "./wsent.js";
 
 const log = new glog.Log("admin");
 
@@ -164,40 +162,13 @@ async function adminSession(env, req) {
     return r400err("sess: missing cid");
   }
 
-  // Look up ws creds from DB
-  const db = dbx.db(env);
-  const out = await dbx.wsCreds(db, c);
-  if (!out.results || out.results.length <= 0) {
+  const cred = await creds(env, c);
+  if (cred == null) {
     return r400err("sess: no ws creds for cid");
   }
 
-  const row = out.results[0];
-  const uid = row.userid || null;
-  const enctok = row.sessiontoken || null; // encrypted session token
-  const ctime = dbx.sqliteutc(row.ctime);
+  const sessiontoken = cred.sessiontoken;
 
-  if (bin.emptyString(uid) || bin.emptyString(enctok)) {
-    return r400err("sess: missing uid or sessiontoken for cid");
-  }
-
-  // Decrypt the session token (same as creds() in wsent.js)
-  const uhex = bin.str2byt2hex(uid);
-  let aadhex = null;
-  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
-    aadhex = bin.str2byt2hex(wstokaad);
-  }
-  log.d(
-    `admin/ws: cid=${c}, uid=${uid}/${uhex}, aad=${aadhex}, enctok=${enctok}, ctime=${ctime.toISOString()}`,
-  );
-
-  const tokhex = await dbenc.decrypt(env, cid, uhex, aadhex, enctok);
-  if (bin.emptyString(tokhex)) {
-    return r400err("sess: failed to decrypt sessiontoken for cid");
-  }
-
-  const sessiontoken = bin.hex2byt2str(tokhex);
-
-  // Call Windscribe /Session
   const targetUrl = buildTargetUrl(env, req, wsSessionPath);
   const headers = buildHeaders(req);
   headers.set("Authorization", `Bearer ${sessiontoken}`);
@@ -209,7 +180,6 @@ async function adminSession(env, req) {
       return r400err(`sess: empty response (${r.status})`);
     }
     j.session_auth_hash = sessiontoken;
-    // Return the raw WS JSON as-is
     return r200j(j);
   } catch (err) {
     log.e("sess: fetch err", err);
@@ -316,7 +286,7 @@ export async function handleAdmin(env, req) {
   if (x === wsresource) {
     const x2 = p[3] ? p[3].toLowerCase() : "";
     if (x2 === wsuser) {
-      return await updateUser(env, req);
+      return await adminUpdateUser(env, req);
     }
 
     const q = u.searchParams;
@@ -344,7 +314,7 @@ export async function handleAdmin(env, req) {
  * @param {Request} req - The incoming request
  * @returns {Promise<Response>}
  */
-async function updateUser(env, req) {
+async function adminUpdateUser(env, req) {
   if (req.method !== "PUT") {
     return r400err("only PUT allowed");
   }
@@ -355,34 +325,16 @@ async function updateUser(env, req) {
     return r400err("update: missing cid");
   }
 
-  const db = dbx.db(env);
-  const out = await dbx.wsCreds(db, c);
-  if (!out.results || out.results.length <= 0) {
+  const cred = await creds(env, c);
+  if (cred == null) {
     return r400err("update: no ws creds for cid");
   }
 
-  const row = out.results[0];
-  const uid = row.userid || null;
-  const enctok = row.sessiontoken || null;
-  const ctime = dbx.sqliteutc(row.ctime);
-
-  if (bin.emptyString(uid) || bin.emptyString(enctok)) {
-    log.e(`update: missing uid or sessiontoken for cid ${c} / userid ${uid}`);
-    return r400err("update: missing uid or sessiontoken for cid");
+  if (bin.emptyString(cred.sessiontoken)) {
+    return r400err("update: missing sessiontoken for cid");
   }
 
-  const uhex = bin.str2byt2hex(uid);
-  let aadhex = null;
-  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
-    aadhex = bin.str2byt2hex(wstokaad);
-  }
-
-  const tokhex = await dbenc.decrypt(env, c, uhex, aadhex, enctok);
-  if (bin.emptyString(tokhex)) {
-    return r400err("update: failed to decrypt sessiontoken for cid");
-  }
-
-  const sessiontoken = bin.hex2byt2str(tokhex);
+  const sessiontoken = cred.sessiontoken;
 
   const targetUrl = buildTargetUrl(env, req, wsUsersPath);
   const [wlId, wlToken] = wsWlHeaders(env);
