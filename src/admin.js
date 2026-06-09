@@ -3,6 +3,7 @@
 
 import * as bin from "./buf.js";
 import { testmode } from "./d.js";
+import * as dbenc from "./dbenc.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import {
@@ -15,7 +16,14 @@ import {
   r401err,
   r403err,
 } from "./req.js";
-import { creds, resourcesession, resourceuser } from "./wsent.js";
+import * as dbx from "./sql/dbx.js";
+import {
+  WSUser,
+  creds,
+  resourcesession,
+  resourceuser,
+  wstokaad,
+} from "./wsent.js";
 
 const log = new glog.Log("admin");
 
@@ -30,6 +38,7 @@ const wsUsersPath = resourceuser;
 
 const wsresource = "ws";
 const wsuser = "u";
+const wsentitlement = "e";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
 
@@ -238,6 +247,9 @@ async function adminSession(env, req) {
  * @returns {Promise<Response>}
  */
 async function adminRawPayments(env, req) {
+  if (req.method !== "GET") {
+    return r400err("only GET allowed");
+  }
   const wsUrl = buildUrl(env, req, wsRawPaymentsPath);
   const [wlId, wlToken] = wsWlHeaders(env);
   const headers = buildHeaders(req);
@@ -270,6 +282,9 @@ async function adminRawPayments(env, req) {
  * @returns {Promise<Response>}
  */
 async function adminMonthlyStats(env, req) {
+  if (req.method !== "GET") {
+    return r400err("only GET allowed");
+  }
   const u = new URL(req.url);
   const date = u.searchParams.get("date");
 
@@ -360,6 +375,98 @@ async function adminUpdateUser(env, req) {
 }
 
 /**
+ * PUT /a/ws/e
+ * Updates the encrypted session token stored in the ws table for a given
+ * cid.  The caller sends an unencrypted session token (id:type:epoch:sig1:sig2)
+ * via the Authorization header.  The function calls Windscribe /Session to
+ * verify the token, checks that the returned user_id matches the one already
+ * stored in the database, and then encrypts and persists the new token.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function adminUpdateWsEntitlement(env, req) {
+  if (req.method !== "PUT") {
+    return r400err("only PUT allowed");
+  }
+
+  const c = cid(req);
+  if (bin.emptyString(c)) return r400err("ent: missing cid");
+
+  // Must provide an unencrypted session token (contains ":")
+  const sessiontoken = unencryptedSessionToken(req);
+  if (bin.emptyString(sessiontoken)) {
+    return r400err("ent: missing or invalid bearer token");
+  }
+
+  // Look up existing creds from DB to get the stored userid
+  const db = dbx.db(env);
+  const out = await dbx.wsCreds(db, c);
+  if (!out.results || out.results.length <= 0) {
+    return r400err("ent: no ws creds for cid");
+  }
+
+  const row = out.results[0];
+  const uid = row.userid || null;
+  if (bin.emptyString(uid)) {
+    return r400err("ent: missing userid for cid");
+  }
+
+  // Call Windscribe /Session to verify the token and get the WS user
+  const wsUrl = buildUrl(env, req, wsSessionPath);
+  const headers = buildHeaders(req);
+  headers.set("Authorization", `Bearer ${sessiontoken}`);
+
+  log.d("ent: forwarding /Session...", wsUrl.href);
+
+  let wsuser;
+  try {
+    const r = await fetch(wsUrl, { method: "GET", headers });
+    const j = await consumejson(r);
+    if (j == null || j.data == null || !r.ok) {
+      return r400err(`ent: err /Session res (${r.status} / ok? ${r.ok})`);
+    }
+    wsuser = new WSUser(j.data);
+  } catch (err) {
+    log.e("ent: /Session fetch err", err);
+    return r400err(`ent: /Session err: ${err.message}`);
+  }
+
+  if (bin.emptyString(wsuser.userId)) {
+    return r400err("ent: missing userid in /Session response");
+  }
+
+  // Verify the user_id matches the one stored in the database
+  if (wsuser.userId !== uid) {
+    log.e(`ent: userid mismatch: db=${uid} vs ws=${wsuser.userId}`);
+    return r400err("ent: userid mismatch");
+  }
+
+  // Encrypt the session token for storage
+  const ctime = dbx.sqliteutc(row.ctime);
+  let aad = null;
+  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
+    aad = wstokaad;
+  }
+
+  const newEnctok = await dbenc.encryptText(env, c, uid, aad, sessiontoken);
+  if (bin.emptyString(newEnctok)) {
+    return r400err("ent: failed to encrypt sessiontoken");
+  }
+
+  // Update the ws table: upsert encrypted token
+  const upsertOut = await dbx.upsertCreds(db, c, uid, newEnctok);
+  if (!upsertOut || !upsertOut.success) {
+    return r400err("ent: failed to update ws table");
+  }
+
+  log.d(
+    `ent: updated ws creds for cid=${c}, uid=${uid}, tok=${newEnctok.slice(0, 8)}...`,
+  );
+  return r200j({ success: 1, cid: c });
+}
+
+/**
  * Main admin handler. Authenticates the request and dispatches to the
  * appropriate sub-handler.
  * @param {any} env - Worker environment
@@ -393,6 +500,9 @@ export async function handleAdmin(env, req) {
     const x2 = p[3] ? p[3].toLowerCase() : "";
     if (x2 === wsuser) {
       return await adminUpdateUser(env, req);
+    }
+    if (x2 === wsentitlement) {
+      return await adminUpdateWsEntitlement(env, req);
     }
 
     const q = u.searchParams;

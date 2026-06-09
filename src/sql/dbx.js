@@ -585,6 +585,33 @@ export async function insertCreds(db, cid, userid, sessiontoken) {
 }
 
 /**
+ * Upserts ws creds: inserts if cid not present, otherwise updates
+ * sessiontoken, userid, and mtime.
+ * @param {any} db - D1 binding
+ * @param {string} cid - Client ID (hex string)
+ * @param {string} userid - WS User ID
+ * @param {string} sessiontoken - encrypted session token (hex string)
+ * @returns {Promise<D1Out>} - D1Out object
+ * @throws {Error} - if db, cid, userid, or sessiontoken is missing
+ */
+export async function upsertCreds(db, cid, userid, sessiontoken) {
+  if (
+    db == null ||
+    emptyString(cid) ||
+    emptyString(userid) ||
+    emptyString(sessiontoken)
+  ) {
+    throw new Error("d1: wsUpsertCreds: db/cid/userid/sessiontoken missing");
+  }
+  const q =
+    "INSERT INTO ws (cid, sessiontoken, userid, mtime) VALUES(?, ?, ?, ?)" +
+    " ON CONFLICT(cid) DO UPDATE SET" +
+    " sessiontoken=excluded.sessiontoken, userid=excluded.userid, mtime=excluded.mtime";
+  const tx = db.prepare(q).bind(cid, sessiontoken, userid, now());
+  return run(tx, q);
+}
+
+/**
  * @param {any} db - D1 binding
  * @param {string} cid - Client ID (hex string)
  * @returns
