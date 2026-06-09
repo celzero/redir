@@ -59,7 +59,7 @@ export function clientIp(req) {
  * @param {Response} res - The response object.
  * @returns {number} - The content length, if available. Negative values indicate missing or invalid content length.
  */
-function contentlen(res = null) {
+export function contentlen(res = null) {
   if (!res || !res.headers) return -2;
   const cl = res.headers.get("Content-Length");
   return cl ? parseInt(cl, 10) : -1;
