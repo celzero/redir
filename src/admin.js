@@ -6,6 +6,7 @@ import { testmode } from "./d.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
 import {
+  authorization,
   cid,
   consumejson,
   contentlen,
@@ -43,16 +44,16 @@ const localQueryParams = new Set(["ws", "cid", "did", "test"]);
  * @param {string[]} [extraLocalParams] - Additional query params to strip
  * @returns {URL} - The target URL to forward to
  */
-function buildTargetUrl(env, req, path, extraLocalParams = []) {
-  const targetUrl = new URL(wsBaseUrl(env) + path);
-  const u = new URL(req.url);
+function buildUrl(env, req, path, extraLocalParams = []) {
+  const u = new URL(wsBaseUrl(env) + path);
+  const requrl = new URL(req.url);
   const skip = new Set([...localQueryParams, ...extraLocalParams]);
-  for (const [k, v] of u.searchParams.entries()) {
+  for (const [k, v] of requrl.searchParams.entries()) {
     if (!skip.has(k)) {
-      targetUrl.searchParams.set(k, v);
+      u.searchParams.set(k, v);
     }
   }
-  return targetUrl;
+  return u;
 }
 
 /**
@@ -68,6 +69,28 @@ function buildHeaders(req) {
     }
   }
   return headers;
+}
+
+/**
+ * Extracts a bearer token from the Authorization header if it is a plain
+ * hex string without ":" separators. Returns null if no usable token.
+ * @param {Request} req - The incoming request
+ * @returns {string|null} - bearer token or null
+ */
+function unencryptedSessionToken(req) {
+  const auth = authorization(req);
+  if (bin.emptyString(auth)) return null;
+  const parts = auth.split(" ");
+  if (parts.length < 2 || parts[0] !== "Bearer") return null;
+
+  // plain hex tokens are encrypted & do not contain ":"
+  const tok = parts[1];
+  if (!tok.includes(":")) return null;
+
+  // unencrypted tokens have 4x ":" (id:type:epoch:sig1:sig2),
+  const tokparts = tok.split(":");
+  if (tokparts.length < 5) return null;
+  return tok;
 }
 
 /**
@@ -165,36 +188,41 @@ function wsWlHeaders(env) {
  */
 async function adminSession(env, req) {
   const c = cid(req);
+  let sessiontoken = unencryptedSessionToken(req);
+  let cred = null;
 
-  if (bin.emptyString(c)) {
-    return r400err("sess: missing cid");
+  if (sessiontoken == null) {
+    if (bin.emptyString(c)) return r400err("sess: missing cid");
+    cred = await creds(env, c, "adminsess", "any");
+    if (cred == null) return r400err("sess: no ws creds for cid");
+    sessiontoken = cred.sessiontoken;
+    if (bin.emptyString(sessiontoken)) {
+      return r400err("sess: missing sessiontoken for cid");
+    }
+  } else {
+    log.d("sess: using provided bearer token");
   }
 
-  const cred = await creds(env, c, "adminsess", "any");
-  if (cred == null) {
-    return r400err("sess: no ws creds for cid");
-  }
-
-  const sessiontoken = cred.sessiontoken;
-
-  const targetUrl = buildTargetUrl(env, req, wsSessionPath);
+  const wsUrl = buildUrl(env, req, wsSessionPath);
   const headers = buildHeaders(req);
   headers.set("Authorization", `Bearer ${sessiontoken}`);
 
-  log.d("sess: forwarding...", targetUrl.href);
+  log.d("sess: forwarding...", wsUrl.href);
 
   try {
-    const r = await fetch(targetUrl, { method: "GET", headers });
+    const r = await fetch(wsUrl, { method: "GET", headers });
 
-    log.d("sess: response...", targetUrl.href, r.status, contentlen(r));
+    log.d("sess: response...", wsUrl.href, r.status, contentlen(r));
 
     const j = await consumejson(r);
     if (j == null) {
       return r400err(`sess: empty response (${r.status})`);
     }
     j.session_auth_hash = sessiontoken;
-    j.test = cred.test;
-    j.exp = cred.expiry;
+    if (cred != null) {
+      j.test = cred.test;
+      j.exp = cred.expiry;
+    }
     return r200j(j);
   } catch (err) {
     log.e("sess: fetch err", err);
@@ -210,18 +238,18 @@ async function adminSession(env, req) {
  * @returns {Promise<Response>}
  */
 async function adminRawPayments(env, req) {
-  const targetUrl = buildTargetUrl(env, req, wsRawPaymentsPath);
+  const wsUrl = buildUrl(env, req, wsRawPaymentsPath);
   const [wlId, wlToken] = wsWlHeaders(env);
   const headers = buildHeaders(req);
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
-  log.d("pay: forwarding...", targetUrl.href);
+  log.d("pay: forwarding...", wsUrl.href);
 
   try {
-    const r = await fetch(targetUrl, { method: "GET", headers });
+    const r = await fetch(wsUrl, { method: "GET", headers });
 
-    log.d("pay: response...", targetUrl.href, r.status, contentlen(r));
+    log.d("pay: response...", wsUrl.href, r.status, contentlen(r));
 
     const j = await consumejson(r);
     if (j == null) {
@@ -254,18 +282,18 @@ async function adminMonthlyStats(env, req) {
     return r400err("stats: invalid date format; expected yyyy-mm");
   }
 
-  const targetUrl = buildTargetUrl(env, req, wsStatsPath + date, ["date"]);
+  const wsUrl = buildUrl(env, req, wsStatsPath + date, ["date"]);
   const [wlId, wlToken] = wsWlHeaders(env);
   const headers = buildHeaders(req);
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
-  log.d("stats: forwarding...", targetUrl.href);
+  log.d("stats: forwarding...", wsUrl.href);
 
   try {
-    const r = await fetch(targetUrl, { method: "GET", headers });
+    const r = await fetch(wsUrl, { method: "GET", headers });
 
-    log.d("stats: response...", targetUrl.href, contentlen(r));
+    log.d("stats: response...", wsUrl.href, contentlen(r));
 
     const j = await consumejson(r);
     if (j == null) {
@@ -292,39 +320,37 @@ async function adminUpdateUser(env, req) {
   }
 
   const c = cid(req);
+  let sessiontoken = unencryptedSessionToken(req);
 
-  if (bin.emptyString(c)) {
-    return r400err("update: missing cid");
+  if (sessiontoken == null) {
+    if (bin.emptyString(c)) return r400err("update: missing cid");
+    const cred = await creds(env, c, "adminupdate", "any");
+    if (cred == null) return r400err("update: no ws creds for cid");
+    sessiontoken = cred.sessiontoken;
+    if (bin.emptyString(sessiontoken)) {
+      return r400err("update: missing sessiontoken for cid");
+    }
+  } else {
+    log.d("update: using provided bearer token");
   }
 
-  const cred = await creds(env, c, "adminupdate", "any");
-  if (cred == null) {
-    return r400err("update: no ws creds for cid");
-  }
-
-  if (bin.emptyString(cred.sessiontoken)) {
-    return r400err("update: missing sessiontoken for cid");
-  }
-
-  const sessiontoken = cred.sessiontoken;
-
-  const targetUrl = buildTargetUrl(env, req, wsUsersPath);
+  const wsUrl = buildUrl(env, req, wsUsersPath);
   const [wlId, wlToken] = wsWlHeaders(env);
   const headers = buildHeaders(req);
   headers.set("Authorization", `Bearer ${sessiontoken}`);
   headers.set("X-WS-WL-ID", wlId);
   headers.set("X-WS-WL-Token", wlToken);
 
-  log.d("update: forwarding...", targetUrl.href);
+  log.d("update: forwarding...", wsUrl.href);
 
   try {
-    const r = await fetch(targetUrl, {
+    const r = await fetch(wsUrl, {
       method: req.method,
       headers: headers,
       body: req.body,
     });
 
-    log.d("update: response...", targetUrl.href, r.status, contentlen(r));
+    log.d("update: response...", wsUrl.href, r.status, contentlen(r));
 
     return new Response(r.body, r);
   } catch (err) {
