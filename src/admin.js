@@ -22,10 +22,10 @@ const adminTokenHeader = "x-rethink-app-admin-token";
 const adminTsHeader = "x-rethink-app-admin-ts";
 const adminTokenWindowMs = 100 * 1000; // +/- 100 seconds
 
-const wsSessionPath = "/" + resourcesession;
-const wsRawPaymentsPath = "/WhitelabelPayments/rawpayments";
-const wsStatsPath = "/WhitelabelPayments/stats/";
-const wsUsersPath = "/" + resourceuser;
+const wsSessionPath = resourcesession;
+const wsRawPaymentsPath = "WhitelabelPayments/rawpayments";
+const wsStatsPath = "WhitelabelPayments/stats/";
+const wsUsersPath = resourceuser;
 
 const wsresource = "ws";
 const wsuser = "u";
