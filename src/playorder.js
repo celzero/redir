@@ -2472,18 +2472,6 @@ export async function cancelSubscription(env, req) {
       });
     }
 
-    const dbmeta = productPurchaseOf(entry.meta);
-    if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
-      loge(`cancel: tok ${obstoken} for ${cid} is consumed onetime (db)`);
-      return r412j({
-        error: "cannot cancel, purchase consumed",
-        purchaseId: obstoken,
-        sku: sku,
-        test: test,
-        cid: cid,
-      });
-    }
-
     const obsoleted = await isLinkedPurchaseToken(env, purchaseToken);
     if (obsoleted) {
       loge(`cancel: tok ${obstoken} for ${cid} is obsoleted`);
@@ -2501,6 +2489,17 @@ export async function cancelSubscription(env, req) {
       logi(
         `cancel: refund onetime ${cid} / tok: ${obstoken} / sku: ${sku}; test? ${test}`,
       );
+      const dbmeta = productPurchaseOf(entry.meta);
+      if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
+        loge(`cancel: tok ${obstoken} for ${cid} is consumed onetime (db)`);
+        return r412j({
+          error: "cannot cancel, purchase consumed",
+          purchaseId: obstoken,
+          sku: sku,
+          test: test,
+          cid: cid,
+        });
+      }
       return await refundOnetimePurchase(env, cid, purchaseToken, test);
     }
 
@@ -2666,18 +2665,6 @@ export async function revokeSubscription(env, req) {
       });
     }
 
-    const dbmeta = productPurchaseOf(entry.meta);
-    if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
-      loge(`revoke: tok ${obstoken} for ${cid} is consumed onetime (db)`);
-      return r412j({
-        error: "cannot revoke, purchase consumed",
-        purchaseId: obstoken,
-        sku: sku,
-        test: test,
-        cid: cid,
-      });
-    }
-
     // reject revoke on an obsoleted purchase token (it is a linkedtoken for a
     // newer purchase that supersedes it). Ack and consume are still allowed.
     const obsolete = await isLinkedPurchaseToken(env, purchaseToken);
@@ -2693,6 +2680,21 @@ export async function revokeSubscription(env, req) {
     }
 
     if (knownOnetimeProductsAndPlans.has(sku)) {
+      logi(
+        `revoke: refund onetime ${cid} / tok: ${obstoken} / sku: ${sku}; test? ${test}`,
+      );
+      const dbmeta = productPurchaseOf(entry.meta);
+      if (dbmeta != null && isOnetimeAllConsumed2(dbmeta)) {
+        loge(`revoke: tok ${obstoken} for ${cid} is consumed onetime (db)`);
+        return r412j({
+          error: "cannot revoke, purchase consumed",
+          purchaseId: obstoken,
+          sku: sku,
+          test: test,
+          cid: cid,
+        });
+      }
+
       return await refundOnetimePurchase(env, cid, purchaseToken, test);
     }
 
@@ -3564,7 +3566,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
 
         try {
           // TODO: validate cid only for credential-less accounts
-          // credentialed accounts can have different cids
+          // credentialed accounts can have different cids.
           const existingCid = await getCidThenPersist(env, sub);
           if (accountIdentifiersImmutable() && existingCid !== cid) {
             loge(
@@ -4680,6 +4682,7 @@ async function gtoken(creds) {
  */
 function productPurchaseOf(dbmeta) {
   const dbmetajson = dbmeta != null ? JSON.parse(dbmeta) : null;
+  // TODO: static ProductPurchaseV2.ok(dbmetajson) which returns false if json is invalid
   return dbmetajson ? new ProductPurchaseV2(dbmetajson) : null;
 }
 
