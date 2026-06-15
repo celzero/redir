@@ -196,6 +196,9 @@ function wsWlHeaders(env) {
  * @returns {Promise<Response>}
  */
 async function adminSession(env, req) {
+  if (req.method !== "GET") {
+    return r400err("only GET allowed");
+  }
   const c = cid(req);
   let sessiontoken = unencryptedSessionToken(req);
   let cred = null;

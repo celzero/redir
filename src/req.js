@@ -179,7 +179,7 @@ export function cid(req) {
   }
   const u = geturl(req);
   if (u == null) return null;
-  return u.searchParams.get("cid");
+  return u.searchParams.get("cid") || u.searchParams.get("client") || null;
 }
 
 /**
@@ -196,7 +196,7 @@ export function did(req) {
   }
   const u = geturl(req);
   if (u == null) return null;
-  return u.searchParams.get("did");
+  return u.searchParams.get("did") || u.searchParams.get("device") || null;
 }
 
 /**
@@ -225,7 +225,9 @@ export function purchaseToken(req) {
   const u = geturl(req);
   if (u == null) return null;
   const p = u.searchParams;
-  return p.get("purchaseToken") || p.get("purchasetoken") || null;
+  return (
+    p.get("purchaseToken") || p.get("purchasetoken") || p.get("pt") || null
+  );
 }
 
 /**
