@@ -257,6 +257,13 @@ class GEntitlement {
     return diffDays <= limitDays;
   }
 
+  get withinMaxInternalRefundWindow() {
+    const maxInternalRefundWindowDays = 40;
+    const diffMs = Date.now() - this.start.getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    return diffDays <= maxInternalRefundWindowDays;
+  }
+
   get startDate() {
     return this.start.toISOString();
   }
@@ -272,6 +279,7 @@ class GEntitlement {
       start: this.start,
       expiry: this.expiry,
       withinRefundWindow: this.withinRefundWindow,
+      withinMaxInternalRefundWindow: this.withinMaxInternalRefundWindow,
     };
   }
 
