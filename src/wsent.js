@@ -20,6 +20,14 @@ const updateuser = resourceuser + "?plan=";
 export const resourcesession = "Session";
 export const wstokaad = "2:ws.12:sessiontoken"; // len:tablename.len:columnname
 
+// Windscribe API allows refunds only on most recent purchase of a plan per PUT /Users, and the
+// granuality of the plan is either "month" or "year". While we can execute multiple
+// purchases in one go, a DELETE /Users on it would only refund the last executed plan purchase.
+// In light of that, restrict execution to one "month" or "year" plan on the very first
+// fullfillment and later, once the refund window (40 days) expires, and the user hasn't
+// claimed a refund, extend the current plan with all the remaining "month" or "year" purhcases.
+const alwaysExecOnePlan = true;
+
 const log = new glog.Log("wse");
 
 /*
