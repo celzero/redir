@@ -111,10 +111,10 @@ routes = [
 REDIR_CATCHALL = "https://rethinkdns.com/404#r"
 WENV = "prod"
 MIN_VCODE = "30"
-MIN_VCODE_PAID_FEATURES = "59"
+MIN_VCODE_PAID_FEATURES = "61"
 WS_URL_TEST = "https://api-staging.windscribe.com/"
 WS_URL = "https://api.windscribe.com/"
-STATUS = "ok"
+STATUS = "resolving issues"
 
 [[env.prod.d1_databases]]
 binding = "REDIRDBTEST"
