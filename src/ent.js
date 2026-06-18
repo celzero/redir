@@ -211,7 +211,7 @@ export class GEntitlement {
 }
 
 /**
- * Whether the subscription start/renewal date falls within the 40-day
+ * Whether the subscription start/renewal date falls within the 30-day
  * internal refund window.
  * @param {Date} start - subscription start or renewal date
  * @returns {boolean}

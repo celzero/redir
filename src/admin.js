@@ -6,6 +6,7 @@ import { testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
+import { getOnetimeProductV2, getSubscription } from "./playorder.js";
 import {
   authorization,
   cid,
@@ -39,6 +40,7 @@ const wsUsersPath = resourceuser;
 const wsresource = "ws";
 const wsuser = "u";
 const wsentitlement = "e";
+const wsplaytoken = "pt";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
 
@@ -470,6 +472,86 @@ async function adminUpdateWsEntitlement(env, req) {
 }
 
 /**
+ * GET /a/ws/pt?cid=<hex>
+ * Fetches active play purchase tokens and their current state from Google.
+ * For each active purchase in the playorders table, parses the meta column
+ * to determine whether it is a subscription or onetime purchase, then
+ * calls the corresponding Google API to get the latest purchase state.
+ * Returns both the stored DB rows and the Google-fetched state.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function adminPlayPurchaseState(env, req) {
+  if (req.method !== "GET") {
+    return r400err("only GET allowed");
+  }
+  const c = cid(req);
+  if (bin.emptyString(c)) return r400err("pt: missing cid");
+
+  const db = dbx.db(env);
+  const out = await dbx.playActiveByCid(db, c);
+  if (out == null || !out.success) {
+    return r400err("pt: db error");
+  }
+  if (out.results == null || out.results.length <= 0) {
+    return r200j({ cid: c, purchases: [] });
+  }
+
+  const purchases = [];
+  for (const row of out.results) {
+    const entry = {
+      purchasetoken: row.purchasetoken || null,
+      linkedtoken: row.linkedtoken || null,
+      ctime: row.ctime || null,
+      mtime: row.mtime || null,
+      metadb: null,
+      metanew: null,
+      err: null,
+    };
+
+    // parse stored meta
+    try {
+      entry.metadb = row.meta != null ? JSON.parse(row.meta) : null;
+    } catch (_) {
+      entry.metadb = row.meta;
+    }
+
+    // fetch latest state from Google if meta is available
+    const purchaseToken = row.purchasetoken;
+    if (bin.emptyString(purchaseToken)) {
+      entry.err = "missing purchase token";
+      purchases.push(entry);
+      continue;
+    }
+
+    try {
+      const kind =
+        entry.metadb && typeof entry.metadb === "object"
+          ? entry.metadb.kind || "<empty kind>"
+          : "<missing kind>";
+
+      if (kind === "androidpublisher#subscriptionPurchaseV2") {
+        const sub = await getSubscription(env, purchaseToken);
+        entry.metanew = sub;
+      } else if (kind === "androidpublisher#productPurchaseV2") {
+        const prod = await getOnetimeProductV2(env, purchaseToken, null);
+        entry.metanew = prod;
+      } else {
+        entry.err = `unknown kind: ${kind}`;
+      }
+    } catch (err) {
+      log.e(`pt: err fetching google state for ${c}: ${err.message}`);
+      entry.err = err.message;
+    }
+
+    purchases.push(entry);
+  }
+
+  return r200j({ cid: c, purchases });
+}
+
+/**
  * Main admin handler. Authenticates the request and dispatches to the
  * appropriate sub-handler.
  * @param {any} env - Worker environment
@@ -506,6 +588,9 @@ export async function handleAdmin(env, req) {
     }
     if (x2 === wsentitlement) {
       return await adminUpdateWsEntitlement(env, req);
+    }
+    if (x2 === wsplaytoken) {
+      return await adminPlayPurchaseState(env, req);
     }
 
     const q = u.searchParams;

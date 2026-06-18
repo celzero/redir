@@ -1941,7 +1941,7 @@ async function handleTestNotification(notif) {
  * @returns {Promise<SubscriptionPurchaseV2>}
  * @throws {Error} - If the response is not as expected (ex: purchase token is invalid)
  */
-async function getSubscription(env, purchaseToken) {
+export async function getSubscription(env, purchaseToken) {
   // GET
   // 'https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package}/purchases/subscriptionsv2/tokens/{purchaseToken}'
   // -H 'Accept: application/json' \
@@ -2010,7 +2010,7 @@ async function getOnetimeProduct(env, productId, purchaseToken) {
  * @returns {Promise<ProductPurchaseV2>} - may be def
  * @throws {Error} - If the response is not as expected.
  */
-async function getOnetimeProductV2(env, purchaseToken, def = null) {
+export async function getOnetimeProductV2(env, purchaseToken, def = null) {
   try {
     return await getOnetimeProductV2Api(env, purchaseToken);
   } catch (err) {

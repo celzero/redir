@@ -10,7 +10,7 @@ import * as bin from "./buf.js";
 import { hasctx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
-import { GEntitlement } from "./ent.js";
+import { GEntitlement, withinMaxInternalRefundWindow } from "./ent.js";
 import * as glog from "./log.js";
 import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
@@ -690,7 +690,7 @@ async function maybeUpdateCreds(env, c, gent) {
  * @param {any} env - Worker environment
  * @param {Date} expiry - Expiry date of the entitlement
  * @param {"month"|"year"} requestedPlan
- * @param {Date} [since=new Date()] - Optional start date for the entitlement
+ * @param {Date} [since=new Date()] - Start date for the entitlement
  * @returns {Promise<WSUser>} - Returns a WSUser object with new credentials
  * @throws {Error} - If there is an error creating new credentials
  */
@@ -1142,20 +1142,6 @@ function monthsUntil(t, base = new Date()) {
     (t.getUTCFullYear() - base.getUTCFullYear()) * 12 +
     (t.getUTCMonth() - base.getUTCMonth());
   return months;
-}
-
-/**
- * Whether the subscription start/renewal date falls within the 40-day
- * internal refund window. When true, execCount should be capped at 1
- * to limit refund liability until the window closes.
- * @param {Date} start - subscription start or renewal date
- * @returns {boolean}
- */
-function withinMaxInternalRefundWindow(start) {
-  const maxInternalRefundWindowDays = 40;
-  const diffMs = Date.now() - start.getTime();
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-  return diffDays <= maxInternalRefundWindowDays;
 }
 
 /**
