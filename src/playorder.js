@@ -2846,7 +2846,7 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  if (ent != null) {
+  if (ent != null && attachEntitlementToAck) {
     const body = JSON.stringify({
       developerPayload: JSON.stringify({
         ws: await ent.toClientEntitlement(env),
