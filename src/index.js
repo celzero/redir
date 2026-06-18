@@ -343,8 +343,8 @@ function svcstatus(env) {
 
 function minvcode(env, why = "unknown") {
   if (why === "paid-features") {
-    // paid features have a minimum vcode of 52
-    return env.MIN_VCODE_PAID_FEATURES || "52";
+    // paid features have a minimum vcode of 59
+    return env.MIN_VCODE_PAID_FEATURES || "59";
   }
   return env.MIN_VCODE || "30";
 }
