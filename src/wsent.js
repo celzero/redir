@@ -10,6 +10,7 @@ import * as bin from "./buf.js";
 import { hasctx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
+import { GEntitlement } from "./ent.js";
 import * as glog from "./log.js";
 import { consumejson } from "./req.js";
 import * as dbx from "./sql/dbx.js";
@@ -247,13 +248,21 @@ export class WSEntitlement {
 /**
  * @param {any} env - Worker environment
  * @param {string} cid - Client ID
- * @param {Date} exp - Expiry date of the subscription
- * @param {string} plan - "yearly" | "monthly" | "unknown"
+ * @param {GEntitlement} gent - Entitlement plan
+ * `expiry` is the target expiry date,
+ * `plan` is "month"|"year"|"deferred"|"unknown", and `start` is the subscription
+ * start/renewal date (for subscriptions) or purchase completion date (for onetimes),
+ * used to determine the refund window.
  * @param {boolean} [renew=true] - Whether to renew the entitlement if it is expired
  * @return {Promise<WSEntitlement|null>} - returns the entitlement
  * @throws {Error} - If there is an error generating or retrieving credentials
  */
-export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
+export async function getOrGenWsEntitlement(env, cid, gent, renew = true) {
+  const exp = gent.expiry;
+  const plan = gent.plan;
+  // TODO: gent.start couldn't be null?
+  const subStart = gent.start;
+
   let c = await creds(env, cid);
   // Track whether the remote WS account was just provisioned in this call.
   // newCreds already applies the full plan (POST + upgrade PUTs), so renewal
@@ -261,7 +270,12 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
   let wasCreated = false;
   if (c == null) {
     wasCreated = true; // newCreds sets up the full plan; do not re-renew below
-    const wsuser = await newCreds(env, exp, plan);
+    if (subStart == null || !gent.ok) {
+      throw new Error(
+        `ws: gent not ok for ${cid} from: ${subStart}/${exp} (d? ${gent.deferred}, unset? ${gent.unset})`,
+      );
+    }
+    const wsuser = await newCreds(env, exp, plan, subStart);
     let aad = null;
     if (wsuser.regDate.getTime() > dbenc.aadRequirementStartTime) {
       // always true for new creds
@@ -338,7 +352,7 @@ export async function getOrGenWsEntitlement(env, cid, exp, plan, renew = true) {
       // for that account for the new month/year. If users renew at
       // some point later, running a PUT /Users to re-activate the
       // existing account is enough to re-activate their entitlement.
-      c = await maybeUpdateCreds(env, c, exp, plan);
+      c = await maybeUpdateCreds(env, c, gent);
     } catch (err) {
       if (c.status === "expired") {
         // existing "c" has expired ... do not ignore refresh/renew error
@@ -482,17 +496,26 @@ export async function creds(env, cid, op = "get", execctx = "exec") {
 /**
  * @param {any} env - Worker environment
  * @param {WSEntitlement} c - Existing (unencrypted) entitlement
- * @param {Date} subExpiry - Expiry date of the subscription
- * @param {"month"|"year"} requestedPlan - Requested plan
+ * @param {GEntitlement} gent - Entitlement plan.
  * @returns {Promise<WSEntitlement>} - Returns updated WSEntitlement object
  * @throws {Error} - If there is an error updating the entitlement
  */
-async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
+async function maybeUpdateCreds(env, c, gent) {
   const testing = testmode("exec");
+  const subExpiry = gent.expiry;
+  const requestedPlan = gent.plan;
+  // subStart should never be null
+  const subStart = gent.start;
   // google play enforces a 1-day grace period after expiry
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
 
+  if (subStart == null || !gent.ok) {
+    log.w(
+      `update creds: no-op; gent (from: ${subStart}/${subExpiry}) not ok (d? ${gent.deferred}, unset? ${gent.unset})`,
+    );
+    return c;
+  }
   if (c.expiry == null || c.expiry.getTime() <= 0) {
     throw new Error(
       `invalid entitlement for ${c?.cid} expiring on ${c?.expiry}`,
@@ -512,10 +535,31 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
 
-  const [plan, execCount] = expiry2plan(subExpiry, testing, c.expiry);
+  const [plan, ogExecCount] = expiry2plan(subExpiry, testing, c.expiry);
+
+  let execCount = ogExecCount;
+  // If the subscription started/renewed within the 40-day internal refund
+  // window, cap execCount at 1 to limit refund liability. The remaining
+  // plan units will be applied on the next renewal cycle after the window.
+  if (withinMaxInternalRefundWindow(subStart)) {
+    // Check whether at least 1 plan unit has already been applied to
+    // the Windscribe account since subStart. If so, skip the update —
+    // we've already fulfilled the minimum 1-unit requirement within the
+    // refund window. The remaining units will be applied after the
+    // window expires on the next renewal cycle.
+    const minAppliedMonths = plan === "year" ? 12 : 1;
+    const appliedMonths = monthsUntil(c.expiry, subStart);
+    if (appliedMonths >= minAppliedMonths) {
+      log.d(
+        `update creds: no-op (test? ${testing}); ${appliedMonths}mo applied >= ${minAppliedMonths}mo within refund window; ent: ${c.expiry}, sub: ${subExpiry}`,
+      );
+      return c;
+    }
+    execCount = Math.min(execCount, 1);
+  }
 
   log.i(
-    `update creds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}`,
+    `update creds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}/${ogExecCount} (subStart: ${subStart})`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
@@ -646,10 +690,11 @@ async function maybeUpdateCreds(env, c, subExpiry, requestedPlan) {
  * @param {any} env - Worker environment
  * @param {Date} expiry - Expiry date of the entitlement
  * @param {"month"|"year"} requestedPlan
+ * @param {Date} [since=new Date()] - Optional start date for the entitlement
  * @returns {Promise<WSUser>} - Returns a WSUser object with new credentials
  * @throws {Error} - If there is an error creating new credentials
  */
-async function newCreds(env, expiry, requestedPlan) {
+async function newCreds(env, expiry, requestedPlan, since = new Date()) {
   /*
     curl --request POST '.../Users?session_type_id=4&plan=year' \
     --header 'X-WS-WL-ID: ' \
@@ -657,10 +702,18 @@ async function newCreds(env, expiry, requestedPlan) {
   */
   const testing = testmode("exec");
 
-  const [plan, execCount] = expiry2plan(expiry, testing);
+  const [plan, ogExecCount] = expiry2plan(expiry, testing);
+
+  let execCount = ogExecCount;
+  // If the subscription started/renewed within the 40-day internal refund
+  // window, cap execCount at 1 to limit refund liability. The remaining
+  // plan units will be applied on the next renewal cycle after the window.
+  if (withinMaxInternalRefundWindow(since)) {
+    execCount = Math.min(execCount, 1);
+  }
 
   log.i(
-    `new creds (test? ${testing}) until ${expiry}; asked: ${requestedPlan}, got: ${plan}; c: ${execCount}`,
+    `new creds (test? ${testing}) until ${expiry}; asked: ${requestedPlan}, got: ${plan}; c: ${execCount}/${ogExecCount} (subStart: ${since})`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
@@ -1089,6 +1142,20 @@ function monthsUntil(t, base = new Date()) {
     (t.getUTCFullYear() - base.getUTCFullYear()) * 12 +
     (t.getUTCMonth() - base.getUTCMonth());
   return months;
+}
+
+/**
+ * Whether the subscription start/renewal date falls within the 40-day
+ * internal refund window. When true, execCount should be capped at 1
+ * to limit refund liability until the window closes.
+ * @param {Date} start - subscription start or renewal date
+ * @returns {boolean}
+ */
+function withinMaxInternalRefundWindow(start) {
+  const maxInternalRefundWindowDays = 40;
+  const diffMs = Date.now() - start.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+  return diffDays <= maxInternalRefundWindowDays;
 }
 
 /**

@@ -15,6 +15,15 @@ import {
   obsToken,
   testmode,
 } from "./d.js";
+import {
+  annualProxyProductId,
+  GEntitlement,
+  knownBasePlans,
+  knownOnetimeProductsAndPlans,
+  knownProducts,
+  monthlyProxyProductId,
+  stdProductId,
+} from "./ent.js";
 import { GCreds, getGoogleAuthToken } from "./gauth.js";
 import * as glog from "./log.js";
 import { isCidValid, mincidlength } from "./reg.js";
@@ -88,222 +97,13 @@ const consumesuffix = ":consume";
 const revokeparam = "revoke=true";
 const cancelparam = "revoke=false";
 
-const monthlyProxyProductId = "proxy_monthly_subscription_test";
-const annualProxyProductId = "proxy_annual_subscription_test";
-const stdProductId = "standard.tier";
-const proProductId = "pro.tier";
-const onetimeProductId = "onetime.tier";
-const sponsorProductId = "sponsor.tier";
-const monthlyBasePlanId = "proxy-monthly";
-const yearlyBasePlanId = "proxy-yearly";
-const twoYearlyBasePlanId = "proxy-yearly-2";
-const fiveYearlyBasePlanId = "proxy-yearly-5";
-const sponsorBasePlanId = "sponsor-app";
-
 const log = new glog.Log("playorder");
-
-/** @type {Set<string>} - set of known productIds */
-const knownProducts = new Set([
-  monthlyProxyProductId,
-  annualProxyProductId,
-  stdProductId,
-  proProductId,
-  onetimeProductId,
-]);
-
-/** @type {Set<string>} - set of onetime productIds and planIds */
-const knownOnetimeProductsAndPlans = new Set([
-  onetimeProductId,
-  twoYearlyBasePlanId,
-  fiveYearlyBasePlanId,
-]);
-
-/** @type {Map<string, GEntitlement>} - basePlanId => Entitlement */
-const knownBasePlans = new Map();
 
 /**
  * Memoization cache for Google tokens.
  * @type {Map<string, GCreds>}
  */
 const gtokenCache = new Map();
-
-class GEntitlement {
-  /**
-   * @param {string} prod
-   * @param {string} base
-   * @param {Date} start
-   * @param {Date|null} expiry
-   */
-  constructor(prod, base, start, expiry = null) {
-    /** @type {string} */
-    this.basePlanId = base || "";
-    /** @type {string} */
-    this.productId = prod || "";
-    /** @type {Date} */
-    this.expiry = expiry || new Date(0); // default to epoch
-    /** @type {Date} */
-    this.start = start || new Date(0);
-    /** @type {boolean} */
-    this.deferred = expiry == null;
-    /** @type {boolean} */
-    this.unset = start == null;
-  }
-
-  static monthly(prod, start, expiry) {
-    if (emptyString(prod)) {
-      throw new Error("GEntitlement: productId is required for monthly plan");
-    }
-    return new GEntitlement(prod, monthlyBasePlanId, start, expiry);
-  }
-
-  static yearly(prod, start, expiry) {
-    if (emptyString(prod)) {
-      throw new Error("GEntitlement: productId is required for yearly plan");
-    }
-    return new GEntitlement(prod, yearlyBasePlanId, start, expiry);
-  }
-
-  static twoYearly(prod, start, expiry) {
-    if (emptyString(prod)) {
-      throw new Error(
-        "GEntitlement: productId is required for two-yearly plan",
-      );
-    }
-    return new GEntitlement(prod, twoYearlyBasePlanId, start, expiry);
-  }
-
-  static fiveYearly(prod, start, expiry) {
-    if (emptyString(prod)) {
-      throw new Error(
-        "GEntitlement: productId is required for five-yearly plan",
-      );
-    }
-    return new GEntitlement(prod, fiveYearlyBasePlanId, start, expiry);
-  }
-
-  /**
-   * "Until" is appropriate for use with subscription plans or onetime deferred plans.
-   * @param {GEntitlement} o - base product and plan
-   * @param {Date|null} s - start date
-   * @param {Date|null} t - end date
-   * @returns {GEntitlement}
-   */
-  static until(o, s, t) {
-    if (!(o instanceof GEntitlement)) {
-      throw new TypeError("GEntitlement.until: o must be a GEntitlement");
-    }
-    if (!(t instanceof Date)) {
-      throw new TypeError("GEntitlement.until: t must be a Date");
-    }
-    return new GEntitlement(o.productId, o.basePlanId, s, t);
-  }
-
-  /**
-   * "Since" is appropriate for use with onetime plans, as the "expiry"
-   * exclusively depends on the "start" date and the plan duration.
-   * For subscriptions, the "expiry" date can be extended or reduced based
-   * on user actions, and thus "Until" is more appropriate.
-   * @param {GEntitlement} o
-   * @param {Date|null} s
-   * @returns {GEntitlement}
-   */
-  static since(o, s) {
-    if (!(o instanceof GEntitlement)) {
-      throw new TypeError("GEntitlement.since: o must be a GEntitlement");
-    }
-    if (!(s instanceof Date)) {
-      throw new TypeError("GEntitlement.since: s must be a Date");
-    }
-    const exp = new Date(s);
-    if (o.basePlanId === fiveYearlyBasePlanId) {
-      exp.setUTCFullYear(exp.getUTCFullYear() + 5);
-    } else if (o.basePlanId === twoYearlyBasePlanId) {
-      exp.setUTCFullYear(exp.getUTCFullYear() + 2);
-    } else if (o.basePlanId === yearlyBasePlanId) {
-      exp.setUTCFullYear(exp.getUTCFullYear() + 1);
-    } else if (o.basePlanId === monthlyBasePlanId) {
-      exp.setUTCMonth(exp.getUTCMonth() + 1);
-    } else {
-      throw new Error(`GEntitlement.since: unknown basePlanId ${o.basePlanId}`);
-    }
-    return new GEntitlement(o.productId, o.basePlanId, s, exp);
-  }
-
-  /**
-   * @returns {"month"|"year"|"deferred"|"unknown"} - The subscription period for this entitlement.
-   */
-  get plan() {
-    if (this.deferred) return "deferred";
-    if (this.basePlanId.indexOf("monthly") >= 0) return "month";
-    if (this.basePlanId.indexOf("yearly") >= 0) return "year";
-    if (this.productId.indexOf("month") >= 0) return "month";
-    if (this.productId.indexOf("year") >= 0) return "year";
-    return "unknown";
-    // TODO? throw new Error(`unknown plan ${this.basePlanId} for ${this.productId}`);
-  }
-
-  get refundWindowDays() {
-    if (this.basePlanId === monthlyBasePlanId) return 3;
-    if (this.basePlanId === yearlyBasePlanId) return 7;
-    if (this.basePlanId === twoYearlyBasePlanId) return 14;
-    if (this.basePlanId === fiveYearlyBasePlanId) return 28;
-    return 3;
-  }
-
-  get withinRefundWindow() {
-    const limitDays = this.refundWindowDays;
-    const diffMs = Date.now() - this.start.getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    return diffDays <= limitDays;
-  }
-
-  get withinMaxInternalRefundWindow() {
-    const maxInternalRefundWindowDays = 40;
-    const diffMs = Date.now() - this.start.getTime();
-    const diffDays = diffMs / (1000 * 60 * 60 * 24);
-    return diffDays <= maxInternalRefundWindowDays;
-  }
-
-  get startDate() {
-    return this.start.toISOString();
-  }
-
-  get expiryDate() {
-    return this.expiry.toISOString();
-  }
-
-  get json() {
-    return {
-      productId: this.productId,
-      basePlanId: this.basePlanId,
-      start: this.start,
-      expiry: this.expiry,
-      withinRefundWindow: this.withinRefundWindow,
-      withinMaxInternalRefundWindow: this.withinMaxInternalRefundWindow,
-    };
-  }
-
-  get str() {
-    return `ent(id: ${this.productId}, base: ${this.basePlanId}, start: ${this.start.toISOString()}, expiry: ${this.expiry.toISOString()}, deferred: ${this.deferred}), withinRefundWindow: ${this.withinRefundWindow}`;
-  }
-}
-
-knownBasePlans.set(
-  monthlyBasePlanId,
-  new GEntitlement(stdProductId, monthlyBasePlanId),
-);
-knownBasePlans.set(
-  yearlyBasePlanId,
-  new GEntitlement(stdProductId, yearlyBasePlanId),
-);
-knownBasePlans.set(
-  twoYearlyBasePlanId,
-  new GEntitlement(onetimeProductId, twoYearlyBasePlanId),
-);
-knownBasePlans.set(
-  fiveYearlyBasePlanId,
-  new GEntitlement(onetimeProductId, fiveYearlyBasePlanId),
-);
 
 /*
 {
@@ -1728,8 +1528,7 @@ async function handleOneTimeProductNotification(env, notif) {
           const wsuser = await getOrGenWsEntitlement(
             env,
             cid,
-            linkedPlan.expiry,
-            linkedPlan.plan,
+            linkedPlan,
             /*renew*/ true,
           );
           logi(
@@ -1758,8 +1557,7 @@ async function handleOneTimeProductNotification(env, notif) {
       );
     }
 
-    const expiry = plan.expiry;
-    const ent = await getOrGenWsEntitlement(env, cid, expiry, plan.plan);
+    const ent = await getOrGenWsEntitlement(env, cid, plan, /*renew*/ true);
     if (ackd && consumed) {
       logi(
         `onetime: already ack/con: ${cid} / tok: ${obstoken} sku=${sku} ${productIds}; test? ${test}`,
@@ -1894,15 +1692,12 @@ async function processSubscription(env, cid, sub, purchasetoken, revoked) {
       loge(`sub: skip ack sub ${cid} test? ${test}; no product info`);
       return;
     }
-    const expiry = gprod.expiry;
-    // const productId = gprod.productId;
-    const plan = gprod.plan;
 
     // TODO: check if this purchase token is not obsoleted by any other linked tokens
     // archive.vn/JASLQ / medium.com/androiddevelopers/implementing-linkedpurchasetoken-correctly-to-prevent-duplicate-subscriptions-82dfbf7167da
     // TODO: check if expiry/productId/plan are valid
     // TODO: handle entitlement for multiple product ids
-    const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
+    const ent = await getOrGenWsEntitlement(env, cid, gprod, /*renew*/ true);
     if (ackd) {
       logi(`sub: already acknowledged: ${cid} test? ${test}`);
       return true;
@@ -2115,8 +1910,7 @@ async function handleVoidedPurchaseNotification(env, notif) {
           const wsuser = await getOrGenWsEntitlement(
             env,
             cid,
-            linkedPlan.expiry,
-            linkedPlan.plan,
+            linkedPlan,
             /*renew*/ true,
           );
           logi(
@@ -3289,8 +3083,8 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             const orphanEnt = await getOrGenWsEntitlement(
               env,
               cid,
-              orphanGent.expiry,
-              orphanGent.plan,
+              orphanGent,
+              /*renew*/ true,
             );
             const sendPayload =
               orphanEnt != null && orphanEnt.status === "valid";
@@ -3354,8 +3148,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             test: test,
           });
         }
-        const expiry = gent.expiry;
-        const ent = await getOrGenWsEntitlement(env, cid, expiry, gent.plan);
+        const ent = await getOrGenWsEntitlement(env, cid, gent, /*renew*/ true);
         if (!force && ent == null) {
           loge(`ack: onetime failed to get entitlement for ${cid}`);
           return r500j({ error: "failed to get entitlement", cid: cid });
@@ -3550,8 +3343,6 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         }
 
         const expiry = gprod.expiry;
-        const productId = gprod.productId;
-        const plan = gprod.plan;
 
         // TODO: check if expiry/productId/plan are valid
         // Play Billing deletes a purchaseToken after 60d from expiry
@@ -3628,7 +3419,12 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         logi(`ack: sub ${cid} test? ${test} for ${obstoken} at ${expiry}`);
 
         // TODO: check if productId grants a WSEntitlement
-        const ent = await getOrGenWsEntitlement(env, cid, expiry, plan);
+        const ent = await getOrGenWsEntitlement(
+          env,
+          cid,
+          gprod,
+          /*renew*/ true,
+        );
         if (!force && !ent) {
           loge(`ack: sub failed to get entitlement for ${cid}`);
           return r500j({ error: "failed to get entitlement", cid: cid });
