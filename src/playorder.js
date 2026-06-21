@@ -2324,6 +2324,27 @@ export async function cancelSubscription(env, req) {
       });
     } // else: testPurchase === test
 
+    // Always gate cancel/revoke decisions on current Google state.
+    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
+    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+
+    if (cancelled || expired) {
+      loge(
+        `cancel: sub ${cid} / tok: ${obstoken} already cancelled or expired: ${sub.subscriptionState}`,
+      );
+      return r403j({
+        error:
+          "cannot cancel/revoke, subscription already cancelled or expired",
+        expired: expired,
+        cancelled: cancelled,
+        cancelCtx: sub.canceledStateContext,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
+        test: test,
+        cid: cid,
+        sku: sku,
+      });
+    }
+
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`cancel: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
@@ -2336,24 +2357,6 @@ export async function cancelSubscription(env, req) {
     }
 
     // TODO: compare sub with sub got from db if "plan" (gent) is valid
-    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
-    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
-
-    if (cancelled || expired) {
-      // If the subscription has expired, we cannot cancel it.
-      loge(`cancel: sub ${cid} / tok: ${obstoken} sub cancelled or expired`);
-      return r200j({
-        success: false,
-        message: "cannot revoke, subscription cancelled or expired",
-        expired: expired,
-        cancelled: cancelled,
-        cancelCtx: sub.canceledStateContext,
-        purchaseId: sendobs(purchaseToken, obstoken, test),
-        test: test,
-        cid: cid,
-        sku: sku,
-      });
-    }
     // curl -X POST \
     //   -H "Accept: application/json" \
     //   -d '{"cancellationType": "USER_REQUESTED_STOP_RENEWALS"}' \
@@ -2518,6 +2521,27 @@ export async function revokeSubscription(env, req) {
       });
     } // else: testPurchase === test
 
+    // Always gate cancel/revoke decisions on current Google state.
+    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
+    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
+
+    if (cancelled || expired) {
+      loge(
+        `revoke: ${cid} / tok: ${obstoken} already cancelled or expired: ${sub.subscriptionState}`,
+      );
+      return r403j({
+        error:
+          "cannot revoke/cancel, subscription already cancelled or expired",
+        expired: expired,
+        cancelled: cancelled,
+        cancelCtx: sub.canceledStateContext,
+        purchaseId: sendobs(purchaseToken, obstoken, test),
+        test: test,
+        cid: cid,
+        sku: sku,
+      });
+    }
+
     if (!subscriptionsMoreOrLessEqual(subdb, sub)) {
       loge(`revoke: sub mismatch for ${cid} with ${obstoken}`);
       return r400j({
@@ -2530,24 +2554,6 @@ export async function revokeSubscription(env, req) {
     }
 
     // TODO: test against db entry?
-    const expired = sub.subscriptionState === "SUBSCRIPTION_STATE_EXPIRED";
-    const cancelled = sub.subscriptionState === "SUBSCRIPTION_STATE_CANCELED";
-
-    if (cancelled || expired) {
-      // If the subscription is cancelled, we cannot revoke it.
-      loge(`revoke: ${cid} / tok: ${obstoken} sub cancelled, cannot revoke`);
-      return r200j({
-        success: false,
-        message: "cannot revoke, subscription cancelled or expired",
-        expired: expired,
-        cancelled: cancelled,
-        cancelCtx: sub.canceledStateContext,
-        purchaseId: sendobs(purchaseToken, obstoken, test),
-        test: test,
-        cid: cid,
-        sku: sku,
-      });
-    }
 
     const gprod = subscriptionInfo(sub);
 
