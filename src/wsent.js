@@ -7,7 +7,7 @@
  */
 
 import * as bin from "./buf.js";
-import { hasctx, testmode } from "./d.js";
+import { go, hasctx, testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import * as enc from "./enc.js";
 import { GEntitlement, withinMaxInternalRefundWindow } from "./ent.js";
@@ -312,6 +312,8 @@ export async function getOrGenWsEntitlement(env, cid, gent, renew = true) {
         );
       } // else: fallthrough; uses c if it exists or errors out
     } else {
+      go(auditWsUserAndCid, env, wsuser.userId, cid);
+
       // insert ok, use these newly created creds
       c = new WSEntitlement(
         cid,
@@ -368,6 +370,29 @@ export async function getOrGenWsEntitlement(env, cid, gent, renew = true) {
   }
   log.d(`getOrGen: use new? ${wasCreated} for ${c.cid} ${c.status}`);
   return c;
+}
+
+/**
+ * Record the linkage between the newly-created ws user and the cid.
+ * Ignore errors, as this is non-fatal and only for auditing purposes.
+ * @param {any} env - Worker environment
+ * @param {any} wsuser - WebSocket user object
+ * @param {string} cid - Client ID (hex string)
+ * @returns {Promise<boolean>} - Returns true if the linkage was successful, false otherwise
+ */
+async function auditWsUserAndCid(env, wsuser, cid) {
+  let ok = true;
+  try {
+    const linkout = await dbx.linkWsUserCid(dbx.db(env), wsuser.userId, cid);
+    if (!linkout || !linkout.success) {
+      log.w(`getOrGen: audit: wscid link fail ${cid} / ${wsuser.userId}`);
+      ok = false;
+    }
+  } catch (ex) {
+    log.w(`getOrGen: audit: wscid link err ${cid} / ${wsuser.userId}:`, ex);
+    ok = false;
+  }
+  return ok;
 }
 
 /**

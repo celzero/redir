@@ -585,6 +585,28 @@ export async function insertCreds(db, cid, userid, sessiontoken) {
 }
 
 /**
+ * Records an association between a newly-created Windscribe userid and the
+ * cid that requested the entitlement. Used after `insertCreds` so callers
+ * can later look up which cid created a given ws user.
+ * The wscid table has no PRIMARY KEY, so multiple rows for the same (userid,
+ * cid) pair may accumulate; that's fine — we only need an append-only audit
+ * trail of the linkage. ctime defaults to CURRENT_TIMESTAMP.
+ * @param {any} db - D1 binding
+ * @param {string} userid - WS User ID (base32 string)
+ * @param {string} cid - Client ID (hex string)
+ * @returns {Promise<D1Out>} - D1Out object
+ * @throws {Error} - if db, userid, or cid is missing
+ */
+export async function linkWsUserCid(db, userid, cid) {
+  if (db == null || emptyString(userid) || emptyString(cid)) {
+    throw new Error("d1: linkWsUserCid: db/userid/cid missing");
+  }
+  const q = "INSERT INTO wscid(userid, cid) VALUES(?, ?)";
+  const tx = db.prepare(q).bind(userid, cid);
+  return run(tx, q);
+}
+
+/**
  * Upserts ws creds: inserts if cid not present, otherwise updates
  * sessiontoken, userid, and mtime.
  * @param {any} db - D1 binding

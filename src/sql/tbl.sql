@@ -54,6 +54,13 @@ CREATE TABLE IF NOT EXISTS stripeorders (
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS wscid (
+    userid TEXT NOT NULL,
+    cid TEXT NOT NULL,
+    ctime TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS ws (
     -- client identifier
     cid TEXT PRIMARY KEY,
