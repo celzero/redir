@@ -2852,16 +2852,19 @@ async function ackSubscription(env, tok, ent, ackWithoutEntitlement = false) {
     Accept: "application/json",
     Authorization: `Bearer ${bearer}`,
   };
-  if (ent != null && attachEntitlementToAck) {
-    const body = JSON.stringify({
-      developerPayload: JSON.stringify({
-        ws: await ent.toClientEntitlement(env),
-      }),
-    });
+  if (ent != null) {
+    let body = null;
+    if (attachEntitlementToAck) {
+      body = JSON.stringify({
+        developerPayload: JSON.stringify({
+          ws: await ent.toClientEntitlement(env),
+        }),
+      });
+    }
     const r = await fetch(ackurl, {
       method: "POST",
       headers: headers,
-      body: body,
+      body: body || undefined,
     });
     if (!r.ok) {
       // TODO: retry for 3 days with pipeline?
