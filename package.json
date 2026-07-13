@@ -9,7 +9,7 @@
     "deploy": "wrangler publish"
   },
   "devDependencies": {
-    "wrangler": "^4.0.0"
+    "wrangler": "^4.103.0"
   },
   "dependencies": {
     "@serverless-dns/lfu-cache": "github:serverless-dns/lfu-cache#v3.5.2",
