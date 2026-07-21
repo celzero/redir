@@ -439,11 +439,15 @@ export async function deleteWsEntitlement(env, cid) {
   log.i(
     `del: deleted remote win creds for ${cid}; deleting from db...; test? ${c.test}`,
   );
+  // TODO: retain creds in db and leave it as tombstone instead?
   const out = await dbx.deleteCreds(db, cid);
   if (!out || !out.success) {
-    throw new Error(`del: db delete err for ${cid} ${c.status}`);
+    log.e(`del: db delete err for ${cid} ${c.status}`);
+  } else {
+    log.i(
+      `del: deleted both remote and local creds for ${cid}; test? ${c.test}`,
+    );
   }
-  log.i(`del: deleted both remote and local creds for ${cid}; test? ${c.test}`);
   return true; // successfully deleted the entitlement
 }
 
@@ -984,6 +988,9 @@ async function credsStatus(env, sessiontoken, execctx = "exec") {
       if (r.status === 403) {
         // TODO: analytics?
         return ["invalid", null]; // 403 forbidden
+      }
+      if (r.status == 429) {
+        // TODO: rate limited
       }
     } // else: fallthrough and return "unknown"
     // TODO: do different error codes mean different things here?
