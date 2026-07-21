@@ -304,6 +304,12 @@ async function adminMonthlyStats(env, req) {
     return r400err("stats: invalid date format; expected yyyy-mm");
   }
 
+  // Validate month is 01-12
+  const month = parseInt(date.split("-")[1], 10);
+  if (month < 1 || month > 12) {
+    return r400err("stats: invalid month; expected 01-12");
+  }
+
   const wsUrl = buildUrl(env, req, wsStatsPath + date, ["date"]);
   const [wlId, wlToken] = wsWlHeaders(env);
   const headers = buildHeaders(req);
@@ -429,9 +435,12 @@ async function adminUpdateWsEntitlement(env, req) {
   let wsuser;
   try {
     const r = await fetch(wsUrl, { method: "GET", headers });
+    if (!r.ok) {
+      return r400err(`ent: err /Session res (${r.status})`);
+    }
     const j = await consumejson(r);
-    if (j == null || j.data == null || !r.ok) {
-      return r400err(`ent: err /Session res (${r.status} / ok? ${r.ok})`);
+    if (j == null || j.data == null) {
+      return r400err(`ent: err /Session empty response (${r.status})`);
     }
     wsuser = new WSUser(j.data);
   } catch (err) {
@@ -452,7 +461,7 @@ async function adminUpdateWsEntitlement(env, req) {
   // Encrypt the session token for storage
   const ctime = dbx.sqliteutc(row.ctime);
   let aad = null;
-  if (ctime.getTime() > dbenc.aadRequirementStartTime) {
+  if (!isNaN(ctime.getTime()) && ctime.getTime() > dbenc.aadRequirementStartTime) {
     aad = wstokaad;
   }
 
