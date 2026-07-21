@@ -180,6 +180,7 @@ async function handle(r, env, ctx) {
         const minVCodeNeeded = minvcode(env, "paid-features");
         const cansell = greaterThanEqCmp(vcode, minVCodeNeeded);
         if (!cansell) {
+          log.w(`g: app ${vcode} outdated, min needed ${minVCodeNeeded}`);
           return r503(`g: app ${vcode} outdated`);
         }
       }
@@ -264,7 +265,7 @@ async function handle(r, env, ctx) {
       // undefined keys are left out, null keys are included
       const pk = pkjwk ? JSON.parse(pkjwk) : undefined;
 
-      const minVCodeNeeded = minvcode(env, "paid-features");
+      const minVCodeNeeded = minvcode(env, "new-account");
       const cansell = greaterThanEqCmp(clientVCode, minVCodeNeeded);
       const clientip = clientIp(r);
       const clientCountry = country(r);
@@ -342,10 +343,21 @@ function svcstatus(env) {
   return env.SVC_STATUS || "ok";
 }
 
+/**
+ * @param {any} env
+ * @param {string?} why - "paid-features" or "new-account" or "unknown"
+ * @returns {string} - minimum vcode allowed for why
+ */
 function minvcode(env, why = "unknown") {
+  const lastknownallowedcode = "59";
   if (why === "paid-features") {
-    // paid features have a minimum vcode of 59
-    return env.MIN_VCODE_PAID_FEATURES || "59";
+    // paid features or renewals
+    return env.MIN_VCODE_PAID_FEATURES || lastknownallowedcode;
+  } else if (why === "new-account") {
+    // strictly for new accounts
+    const codeacc = env.MIN_VCODE_NEW_ACCOUNT || lastknownallowedcode;
+    const codepaid = env.MIN_VCODE_PAID_FEATURES || lastknownallowedcode;
+    return Math.min(parseInt(codeacc), parseInt(codepaid)) + "";
   }
   return env.MIN_VCODE || "30";
 }
