@@ -281,6 +281,12 @@ export async function getOrGenWsEntitlement(env, cid, gent, renew = true) {
       // always true for new creds
       aad = wstokaad;
     }
+
+    // TODO: reject this and throw error?
+    if (wsStatus(wsuser) === "expired") {
+      log.e(`ws: newly wsuser is already expired for ${cid} ${wsuser.userId}`);
+    }
+
     // Encrypt the session token
     const enctok = await dbenc.encryptText(
       env,
