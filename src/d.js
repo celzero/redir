@@ -258,15 +258,15 @@ export function testmode(who = "any") {
 
 /**
  * developers.cloudflare.com/workers/runtime-apis/context/#waituntil
- * @param {function(): Promise<any>} fn - The async function to execute in background.
+ * @param {async function(): Promise<any>} fn - The async function to execute in background.
  * @param  {...any} args - Arguments to pass to the function, if any
  */
-export function go(fn, ...args) {
+export function go(asyncfn, ...args) {
   const workctx = ols.getStore()?.workctx;
   if (workctx != null) {
-    workctx.waitUntil(fn(...args));
+    workctx.waitUntil(asyncfn(...args));
   } else {
-    fn(...args);
+    asyncfn(...args);
   }
 }
 

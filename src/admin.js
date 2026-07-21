@@ -83,10 +83,12 @@ function buildHeaders(req) {
 }
 
 /**
- * Extracts a bearer token from the Authorization header if it is a plain
- * hex string without ":" separators. Returns null if no usable token.
+ * Extracts an unencrypted bearer token from the Authorization header.
+ * Unencrypted tokens contain ":" separators (id:type:epoch:sig1:sig2),
+ * unlike encrypted tokens which are plain hex strings.
+ * Returns null if no usable token.
  * @param {Request} req - The incoming request
- * @returns {string|null} - bearer token or null
+ * @returns {string|null} - unencrypted bearer token or null
  */
 function unencryptedSessionToken(req) {
   const auth = authorization(req);
@@ -127,7 +129,7 @@ async function authenticate(env, req) {
     return false;
   }
 
-  // check time window: +/- 30s from now
+  // check time window: +/- 100s from now
   const nowMs = Date.now();
   const diffMs = Math.abs(nowMs - tsMillis);
   if (diffMs > adminTokenWindowMs) {

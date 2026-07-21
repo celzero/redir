@@ -174,6 +174,7 @@ async function handle(r, env, ctx) {
         return await googlePlayNotification(env, r);
       }
 
+      // TODO: reject vcode based calls for new purchases only.
       const vcode = vcodeOf(r);
       if (vcode) {
         const minVCodeNeeded = minvcode(env, "paid-features");

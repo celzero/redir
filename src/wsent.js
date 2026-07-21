@@ -951,6 +951,9 @@ async function credsStatus(env, sessiontoken, execctx = "exec") {
         );
         return [wsStatus(wsuser), wsuser];
       } // else: fallthrough and return "unknown"
+      log.w(
+        `creds status: got session from ${apiu} but no data: ${JSON.stringify(d)}`,
+      );
     }
     /* 400 Bad Request
     {

@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS stripeorders (
     FOREIGN KEY (cid) REFERENCES clients(cid) ON DELETE CASCADE
 );
 
+-- audit ws userid <=> cid mapping.
 CREATE TABLE IF NOT EXISTS wscid (
     userid TEXT NOT NULL,
     cid TEXT NOT NULL,
