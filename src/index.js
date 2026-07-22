@@ -354,10 +354,10 @@ function minvcode(env, why = "unknown") {
     // paid features or renewals
     return env.MIN_VCODE_PAID_FEATURES || lastknownallowedcode;
   } else if (why === "new-account") {
-    // strictly for new accounts
+    // for new accounts; expected to be greater than paid-features
     const codeacc = env.MIN_VCODE_NEW_ACCOUNT || lastknownallowedcode;
     const codepaid = env.MIN_VCODE_PAID_FEATURES || lastknownallowedcode;
-    return Math.min(parseInt(codeacc), parseInt(codepaid)) + "";
+    return Math.max(parseInt(codeacc), parseInt(codepaid)) + "";
   }
   return env.MIN_VCODE || "30";
 }
