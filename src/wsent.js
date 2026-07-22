@@ -576,7 +576,7 @@ async function maybeUpdateCreds(env, c, gent) {
   // If the subscription started/renewed within the 40-day internal refund
   // window, cap execCount at 1 to limit refund liability. The remaining
   // plan units will be applied on the next renewal cycle after the window.
-  if (withinMaxInternalRefundWindow(subStart)) {
+  if (alwaysExecOnePlan && withinMaxInternalRefundWindow(subStart)) {
     // Check whether at least 1 plan unit has already been applied to
     // the Windscribe account since subStart. If so, skip the update —
     // we've already fulfilled the minimum 1-unit requirement within the
@@ -743,7 +743,7 @@ async function newCreds(env, expiry, requestedPlan, since = new Date()) {
   // If the subscription started/renewed within the 40-day internal refund
   // window, cap execCount at 1 to limit refund liability. The remaining
   // plan units will be applied on the next renewal cycle after the window.
-  if (withinMaxInternalRefundWindow(since)) {
+  if (alwaysExecOnePlan && withinMaxInternalRefundWindow(since)) {
     execCount = Math.min(execCount, 1);
   }
 
@@ -787,7 +787,7 @@ async function newCreds(env, expiry, requestedPlan, since = new Date()) {
     bin.emptyString(wsuser.sessionAuthHash)
   ) {
     throw new Error(
-      `new creds: (test? ${testing}) missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.hostName}`,
+      `new creds: (test? ${testing}) missing user or session ${meta.hostName}, ${meta.serviceRequestId}, ${meta.md5}`,
     );
   }
 
