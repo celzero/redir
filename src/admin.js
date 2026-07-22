@@ -462,7 +462,10 @@ async function adminUpdateWsEntitlement(env, req) {
   // Encrypt the session token for storage
   const ctime = dbx.sqliteutc(row.ctime);
   let aad = null;
-  if (!isNaN(ctime.getTime()) && ctime.getTime() > dbenc.aadRequirementStartTime) {
+  if (
+    !isNaN(ctime.getTime()) &&
+    ctime.getTime() > dbenc.aadRequirementStartTime
+  ) {
     aad = wstokaad;
   }
 

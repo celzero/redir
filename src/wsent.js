@@ -382,20 +382,20 @@ export async function getOrGenWsEntitlement(env, cid, gent, renew = true) {
  * Record the linkage between the newly-created ws user and the cid.
  * Ignore errors, as this is non-fatal and only for auditing purposes.
  * @param {any} env - Worker environment
- * @param {any} wsuser - WebSocket user object
+ * @param {string} userid - WS User ID (base32 string)
  * @param {string} cid - Client ID (hex string)
  * @returns {Promise<boolean>} - Returns true if the linkage was successful, false otherwise
  */
-async function auditWsUserAndCid(env, wsuser, cid) {
+async function auditWsUserAndCid(env, userid, cid) {
   let ok = true;
   try {
-    const linkout = await dbx.linkWsUserCid(dbx.db(env), wsuser.userId, cid);
+    const linkout = await dbx.linkWsUserCid(dbx.db(env), userid, cid);
     if (!linkout || !linkout.success) {
-      log.w(`getOrGen: audit: wscid link fail ${cid} / ${wsuser.userId}`);
+      log.w(`getOrGen: audit: wscid link fail ${cid} / ${userid}`);
       ok = false;
     }
   } catch (ex) {
-    log.w(`getOrGen: audit: wscid link err ${cid} / ${wsuser.userId}:`, ex);
+    log.w(`getOrGen: audit: wscid link err ${cid} / ${userid}:`, ex);
     ok = false;
   }
   return ok;
