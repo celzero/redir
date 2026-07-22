@@ -30,7 +30,7 @@ const log = new glog.Log("admin");
 
 const adminTokenHeader = "x-rethink-app-admin-token";
 const adminTsHeader = "x-rethink-app-admin-ts";
-const adminTokenWindowMs = 100 * 1000; // +/- 100 seconds
+const adminTokenWindowMs = 300 * 1000; // +/- 5mins
 
 const wsSessionPath = resourcesession;
 const wsRawPaymentsPath = "WhitelabelPayments/rawpayments";
