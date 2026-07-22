@@ -527,6 +527,41 @@ export async function playActiveByCid(db, cid, limit = -1) {
 }
 
 /**
+ * Returns all active playorder rows whose ctime is within the past `days`
+ * days, joined with the ws table to include the userid for each cid.
+ * A row is considered active if:
+ *  - it is a subscriptionPurchaseV2 with subscriptionState = SUBSCRIPTION_STATE_ACTIVE, or
+ *  - it is a productPurchaseV2 with purchaseStateContext.purchaseState = PURCHASED
+ * @param {any} db
+ * @param {number} days - number of days to look back from now
+ * @param {number} limit - Max rows to return; -1 for no limit.
+ * @return {Promise<D1Out>} - D1Out object
+ * @throws {Error} - on invalid args
+ */
+export async function playActiveSinceDays(db, days, limit = -1) {
+  if (db == null || days == null || days <= 0) {
+    throw new Error("d1: playActiveSinceDays: db/days missing or invalid");
+  }
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const q =
+    "SELECT p.purchasetoken, p.cid, p.linkedtoken, p.ctime AS play_ctime, p.mtime AS play_mtime, p.meta," +
+    " w.userid, w.sessiontoken, w.ctime AS ws_ctime, w.mtime AS ws_mtime" +
+    " FROM playorders p" +
+    " JOIN ws w ON w.cid = p.cid" +
+    " WHERE p.meta IS NOT NULL" +
+    " AND p.ctime >= ?" +
+    " AND ( ( json_extract(p.meta,'$.kind')='androidpublisher#subscriptionPurchaseV2'" +
+    " AND json_extract(p.meta,'$.subscriptionState')='SUBSCRIPTION_STATE_ACTIVE' )" +
+    " OR ( json_extract(p.meta,'$.kind')='androidpublisher#productPurchaseV2'" +
+    " AND json_extract(p.meta,'$.purchaseStateContext.purchaseState')='PURCHASED' ) )" +
+    " ORDER BY p.ctime DESC" +
+    (limit > 0 ? ` LIMIT ${limit}` : "") +
+    ";";
+  const tx = db.prepare(q).bind(since);
+  return run(tx, q);
+}
+
+/**
  * @param {any} db
  * @param {string} token
  * @return {Promise<D1Out>} - D1Out object

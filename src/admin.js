@@ -43,6 +43,7 @@ const wsentitlement = "e";
 const wsplaytoken = "pt";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
+const subsresource = "subs";
 
 const localQueryParams = new Set(["ws", "cid", "did", "test"]);
 
@@ -563,6 +564,62 @@ async function adminPlayPurchaseState(env, req) {
 }
 
 /**
+ * GET /a/subs?d=<days>
+ * Returns all active subscriptions (subscriptions and onetime purchases)
+ * whose ctime falls within the past `d` days. Each entry includes the
+ * cid and the corresponding userid from the ws table.
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function adminActiveSubs(env, req) {
+  if (req.method !== "GET") {
+    return r400err("only GET allowed");
+  }
+  const u = new URL(req.url);
+  const dStr = u.searchParams.get("d");
+
+  if (bin.emptyString(dStr)) {
+    return r400err("subs: missing d (days)");
+  }
+
+  const days = parseInt(dStr, 10);
+  if (isNaN(days) || days <= 0) {
+    return r400err("subs: invalid d; expected positive integer");
+  }
+
+  const db = dbx.db(env);
+  const out = await dbx.playActiveSinceDays(db, days);
+  if (out == null || !out.success) {
+    return r400err("subs: db error");
+  }
+
+  const subs = [];
+  for (const row of out.results || []) {
+    let metadb = null;
+    try {
+      metadb = row.meta != null ? JSON.parse(row.meta) : null;
+    } catch (_) {
+      metadb = row.meta;
+    }
+
+    subs.push({
+      cid: row.cid || null,
+      userid: row.userid || null,
+      purchasetoken: row.purchasetoken || null,
+      linkedtoken: row.linkedtoken || null,
+      play_ctime: row.play_ctime || null,
+      play_mtime: row.play_mtime || null,
+      ws_ctime: row.ws_ctime || null,
+      ws_mtime: row.ws_mtime || null,
+      meta: metadb,
+    });
+  }
+
+  return r200j({ days, count: subs.length, subs });
+}
+
+/**
  * Main admin handler. Authenticates the request and dispatches to the
  * appropriate sub-handler.
  * @param {any} env - Worker environment
@@ -616,6 +673,10 @@ export async function handleAdmin(env, req) {
       // ?cid= endpoint
       return await adminSession(env, req);
     }
+  }
+
+  if (x === subsresource) {
+    return await adminActiveSubs(env, req);
   }
 
   return r400err(`unknown resource ${x}`);
