@@ -545,17 +545,23 @@ async function maybeUpdateCreds(env, c, gent) {
   const oneDayMs = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
   const subExpiryNoGraceMs = subExpiry.getTime() - oneDayMs;
 
+  let entExpiry = c.expiry; // may be null or epoch
+
   if (subStart == null || !gent.ok) {
     log.w(
       `update creds: no-op; gent (from: ${subStart}/${subExpiry}) not ok (d? ${gent.deferred}, unset? ${gent.unset})`,
     );
     return c;
   }
-  if (c.expiry == null || c.expiry.getTime() <= 0) {
-    throw new Error(
-      `invalid entitlement for ${c?.cid} expiring on ${c?.expiry}`,
+
+  const entHasZeroExpiry = entExpiry == null || entExpiry.getTime() <= 0;
+  if (entHasZeroExpiry) {
+    entExpiry = new Date(); // now
+    log.w(
+      `update creds: renewing for ${c?.cid} expiring on ${c?.expiry}; resetting to ${entExpiry}`,
     );
   }
+
   if (subExpiryNoGraceMs <= 0) {
     log.w(
       `update creds: no-op (test? ${testing}); invalid sub expiry: ${subExpiry}`,
@@ -563,14 +569,14 @@ async function maybeUpdateCreds(env, c, gent) {
     return c;
   }
 
-  if (c.expiry.getTime() >= subExpiryNoGraceMs) {
+  if (entExpiry.getTime() >= subExpiryNoGraceMs) {
     log.d(
-      `update creds: no-op (test? ${testing}); ent > sub: ${c.expiry} > ${subExpiry} - 1d`,
+      `update creds: no-op (test? ${testing}); ent > sub: ${entExpiry} > ${subExpiry} - 1d`,
     );
     return c; // No need to update, existing expiry is greater than the requested expiry
   }
 
-  const [plan, ogExecCount] = expiry2plan(subExpiry, testing, c.expiry);
+  const [plan, ogExecCount] = expiry2plan(subExpiry, testing, entExpiry);
 
   let execCount = ogExecCount;
   // If the subscription started/renewed within the 40-day internal refund
@@ -583,10 +589,10 @@ async function maybeUpdateCreds(env, c, gent) {
     // refund window. The remaining units will be applied after the
     // window expires on the next renewal cycle.
     const minAppliedMonths = plan === "year" ? 12 : 1;
-    const appliedMonths = monthsUntil(c.expiry, subStart);
+    const appliedMonths = monthsUntil(entExpiry, subStart);
     if (appliedMonths >= minAppliedMonths) {
       log.d(
-        `update creds: no-op (test? ${testing}); ${appliedMonths}mo applied >= ${minAppliedMonths}mo within refund window; ent: ${c.expiry}, sub: ${subExpiry}`,
+        `update creds: no-op (test? ${testing}); ${appliedMonths}mo applied >= ${minAppliedMonths}mo within refund window; ent: ${entExpiry}, sub: ${subExpiry}`,
       );
       return c;
     }
@@ -594,7 +600,7 @@ async function maybeUpdateCreds(env, c, gent) {
   }
 
   log.i(
-    `update creds: (test? ${testing}) until ${subExpiry} from ${c.expiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}/${ogExecCount} (subStart: ${subStart})`,
+    `update creds: (test? ${testing} / hasExp? ${!entHasZeroExpiry}) until ${subExpiry} from ${entExpiry}; asked: ${requestedPlan}, assigned: ${plan} + ${execCount}/${ogExecCount} (subStart: ${subStart})`,
   );
 
   if (plan == "unknown" || execCount <= 0) {
