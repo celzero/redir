@@ -6,16 +6,24 @@ import { testmode } from "./d.js";
 import * as dbenc from "./dbenc.js";
 import { hmackey3, hmacsign } from "./hmac.js";
 import * as glog from "./log.js";
-import { getOnetimeProductV2, getSubscription } from "./playorder.js";
+import {
+  getOnetimeProductV2,
+  getSubscription,
+  googlePlayAcknowledgePurchase,
+} from "./playorder.js";
 import {
   authorization,
   cid,
   consumejson,
   contentlen,
+  force as forceOf,
+  isTest,
   r200j,
   r400err,
   r401err,
   r403err,
+  r412play,
+  sku as skuOf,
 } from "./req.js";
 import * as dbx from "./sql/dbx.js";
 import {
@@ -41,6 +49,7 @@ const wsresource = "ws";
 const wsuser = "u";
 const wsentitlement = "e";
 const wsplaytoken = "pt";
+const wsplayack = "playack";
 const rawpaymentsquery = "pay";
 const paymentstatsdate = "date";
 const subsresource = "subs";
@@ -567,6 +576,83 @@ async function adminPlayPurchaseState(env, req) {
 }
 
 /**
+ * POST /a/ws/playack?cid=<hex>[&sku=<productId>][&force=<any>]
+ *
+ * Acknowledges the latest active purchase for the given cid. Looks up the most
+ * recent active playorder row (via playActiveByCid, sorted by mtime desc),
+ * then delegates to googlePlayAcknowledgePurchase.
+ *
+ * If no active purchase is found, returns a 404.
+ * If more than one active purchase is found and `force` is not set, returns a
+ * 412 Precondition Failed.  If `force` is set, logs a warning and proceeds with
+ * the most recently modified row.
+ *
+ * @param {any} env - Worker environment
+ * @param {Request} req - The incoming request
+ * @returns {Promise<Response>}
+ */
+async function adminPlayAcknowledgePurchase(env, req) {
+  if (req.method !== "POST") {
+    return r400err("only POST allowed");
+  }
+
+  const c = cid(req);
+  if (bin.emptyString(c)) return r400err("playack: missing cid");
+
+  const sku = skuOf(req);
+  const db = dbx.db(env);
+  const out = await dbx.playActiveByCid(db, c, 2);
+  if (out == null || !out.success) {
+    return r400err("playack: db error");
+  }
+  if (out.results == null || out.results.length <= 0) {
+    return r400err("playack: no active purchase found");
+  }
+
+  const f = forceOf(req);
+  if (out.results.length > 1 && bin.emptyString(f)) {
+    return r412play({
+      error: `playack: ${out.results.length} active purchases for cid=${c}; force required`,
+    });
+  }
+  if (out.results.length > 1) {
+    log.w(
+      `playack: ${out.results.length} active purchases for cid=${c}; proceeding with most recent (force)`,
+    );
+  }
+
+  // Use the most-recently-modified purchase (sorted by mtime DESC)
+  const row = out.results[0];
+  const purchaseToken = row.purchasetoken;
+  if (bin.emptyString(purchaseToken)) {
+    return r400err("playack: active purchase has no purchase token");
+  }
+
+  // set query params "purchaseToken", "cid", "sku", "test", "force".
+  const u = new URL(req.url);
+  u.searchParams.set("purchaseToken", purchaseToken);
+  u.searchParams.set("cid", c);
+  if (!bin.emptyString(sku)) {
+    u.searchParams.set("sku", sku);
+  }
+  // Forward test mode from the original request.
+  if (isTest(req)) {
+    u.searchParams.set("test", "true");
+  }
+  // Forward force param from the original request.
+  if (!bin.emptyString(f)) {
+    u.searchParams.set("force", f);
+  }
+
+  const freq = new Request(u, { method: "POST" });
+
+  log.d(`playack: acking purchase ${c} / tok: ${purchaseToken} / sku: ${sku}`);
+
+  // Delegate to the existing ack function and pass through its response.
+  return googlePlayAcknowledgePurchase(env, freq);
+}
+
+/**
  * GET /a/subs?d=<days>
  * Returns all active subscriptions (subscriptions and onetime purchases)
  * whose ctime falls within the past `d` days. Each entry includes the
@@ -662,6 +748,9 @@ export async function handleAdmin(env, req) {
     }
     if (x2 === wsplaytoken) {
       return await adminPlayPurchaseState(env, req);
+    }
+    if (x2 === wsplayack) {
+      return await adminPlayAcknowledgePurchase(env, req);
     }
 
     const q = u.searchParams;
