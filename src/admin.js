@@ -23,6 +23,7 @@ import {
   r400err,
   r401err,
   r403err,
+  r404err,
   r412play,
   sku as skuOf,
 } from "./req.js";
@@ -607,7 +608,7 @@ async function adminPlayAcknowledgePurchase(env, req) {
     return r400err("playack: db error");
   }
   if (out.results == null || out.results.length <= 0) {
-    return r400err("playack: no active purchase found");
+    return r404err("playack: no active purchase found");
   }
 
   const f = forceOf(req);
