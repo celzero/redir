@@ -14,10 +14,11 @@ import {
 import {
   authorization,
   cid,
+  cidHeader,
   consumejson,
   contentlen,
   force as forceOf,
-  isTest,
+  purchaseTokenHeader,
   r200j,
   r400err,
   r401err,
@@ -628,23 +629,17 @@ async function adminPlayAcknowledgePurchase(env, req) {
     return r400err("playack: active purchase has no purchase token");
   }
 
-  // set query params "purchaseToken", "cid", "sku", "test", "force".
+  // Use headers so req.js extractors (purchaseToken, cid) can read them via
+  // getreq() before falling through to geturl(), which returns outerUrl()
+  // from the ALS context and ignores the synthetic request's URL.
   const u = new URL(req.url);
-  u.searchParams.set("purchaseToken", purchaseToken);
-  u.searchParams.set("cid", c);
-  if (!bin.emptyString(sku)) {
-    u.searchParams.set("sku", sku);
-  }
-  // Forward test mode from the original request.
-  if (isTest(req)) {
-    u.searchParams.set("test", "true");
-  }
-  // Forward force param from the original request.
-  if (!bin.emptyString(f)) {
-    u.searchParams.set("force", f);
-  }
-
-  const freq = new Request(u, { method: "POST" });
+  const freq = new Request(u, {
+    method: "POST",
+    headers: {
+      [purchaseTokenHeader]: purchaseToken,
+      [cidHeader]: c,
+    },
+  });
 
   log.d(`playack: acking purchase ${c} / tok: ${purchaseToken} / sku: ${sku}`);
 
