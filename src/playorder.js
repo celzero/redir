@@ -3157,7 +3157,9 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             test: test,
           });
         }
+
         const ent = await getOrGenWsEntitlement(env, cid, gent, /*renew*/ true);
+
         if (!force && ent == null) {
           loge(`ack: onetime failed to get entitlement for ${cid}`);
           return r500j({ error: "failed to get entitlement", cid: cid });
@@ -3269,6 +3271,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
             : undefined,
         });
       } else {
+        // may be subscription
         const dbres = await dbx.playSub(dbx.db(env), purchasetoken);
         if (
           dbres == null ||
@@ -3309,6 +3312,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         const productIds = subAllProducts(sub);
         const active = state === "SUBSCRIPTION_STATE_ACTIVE";
         const cancelled = state === "SUBSCRIPTION_STATE_CANCELED";
+        const paused = state === "SUBSCRIPTION_STATE_PAUSED";
         const expired = state === "SUBSCRIPTION_STATE_EXPIRED";
         const ackd = ackstate === "ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED";
 
@@ -3327,7 +3331,7 @@ export async function googlePlayAcknowledgePurchase(env, req) {
         logi(`ack: sub for ${obstoken} at ${state}/${ackstate}; test? ${test}`);
 
         // canceled subs could be expiring in the future
-        if ((!active && !cancelled) || expired) {
+        if ((!active && !cancelled && !paused) || expired) {
           loge(`ack: err inactive: ${cid}, state: ${state}`);
           return r400j({
             error: "subscription not active",
